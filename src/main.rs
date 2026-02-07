@@ -19,9 +19,19 @@ use app::run_local;
 use args::TesterArgs;
 use clap::{CommandFactory, FromArgMatches};
 use std::error::Error;
+use std::path::Path;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let cmd = TesterArgs::command();
+    let mut cmd = TesterArgs::command();
+    if std::env::args_os().len() <= 1 {
+        let has_default_config = Path::new("strest.toml").exists() || Path::new("strest.json").exists();
+        if !has_default_config {
+            cmd.print_help()?;
+            println!();
+            return Ok(());
+        }
+    }
+
     let matches = cmd.get_matches();
     let mut args = TesterArgs::from_arg_matches(&matches)
         .map_err(|err| std::io::Error::other(err.to_string()))?;
@@ -80,6 +90,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if args.url.is_none() && args.scenario.is_none() {
+            tracing::error!("Missing URL (set --url or provide in config).");
             return Err(
                 std::io::Error::other("Missing URL (set --url or provide in config).").into(),
             );

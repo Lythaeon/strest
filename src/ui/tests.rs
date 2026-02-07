@@ -1,9 +1,19 @@
 use super::model::{UiData, UiRenderData};
-use super::render::format_lines;
+use super::render::{Ui, UiActions};
+use ratatui::Terminal;
+use ratatui::backend::TestBackend;
 use std::time::Duration;
 
 #[test]
-fn ui_render_lines_include_stats() -> Result<(), String> {
+fn ui_render_does_not_panic() -> Result<(), String> {
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = match Terminal::new(backend) {
+        Ok(term) => term,
+        Err(err) => {
+            return Err(format!("Failed to create TestBackend terminal: {}", err));
+        }
+    };
+
     let data = UiRenderData {
         elapsed_time: Duration::from_secs(1),
         target_duration: Duration::from_secs(10),
@@ -17,20 +27,7 @@ fn ui_render_lines_include_stats() -> Result<(), String> {
         rpm: 120,
     };
 
-    let lines = format_lines(&data, 80);
-    if !lines.iter().any(|line| line.contains("Elapsed: 1.00s")) {
-        return Err("Elapsed line missing".to_owned());
-    }
-    if !lines.iter().any(|line| line.contains("Requests: 5")) {
-        return Err("Requests line missing".to_owned());
-    }
-    if !lines.iter().any(|line| line.contains("P50: 15ms")) {
-        return Err("Percentiles line missing".to_owned());
-    }
-    if !lines.iter().any(|line| line.contains("Latencies (ms):")) {
-        return Err("Latency line missing".to_owned());
-    }
-
+    Ui::render(&mut terminal, &data);
     Ok(())
 }
 

@@ -5,8 +5,14 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
-- Replaced the TUI charts dependency with a crossterm-rendered status view.
-- WASM loader now parses exported constants directly (no JIT backend), requiring constant `scenario_ptr`/`scenario_len`.
+## 0.1.1
+
+Released: 2026-02-07
+
+- Updated the CLI description and help text for the new feature set.
+- Running `strest` with no args now prints help unless a default config exists.
+- Missing URL errors now emit a log entry before exiting.
+- Restored the ratatui-based TUI after the fallback UI proved unreliable.
 
 ## 0.1.0
 
