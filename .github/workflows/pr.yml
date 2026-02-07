@@ -16,6 +16,9 @@ jobs:
           
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libfreetype6-dev pkg-config
+
       - name: Install cargo-make
         uses: davidB/rust-cargo-make@v1
 
