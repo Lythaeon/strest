@@ -58,7 +58,7 @@ jobs:
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION_CLEAN="${VERSION#v}"
-          if ! rg -n "^## ${VERSION_CLEAN}$" CHANGELOG.md; then
+          if ! grep -qE "^## ${VERSION_CLEAN}$" CHANGELOG.md; then
             echo "Missing CHANGELOG.md section for ${VERSION_CLEAN}."
             exit 1
           fi
