@@ -1,0 +1,114 @@
+[package]
+name = "strest-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+members = ["."]
+
+[dependencies]
+base64 = "0.22.1"
+clap = "4.4.4"
+libfuzzer-sys = "0.4"
+serde_json = "1"
+tempfile = "3.10.1"
+tokio = { version = "1.32.0", features = ["fs", "io-util", "macros", "rt", "time"] }
+toml = "0.8"
+
+[dependencies.strest]
+path = ".."
+features = ["fuzzing"]
+
+[[bin]]
+name = "cli_args"
+path = "fuzz_targets/cli_args.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "config_json"
+path = "fuzz_targets/config_json.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "config_toml"
+path = "fuzz_targets/config_toml.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "metrics_log"
+path = "fuzz_targets/metrics_log.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "metrics_range"
+path = "fuzz_targets/metrics_range.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "histogram_base64"
+path = "fuzz_targets/histogram_base64.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "load_profile"
+path = "fuzz_targets/load_profile.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "parse_duration_arg"
+path = "fuzz_targets/parse_duration_arg.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "parse_duration_value"
+path = "fuzz_targets/parse_duration_value.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "parse_header"
+path = "fuzz_targets/parse_header.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "parse_tls_version"
+path = "fuzz_targets/parse_tls_version.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "positive_numbers"
+path = "fuzz_targets/positive_numbers.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "render_template"
+path = "fuzz_targets/render_template.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "scenario_config"
+path = "fuzz_targets/scenario_config.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "scenario_request"
+path = "fuzz_targets/scenario_request.rs"
+test = false
+doc = false

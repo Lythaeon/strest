@@ -1,0 +1,194 @@
+use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::num::{NonZeroU64, NonZeroUsize};
+use std::time::Duration;
+
+#[derive(Debug, Clone, Copy, ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum HttpMethod {
+    Get,
+    Post,
+    Patch,
+    Put,
+    Delete,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ControllerMode {
+    Auto,
+    Manual,
+}
+
+impl std::str::FromStr for ControllerMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let normalized = s.trim().to_ascii_lowercase();
+        match normalized.as_str() {
+            "auto" => Ok(ControllerMode::Auto),
+            "manual" => Ok(ControllerMode::Manual),
+            _ => Err(format!(
+                "Invalid controller mode '{}'. Use auto or manual.",
+                s
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TlsVersion {
+    V1_0,
+    V1_1,
+    V1_2,
+    V1_3,
+}
+
+impl std::str::FromStr for TlsVersion {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let normalized = s.trim().to_ascii_lowercase();
+        match normalized.as_str() {
+            "1.0" | "tls1.0" | "tls1" | "v1.0" => Ok(TlsVersion::V1_0),
+            "1.1" | "tls1.1" | "v1.1" => Ok(TlsVersion::V1_1),
+            "1.2" | "tls1.2" | "v1.2" => Ok(TlsVersion::V1_2),
+            "1.3" | "tls1.3" | "v1.3" => Ok(TlsVersion::V1_3),
+            _ => Err(format!(
+                "Invalid TLS version '{}'. Use 1.0, 1.1, 1.2, or 1.3.",
+                s
+            )),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TlsVersion {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        value
+            .parse::<TlsVersion>()
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+impl Serialize for TlsVersion {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let value = match self {
+            TlsVersion::V1_0 => "1.0",
+            TlsVersion::V1_1 => "1.1",
+            TlsVersion::V1_2 => "1.2",
+            TlsVersion::V1_3 => "1.3",
+        };
+        serializer.serialize_str(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PositiveU64(NonZeroU64);
+
+impl PositiveU64 {
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0.get()
+    }
+}
+
+impl TryFrom<u64> for PositiveU64 {
+    type Error = String;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        NonZeroU64::new(value)
+            .map(PositiveU64)
+            .ok_or_else(|| "Value must be >= 1".to_owned())
+    }
+}
+
+impl std::str::FromStr for PositiveU64 {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let value: u64 = s.parse().map_err(|err| format!("Invalid value: {}", err))?;
+        PositiveU64::try_from(value)
+    }
+}
+
+impl From<PositiveU64> for u64 {
+    fn from(value: PositiveU64) -> Self {
+        value.get()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PositiveUsize(NonZeroUsize);
+
+impl PositiveUsize {
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0.get()
+    }
+}
+
+impl TryFrom<usize> for PositiveUsize {
+    type Error = String;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        NonZeroUsize::new(value)
+            .map(PositiveUsize)
+            .ok_or_else(|| "Value must be >= 1".to_owned())
+    }
+}
+
+impl std::str::FromStr for PositiveUsize {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let value: usize = s.parse().map_err(|err| format!("Invalid value: {}", err))?;
+        PositiveUsize::try_from(value)
+    }
+}
+
+impl From<PositiveUsize> for usize {
+    fn from(value: PositiveUsize) -> Self {
+        value.get()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LoadProfile {
+    pub initial_rpm: u64,
+    pub stages: Vec<LoadStage>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LoadStage {
+    pub duration: Duration,
+    pub target_rpm: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct Scenario {
+    pub base_url: Option<String>,
+    pub vars: BTreeMap<String, String>,
+    pub steps: Vec<ScenarioStep>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScenarioStep {
+    pub name: Option<String>,
+    pub method: HttpMethod,
+    pub url: Option<String>,
+    pub path: Option<String>,
+    pub headers: Vec<(String, String)>,
+    pub body: Option<String>,
+    pub assert_status: Option<u16>,
+    pub assert_body_contains: Option<String>,
+    pub think_time: Option<Duration>,
+    pub vars: BTreeMap<String, String>,
+}

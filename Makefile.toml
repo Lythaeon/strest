@@ -1,0 +1,96 @@
+[tasks.build]
+description = "Build all projects"
+workspace = false
+command = "cargo"
+args = ["build", "--all-features", "${@}"]
+dependencies = ["clean"]
+
+[tasks.format]
+description = "Format code using rustfmt"
+workspace = false
+command = "cargo"
+args = ["fmt", "--all"]
+
+[tasks.format-check]
+description = "Verify code formatting with rustfmt"
+workspace = false
+command = "cargo"
+args = ["fmt", "--check", "--all"]
+
+[tasks.clean]
+description = "Remove build artifacts"
+command = "cargo"
+args = ["clean", "${@}"]
+
+[tasks.bacon]
+description = "Live code checking with bacon"
+workspace = false
+install_crate = "bacon"
+command = "bacon"
+args = ["${@}", "check-all"]
+
+[tasks.build-prod]
+description = "Build optimized release binaries"
+workspace = false
+command = "cargo"
+args = ["build", "--release", "${@}"]
+dependencies = ["clean"]
+
+[tasks.check]
+description = "Quick compilation check without building"
+workspace = false
+command = "cargo"
+args = ["check", "--workspace", "--all", "${@}"]
+
+[tasks.fuzz]
+description = "Run fuzzing tests on specified targets"
+workspace = false
+install_crate = "cargo-fuzz"
+command = "cargo"
+args = ["+nightly", "fuzz", "${@}"]
+
+[tasks.fuzz-all]
+description = "Run all fuzz targets sequentially"
+workspace = false
+install_crate = "cargo-fuzz"
+command = "bash"
+args = ["fuzz/run_all.sh", "${@}"]
+
+[tasks.test]
+description = "Run all tests using cargo-nextest"
+workspace = false
+install_crate = "cargo-nextest"
+install_crate_args = ["--locked"]
+command = "cargo"
+args = ["nextest", "run", "--workspace", "--no-tests=pass", "${@}"]
+
+[tasks.test-wasm]
+description = "Run WASM e2e tests (requires wasm feature)"
+workspace = false
+command = "cargo"
+args = ["test", "--locked", "--features", "wasm", "--test", "e2e_wasm", "${@}"]
+
+[tasks.clippy]
+description = "Run clippy with strict rules on all targets except fuzz"
+workspace = false
+command = "cargo"
+args = [
+    "clippy",
+    "--all-targets",
+    "--locked",
+    "${@}",
+]
+
+[tasks.deny]
+description = "Check licenses and security advisories"
+workspace = false
+install_crate = "cargo-deny"
+command = "cargo"
+args = ["deny", "check"]
+
+[tasks.audit]
+description = "Security audit for dependencies"
+workspace = false
+install_crate = "cargo-audit"
+command = "cargo"
+args = ["audit", "${@}"]

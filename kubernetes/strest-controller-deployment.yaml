@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: strest-controller
+  labels:
+    app: strest
+    component: controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: strest
+      component: controller
+  template:
+    metadata:
+      labels:
+        app: strest
+        component: controller
+    spec:
+      containers:
+        - name: strest-controller
+          image: ghcr.io/your-org/strest:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --controller-listen
+            - 0.0.0.0:9009
+            - --controller-mode
+            - manual
+            - --control-listen
+            - 0.0.0.0:9010
+            - --min-agents
+            - "1"
+          env:
+            - name: RUST_LOG
+              value: info
+          ports:
+            - name: controller
+              containerPort: 9009
+            - name: control
+              containerPort: 9010
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
