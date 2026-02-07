@@ -71,14 +71,14 @@ pub(super) async fn run_single_iteration(
         _ = shutdown_rx.recv() => true,
         result = async {
             let start = Instant::now();
-            let status = match request_template.try_clone() {
+            let (status, timed_out) = match request_template.try_clone() {
                 Some(req_clone) => execute_request_status(client, req_clone).await,
                 None => {
                     error!("Failed to clone request template.");
-                    500
+                    (500, false)
                 }
             };
-            let metric = Metrics::new(start, status);
+            let metric = Metrics::new(start, status, timed_out);
             if let Some(log_sink) = log_sink && !log_sink.send(metric) {
                 return true;
             }
@@ -159,7 +159,7 @@ pub(super) async fn run_scenario_iteration(
         } else {
             ASSERT_FAILED_STATUS
         };
-        let metric = Metrics::new(start, metric_status);
+        let metric = Metrics::new(start, metric_status, outcome.timed_out);
         if let Some(log_sink) = context.log_sink
             && !log_sink.send(metric)
         {
@@ -186,6 +186,7 @@ pub(super) async fn run_scenario_iteration(
 struct RequestOutcome {
     status: u16,
     success: bool,
+    timed_out: bool,
 }
 
 async fn execute_request_with_asserts(
@@ -202,17 +203,20 @@ async fn execute_request_with_asserts(
             let status_ok = status == expected;
 
             let body_result = response.bytes().await;
+            let mut timed_out = false;
             let body_ok = match (assert_body_contains, body_result) {
                 (Some(fragment), Ok(bytes)) => {
                     let body = String::from_utf8_lossy(&bytes);
                     body.contains(fragment)
                 }
                 (Some(_), Err(err)) => {
+                    timed_out = err.is_timeout();
                     error!("Failed to read response body: {}", err);
                     false
                 }
                 (None, Ok(_)) => true,
                 (None, Err(err)) => {
+                    timed_out = err.is_timeout();
                     error!("Failed to read response body: {}", err);
                     false
                 }
@@ -221,6 +225,7 @@ async fn execute_request_with_asserts(
             RequestOutcome {
                 status,
                 success: status_ok && body_ok,
+                timed_out,
             }
         }
         Err(err) => {
@@ -228,6 +233,7 @@ async fn execute_request_with_asserts(
             RequestOutcome {
                 status: 500,
                 success: false,
+                timed_out: err.is_timeout(),
             }
         }
     }
@@ -381,15 +387,15 @@ async fn execute_request(
     Ok(status)
 }
 
-async fn execute_request_status(client: &Client, request: Request) -> u16 {
+async fn execute_request_status(client: &Client, request: Request) -> (u16, bool) {
     match client.execute(request).await {
         Ok(response) => {
             let status = response.status().as_u16();
             match response.bytes().await {
-                Ok(_) => status,
-                Err(_) => 500,
+                Ok(_) => (status, false),
+                Err(err) => (500, err.is_timeout()),
             }
         }
-        Err(_) => 500,
+        Err(err) => (500, err.is_timeout()),
     }
 }

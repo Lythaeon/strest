@@ -138,8 +138,8 @@ impl UiActions for Ui {
             let y_max = data
                 .latencies
                 .iter()
-                .map(|(_, latency)| *latency)
-                .fold(0, u64::max)
+                .map(|(_, latency)| (*latency).max(1))
+                .fold(1, u64::max)
                 .max(10);
             let x_max = data_points
                 .last()
@@ -149,7 +149,7 @@ impl UiActions for Ui {
 
             let chart_points: Vec<(f64, f64)> = data_points
                 .iter()
-                .map(|(x, y)| (*x as f64, *y as f64))
+                .map(|(x, y)| (*x as f64, (*y).max(1) as f64))
                 .collect();
             let datasets = vec![
                 ratatui::widgets::Dataset::default()

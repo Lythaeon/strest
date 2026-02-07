@@ -8,15 +8,17 @@ pub struct Metrics {
     pub start: Instant,
     pub response_time: Duration,
     pub status_code: u16,
+    pub timed_out: bool,
 }
 
 impl Metrics {
     #[must_use]
-    pub fn new(start: Instant, status_code: u16) -> Self {
+    pub fn new(start: Instant, status_code: u16, timed_out: bool) -> Self {
         Self {
             start,
             response_time: start.elapsed(),
             status_code,
+            timed_out,
         }
     }
 }
@@ -27,9 +29,13 @@ pub struct MetricsSummary {
     pub total_requests: u64,
     pub successful_requests: u64,
     pub error_requests: u64,
+    pub timeout_requests: u64,
     pub min_latency_ms: u64,
     pub max_latency_ms: u64,
     pub avg_latency_ms: u64,
+    pub success_min_latency_ms: u64,
+    pub success_max_latency_ms: u64,
+    pub success_avg_latency_ms: u64,
 }
 
 #[derive(Debug)]
@@ -43,9 +49,13 @@ pub struct StreamSnapshot {
     pub total_requests: u64,
     pub successful_requests: u64,
     pub error_requests: u64,
+    pub timeout_requests: u64,
     pub min_latency_ms: u64,
     pub max_latency_ms: u64,
     pub latency_sum_ms: u128,
+    pub success_min_latency_ms: u64,
+    pub success_max_latency_ms: u64,
+    pub success_latency_sum_ms: u128,
     pub histogram_b64: String,
 }
 

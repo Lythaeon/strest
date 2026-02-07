@@ -9,20 +9,31 @@ pub(super) fn merge_summaries(summaries: &[WireSummary]) -> MetricsSummary {
     let mut total_requests = 0u64;
     let mut successful_requests = 0u64;
     let mut error_requests = 0u64;
+    let mut timeout_requests = 0u64;
     let mut min_latency_ms = u64::MAX;
     let mut max_latency_ms = 0u64;
     let mut latency_sum_ms = 0u128;
+    let mut success_min_latency_ms = u64::MAX;
+    let mut success_max_latency_ms = 0u64;
+    let mut success_latency_sum_ms = 0u128;
     let mut duration_ms = 0u64;
 
     for summary in summaries {
         total_requests = total_requests.saturating_add(summary.total_requests);
         successful_requests = successful_requests.saturating_add(summary.successful_requests);
         error_requests = error_requests.saturating_add(summary.error_requests);
+        timeout_requests = timeout_requests.saturating_add(summary.timeout_requests);
         if summary.total_requests > 0 {
             min_latency_ms = min_latency_ms.min(summary.min_latency_ms);
             max_latency_ms = max_latency_ms.max(summary.max_latency_ms);
         }
+        if summary.successful_requests > 0 {
+            success_min_latency_ms = success_min_latency_ms.min(summary.success_min_latency_ms);
+            success_max_latency_ms = success_max_latency_ms.max(summary.success_max_latency_ms);
+        }
         latency_sum_ms = latency_sum_ms.saturating_add(summary.latency_sum_ms);
+        success_latency_sum_ms =
+            success_latency_sum_ms.saturating_add(summary.success_latency_sum_ms);
         duration_ms = duration_ms.max(summary.duration_ms);
     }
 
@@ -34,9 +45,27 @@ pub(super) fn merge_summaries(summaries: &[WireSummary]) -> MetricsSummary {
     } else {
         0
     };
+    let success_avg_latency_ms = if successful_requests > 0 {
+        let avg = success_latency_sum_ms
+            .checked_div(u128::from(successful_requests))
+            .unwrap_or(0);
+        u64::try_from(avg).unwrap_or(u64::MAX)
+    } else {
+        0
+    };
 
     let min_latency_ms = if total_requests > 0 {
         min_latency_ms
+    } else {
+        0
+    };
+    let success_min_latency_ms = if successful_requests > 0 {
+        success_min_latency_ms
+    } else {
+        0
+    };
+    let success_max_latency_ms = if successful_requests > 0 {
+        success_max_latency_ms
     } else {
         0
     };
@@ -46,9 +75,13 @@ pub(super) fn merge_summaries(summaries: &[WireSummary]) -> MetricsSummary {
         total_requests,
         successful_requests,
         error_requests,
+        timeout_requests,
         min_latency_ms,
         max_latency_ms,
         avg_latency_ms,
+        success_min_latency_ms,
+        success_max_latency_ms,
+        success_avg_latency_ms,
     }
 }
 
@@ -96,6 +129,9 @@ pub(super) fn print_summary(
     p50: u64,
     p90: u64,
     p99: u64,
+    success_p50: u64,
+    success_p90: u64,
+    success_p99: u64,
     args: &TesterArgs,
     charts_written: bool,
 ) {
@@ -110,12 +146,25 @@ pub(super) fn print_summary(
         stats.success_rate_x100 % 100
     );
     println!("Errors: {}", summary.error_requests);
-    println!("Avg Latency: {}ms", summary.avg_latency_ms);
+    println!("Timeouts: {}", summary.timeout_requests);
+    println!("Avg Latency (all): {}ms", summary.avg_latency_ms);
+    println!("Avg Latency (ok): {}ms", summary.success_avg_latency_ms);
     println!(
-        "Min/Max Latency: {}ms / {}ms",
+        "Min/Max Latency (all): {}ms / {}ms",
         summary.min_latency_ms, summary.max_latency_ms
     );
-    println!("P50/P90/P99 Latency: {}ms / {}ms / {}ms", p50, p90, p99);
+    println!(
+        "Min/Max Latency (ok): {}ms / {}ms",
+        summary.success_min_latency_ms, summary.success_max_latency_ms
+    );
+    println!(
+        "P50/P90/P99 Latency (all): {}ms / {}ms / {}ms",
+        p50, p90, p99
+    );
+    println!(
+        "P50/P90/P99 Latency (ok): {}ms / {}ms / {}ms",
+        success_p50, success_p90, success_p99
+    );
     println!(
         "Avg RPS: {}.{:02}",
         stats.avg_rps_x100 / 100,

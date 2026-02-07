@@ -21,7 +21,9 @@ use super::{cleanup, export, logs, progress, summary};
 pub(crate) struct RunOutcome {
     pub summary: metrics::MetricsSummary,
     pub histogram: metrics::LatencyHistogram,
+    pub success_histogram: metrics::LatencyHistogram,
     pub latency_sum_ms: u128,
+    pub success_latency_sum_ms: u128,
     pub runtime_errors: Vec<String>,
 }
 
@@ -140,30 +142,59 @@ pub(crate) async fn run_local(
         }
     }
 
-    let (summary, chart_records, metrics_truncated, histogram, latency_sum_ms) =
-        if !log_results.is_empty() {
-            logs::merge_log_results(log_results, metrics_max).map_err(std::io::Error::other)?
-        } else {
-            (
-                report.summary,
-                Vec::new(),
-                false,
-                metrics::LatencyHistogram::new().map_err(std::io::Error::other)?,
-                0,
-            )
-        };
+    let (
+        summary,
+        chart_records,
+        metrics_truncated,
+        histogram,
+        latency_sum_ms,
+        success_latency_sum_ms,
+        success_histogram,
+    ) = if !log_results.is_empty() {
+        logs::merge_log_results(log_results, metrics_max).map_err(std::io::Error::other)?
+    } else {
+        (
+            report.summary,
+            Vec::new(),
+            false,
+            metrics::LatencyHistogram::new().map_err(std::io::Error::other)?,
+            0,
+            0,
+            metrics::LatencyHistogram::new().map_err(std::io::Error::other)?,
+        )
+    };
     let latency_sum_ms = if latency_sum_ms == 0 && summary.total_requests > 0 {
         u128::from(summary.avg_latency_ms).saturating_mul(u128::from(summary.total_requests))
     } else {
         latency_sum_ms
     };
+    let success_latency_sum_ms = if success_latency_sum_ms == 0 && summary.successful_requests > 0 {
+        u128::from(summary.success_avg_latency_ms)
+            .saturating_mul(u128::from(summary.successful_requests))
+    } else {
+        success_latency_sum_ms
+    };
     let (mut p50, mut p90, mut p99) = histogram.percentiles();
+    let (mut success_p50, mut success_p90, mut success_p99) = success_histogram.percentiles();
     if histogram.count() == 0 {
         let (fallback_p50, fallback_p90, fallback_p99) =
             summary::compute_percentiles(&chart_records);
         p50 = fallback_p50;
         p90 = fallback_p90;
         p99 = fallback_p99;
+    }
+    if success_histogram.count() == 0 && summary.successful_requests > 0 {
+        let expected_status = args.expected_status_code;
+        let success_records: Vec<metrics::MetricRecord> = chart_records
+            .iter()
+            .copied()
+            .filter(|record| record.status_code == expected_status)
+            .collect();
+        let (fallback_p50, fallback_p90, fallback_p99) =
+            summary::compute_percentiles(&success_records);
+        success_p50 = fallback_p50;
+        success_p90 = fallback_p90;
+        success_p99 = fallback_p99;
     }
 
     if charts_enabled && !chart_records.is_empty() {
@@ -183,6 +214,9 @@ pub(crate) async fn run_local(
             p50,
             p90,
             p99,
+            success_p50,
+            success_p90,
+            success_p99,
         };
         summary::print_summary(&summary, &extras, &summary_stats, &args);
     }
@@ -205,6 +239,7 @@ pub(crate) async fn run_local(
             total_requests: summary.total_requests,
             successful_requests: summary.successful_requests,
             error_requests: summary.error_requests,
+            timeout_requests: summary.timeout_requests,
             min_latency_ms: summary.min_latency_ms,
             max_latency_ms: summary.max_latency_ms,
             avg_latency_ms: summary.avg_latency_ms,
@@ -231,7 +266,9 @@ pub(crate) async fn run_local(
     Ok(RunOutcome {
         summary,
         histogram,
+        success_histogram,
         latency_sum_ms,
+        success_latency_sum_ms,
         runtime_errors,
     })
 }

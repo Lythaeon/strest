@@ -6,6 +6,9 @@ pub(crate) struct SummaryExtras {
     pub(crate) p50: u64,
     pub(crate) p90: u64,
     pub(crate) p99: u64,
+    pub(crate) success_p50: u64,
+    pub(crate) success_p90: u64,
+    pub(crate) success_p99: u64,
 }
 
 pub(crate) struct SummaryStats {
@@ -66,14 +69,24 @@ pub(crate) fn print_summary(
         stats.success_rate_x100 % 100
     );
     println!("Errors: {}", errors);
-    println!("Avg Latency: {}ms", summary.avg_latency_ms);
+    println!("Timeouts: {}", summary.timeout_requests);
+    println!("Avg Latency (all): {}ms", summary.avg_latency_ms);
+    println!("Avg Latency (ok): {}ms", summary.success_avg_latency_ms);
     println!(
-        "Min/Max Latency: {}ms / {}ms",
+        "Min/Max Latency (all): {}ms / {}ms",
         summary.min_latency_ms, summary.max_latency_ms
     );
     println!(
-        "P50/P90/P99 Latency: {}ms / {}ms / {}ms",
+        "Min/Max Latency (ok): {}ms / {}ms",
+        summary.success_min_latency_ms, summary.success_max_latency_ms
+    );
+    println!(
+        "P50/P90/P99 Latency (all): {}ms / {}ms / {}ms",
         extras.p50, extras.p90, extras.p99
+    );
+    println!(
+        "P50/P90/P99 Latency (ok): {}ms / {}ms / {}ms",
+        extras.success_p50, extras.success_p90, extras.success_p99
     );
     println!(
         "Avg RPS: {}.{:02}",

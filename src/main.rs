@@ -23,7 +23,10 @@ use std::path::Path;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut cmd = TesterArgs::command();
-    if std::env::args_os().len() <= 1 {
+    let raw_args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    let treat_as_empty = raw_args.len() <= 1
+        || (raw_args.len() == 2 && raw_args.get(1).map(|arg| arg == "--").unwrap_or(false));
+    if treat_as_empty {
         let has_default_config =
             Path::new("strest.toml").exists() || Path::new("strest.json").exists();
         if !has_default_config {
@@ -33,7 +36,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let matches = cmd.get_matches();
+    let matches = cmd.get_matches_from(raw_args);
     let mut args = TesterArgs::from_arg_matches(&matches)
         .map_err(|err| std::io::Error::other(err.to_string()))?;
 
