@@ -24,7 +24,8 @@ use std::path::Path;
 fn main() -> Result<(), Box<dyn Error>> {
     let mut cmd = TesterArgs::command();
     if std::env::args_os().len() <= 1 {
-        let has_default_config = Path::new("strest.toml").exists() || Path::new("strest.json").exists();
+        let has_default_config =
+            Path::new("strest.toml").exists() || Path::new("strest.json").exists();
         if !has_default_config {
             cmd.print_help()?;
             println!();
