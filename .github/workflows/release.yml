@@ -88,7 +88,7 @@ jobs:
         run: cargo package --locked
 
   publish:
-    if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'Lythaeon/strest'
+    if: startsWith(github.ref, 'refs/tags/v')
     name: Publish to Crates.io
     needs: validate
     runs-on: ubuntu-latest
@@ -98,6 +98,9 @@ jobs:
       changelog: ${{ steps.changelog_reader.outputs.changes }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libfreetype6-dev pkg-config
       
       - name: Extract Changelog Section
         id: changelog_reader
