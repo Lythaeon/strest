@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: strest-agent
+  labels:
+    app: strest
+    component: agent
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: strest
+      component: agent
+  template:
+    metadata:
+      labels:
+        app: strest
+        component: agent
+    spec:
+      containers:
+        - name: strest-agent
+          image: ghcr.io/your-org/strest:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --agent-join
+            - strest-controller:9009
+            - --agent-standby
+            - --agent-reconnect-ms
+            - "1000"
+          env:
+            - name: RUST_LOG
+              value: info
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"

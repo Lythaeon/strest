@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-make
+        uses: davidB/rust-cargo-make@v1
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Audit Dependencies
+        run: cargo make audit
+
+      - name: Deny Check
+        run: cargo make deny
+
+      - name: Run Tests
+        run: cargo make test
+
+      - name: Run WASM Tests
+        run: cargo make test-wasm
+
+      - name: Lint
+        run: cargo make clippy
+
+      - name: Format Check
+        run: cargo make format-check
+
+      - name: Verify Publish Readiness
+        run: cargo publish --dry-run --locked

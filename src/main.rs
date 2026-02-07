@@ -1,71 +1,98 @@
-extern crate reqwest;
-extern crate tokio;
-extern crate clap;
-
-mod ui;
+mod app;
+mod arcshift;
 mod args;
-mod http;
-mod metrics;
-mod shutdown;
 mod charts;
+mod config;
+mod distributed;
+mod http;
 mod logger;
+mod metrics;
+#[cfg(feature = "wasm")]
+mod probestack;
+mod script;
+mod service;
+mod shutdown;
+mod sinks;
+mod ui;
 
+use app::run_local;
 use args::TesterArgs;
-use tracing::info;
+use clap::{CommandFactory, FromArgMatches};
 use std::error::Error;
-use clap::Parser;
-use tokio::sync::{broadcast, mpsc, watch};
-use crate::{charts::plot_metrics, metrics::Metrics, ui::{setup_render_ui, UiData}};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    logger::init_logging();
+fn main() -> Result<(), Box<dyn Error>> {
+    let cmd = TesterArgs::command();
+    let matches = cmd.get_matches();
+    let mut args = TesterArgs::from_arg_matches(&matches)
+        .map_err(|err| std::io::Error::other(err.to_string()))?;
 
-    let args = TesterArgs::parse();
+    logger::init_logging(args.verbose);
 
-    let (shutdown_tx, _) = broadcast::channel::<u16>(1);
-    let (ui_tx, _) = watch::channel(UiData::default());
-    let (metrics_tx, metrics_rx) = mpsc::unbounded_channel::<Metrics>();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
 
-    let shutdown_handle = shutdown::setup_shutdown_handler(&shutdown_tx);
-    let render_ui_handle = setup_render_ui(
-        &args,
-        &shutdown_tx,
-        &ui_tx
-    );
-    let (metrics_aggregator_handle, metrics_handle) = metrics::setup_metrics_collector(
-        &args,
-        &shutdown_tx,
-        metrics_rx,
-        &ui_tx
-    );
-    let request_sender_handle = http::setup_request_sender(
-        &args,
-        &shutdown_tx,
-        &metrics_tx
-    );
+    runtime.block_on(async move {
+        let mut scenario_registry = None;
+        let mut loaded_config =
+            config::load_config(args.config.as_deref()).map_err(std::io::Error::other)?;
+        if let Some(config) = loaded_config.as_mut() {
+            scenario_registry = config.scenarios.take();
+            config::apply_config(&mut args, &matches, config).map_err(std::io::Error::other)?;
+        }
 
-    if request_sender_handle.is_none() {
-        return Ok(());
-    }
+        if args.controller_listen.is_some() && args.agent_join.is_some() {
+            return Err(std::io::Error::other(
+                "Cannot run as controller and agent at the same time.",
+            )
+            .into());
+        }
 
-    let (_, _, _, metrics_result, _) = tokio::join!(
-        shutdown_handle,
-        render_ui_handle,
-        metrics_aggregator_handle,
-        metrics_handle,
-        request_sender_handle.unwrap()
-    );
+        if args.install_service || args.uninstall_service {
+            service::handle_service_action(&args).map_err(std::io::Error::other)?;
+            return Ok(());
+        }
 
-    let metrics = metrics_result.expect("Metrics collector failed");
+        if args.script.is_some() && args.scenario.is_some() {
+            return Err(
+                std::io::Error::other("Cannot combine --script with scenario config.").into(),
+            );
+        }
 
-    if !metrics.is_empty() {
-        info!("📈 Plotting charts...");
+        if let Some(script_path) = args.script.as_deref() {
+            let scenario = script::load_scenario_from_wasm(script_path, &args)
+                .map_err(std::io::Error::other)?;
+            args.scenario = Some(scenario);
+        }
 
-        plot_metrics(&metrics, &args).await.expect("Failed to plot charts");
+        if args.controller_listen.is_some() {
+            distributed::run_controller(&args, scenario_registry)
+                .await
+                .map_err(std::io::Error::other)?;
+            return Ok(());
+        }
 
-        info!("📈 Charts saved in {}", args.charts_path);
-    }
+        if args.agent_join.is_some() {
+            distributed::run_agent(args)
+                .await
+                .map_err(std::io::Error::other)?;
+            return Ok(());
+        }
 
-    std::process::exit(0);
+        if args.url.is_none() && args.scenario.is_none() {
+            return Err(
+                std::io::Error::other("Missing URL (set --url or provide in config).").into(),
+            );
+        }
+
+        args.distributed_stream_summaries = false;
+        let outcome = run_local(args, None, None).await?;
+
+        if !outcome.runtime_errors.is_empty() {
+            app::print_runtime_errors(&outcome.runtime_errors);
+            return Err(std::io::Error::other("Runtime errors occurred.").into());
+        }
+
+        Ok(())
+    })
 }

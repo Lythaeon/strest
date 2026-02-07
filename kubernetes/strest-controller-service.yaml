@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: strest-controller
+  labels:
+    app: strest
+    component: controller
+spec:
+  selector:
+    app: strest
+    component: controller
+  ports:
+    - name: controller
+      port: 9009
+      targetPort: controller
+    - name: control
+      port: 9010
+      targetPort: control
