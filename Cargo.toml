@@ -10,13 +10,11 @@ repository = "https://github.com/Lythaeon/strest"
 homepage = "https://github.com/Lythaeon/strest"
 documentation = "https://docs.rs/strest"
 keywords = [
-    "stress-test",
-    "stress-testing",
     "load-testing",
     "http",
-    "benchmark",
     "cli",
-    "performance"
+    "performance",
+    "stress-test"
 ]
 categories = [
     "command-line-utilities",
