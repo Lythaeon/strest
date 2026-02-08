@@ -13,6 +13,16 @@ pub(crate) struct LogSetup {
     pub(crate) paths: Vec<PathBuf>,
 }
 
+pub(crate) type LogMergeResult = (
+    metrics::MetricsSummary,
+    Vec<metrics::MetricRecord>,
+    bool,
+    metrics::LatencyHistogram,
+    u128,
+    u128,
+    metrics::LatencyHistogram,
+);
+
 pub(crate) async fn setup_log_sinks(
     args: &TesterArgs,
     run_start: Instant,
@@ -89,18 +99,7 @@ pub(crate) async fn setup_log_sinks(
 pub(crate) fn merge_log_results(
     results: Vec<metrics::LogResult>,
     metrics_max: usize,
-) -> Result<
-    (
-        metrics::MetricsSummary,
-        Vec<metrics::MetricRecord>,
-        bool,
-        metrics::LatencyHistogram,
-        u128,
-        u128,
-        metrics::LatencyHistogram,
-    ),
-    String,
-> {
+) -> Result<LogMergeResult, String> {
     let mut total_requests: u64 = 0;
     let mut successful_requests: u64 = 0;
     let mut timeout_requests: u64 = 0;
