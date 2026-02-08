@@ -47,7 +47,7 @@ impl UiAggregationState {
             }
         };
         let success_histogram = match LatencyHistogram::new() {
-            Ok(histogram) => Some(histogram),
+            Ok(success_histogram) => Some(success_histogram),
             Err(err) => {
                 tracing::warn!("Failed to initialize success latency histogram: {}", err);
                 None

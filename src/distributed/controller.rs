@@ -1697,7 +1697,7 @@ fn handle_agent_event(
                 Ok(histogram) => {
                     let success_histogram = match message.success_histogram_b64.as_deref() {
                         Some(encoded) => match LatencyHistogram::decode_base64(encoded) {
-                            Ok(histogram) => histogram,
+                            Ok(success_histogram) => success_histogram,
                             Err(err) => {
                                 runtime_errors.push(format!(
                                     "Agent {} success histogram decode failed: {}",
@@ -1707,7 +1707,7 @@ fn handle_agent_event(
                             }
                         },
                         None => match LatencyHistogram::new() {
-                            Ok(histogram) => histogram,
+                            Ok(success_histogram) => success_histogram,
                             Err(err) => {
                                 runtime_errors.push(format!(
                                     "Agent {} success histogram init failed: {}",
@@ -1760,7 +1760,7 @@ fn handle_agent_event(
                 Ok(histogram) => {
                     let success_histogram = match message.success_histogram_b64.as_deref() {
                         Some(encoded) => match LatencyHistogram::decode_base64(encoded) {
-                            Ok(histogram) => histogram,
+                            Ok(success_histogram) => success_histogram,
                             Err(err) => {
                                 runtime_errors.push(format!(
                                     "Agent {} success histogram decode failed: {}",
@@ -1770,7 +1770,7 @@ fn handle_agent_event(
                             }
                         },
                         None => match LatencyHistogram::new() {
-                            Ok(histogram) => histogram,
+                            Ok(success_histogram) => success_histogram,
                             Err(err) => {
                                 runtime_errors.push(format!(
                                     "Agent {} success histogram init failed: {}",
