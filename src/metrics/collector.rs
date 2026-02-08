@@ -25,6 +25,9 @@ struct UiAggregationState {
     current_requests: u64,
     successful_requests: u64,
     timeout_requests: u64,
+    transport_errors: u64,
+    non_expected_status: u64,
+    ui_window: Duration,
     latency_sum_ms: u128,
     success_latency_sum_ms: u128,
     min_latency_ms: u64,
@@ -32,13 +35,14 @@ struct UiAggregationState {
     success_min_latency_ms: u64,
     success_max_latency_ms: u64,
     latency_window: VecDeque<(Instant, u64)>,
+    latency_window_ok: VecDeque<(Instant, u64)>,
     rps_window: VecDeque<(Instant, u64)>,
     histogram: Option<LatencyHistogram>,
     success_histogram: Option<LatencyHistogram>,
 }
 
 impl UiAggregationState {
-    fn new() -> Self {
+    fn new(ui_window: Duration) -> Self {
         let histogram = match LatencyHistogram::new() {
             Ok(histogram) => Some(histogram),
             Err(err) => {
@@ -58,6 +62,9 @@ impl UiAggregationState {
             current_requests: 0,
             successful_requests: 0,
             timeout_requests: 0,
+            transport_errors: 0,
+            non_expected_status: 0,
+            ui_window,
             latency_sum_ms: 0,
             success_latency_sum_ms: 0,
             min_latency_ms: u64::MAX,
@@ -65,6 +72,7 @@ impl UiAggregationState {
             success_min_latency_ms: u64::MAX,
             success_max_latency_ms: 0,
             latency_window: VecDeque::new(),
+            latency_window_ok: VecDeque::new(),
             rps_window: VecDeque::new(),
             histogram,
             success_histogram,
@@ -84,6 +92,7 @@ pub fn setup_metrics_collector(
     let shutdown_tx_main = shutdown_tx.clone();
     let ui_tx = ui_tx.clone();
 
+    let ui_window_ms = args.ui_window_ms.get();
     let target_duration = Duration::from_secs(args.target_duration.get());
     let expected_status_code = args.expected_status_code;
     let sinks_config = args.sinks.clone();
@@ -93,7 +102,8 @@ pub fn setup_metrics_collector(
         resolve_stream_interval(args.distributed_stream_interval_ms.as_ref());
 
     tokio::spawn(async move {
-        let mut state = UiAggregationState::new();
+        let ui_window = Duration::from_millis(ui_window_ms);
+        let mut state = UiAggregationState::new(ui_window);
         let start_time = run_start;
         let mut shutdown_rx_inner = shutdown_tx_main.subscribe();
         let ui_tx_clone = ui_tx.clone();
@@ -112,10 +122,17 @@ pub fn setup_metrics_collector(
                 target_duration,
                 current_requests: 0,
                 successful_requests: 0,
+                timeout_requests: 0,
+                transport_errors: 0,
+                non_expected_status: 0,
+                ui_window_ms,
                 latencies: vec![],
                 p50: 0,
                 p90: 0,
                 p99: 0,
+                p50_ok: 0,
+                p90_ok: 0,
+                p99_ok: 0,
                 rps: 0,
                 rpm: 0,
             })
@@ -145,7 +162,7 @@ pub fn setup_metrics_collector(
                 },
                 _ = ui_interval.tick() => {
                     let now = Instant::now();
-                    prune_latency_window(&mut state.latency_window, now);
+                    prune_latency_window(&mut state.latency_window, now, state.ui_window);
                     prune_rps_window(&mut state.rps_window, now);
 
                     let elapsed_time = start_time.elapsed();
@@ -161,6 +178,7 @@ pub fn setup_metrics_collector(
                         .collect();
 
                     let (p50, p90, p99) = compute_percentiles(&state.latency_window);
+                    let (p50_ok, p90_ok, p99_ok) = compute_percentiles(&state.latency_window_ok);
 
                     let rps: u64 = state
                         .rps_window
@@ -178,10 +196,17 @@ pub fn setup_metrics_collector(
                                 target_duration,
                                 current_requests: state.current_requests,
                                 successful_requests: state.successful_requests,
+                                timeout_requests: state.timeout_requests,
+                                transport_errors: state.transport_errors,
+                                non_expected_status: state.non_expected_status,
+                                ui_window_ms,
                                 latencies: recent_latencies,
                                 p50,
                                 p90,
                                 p99,
+                                p50_ok,
+                                p90_ok,
+                                p99_ok,
                                 rps,
                                 rpm,
                             })
@@ -280,6 +305,8 @@ pub fn setup_metrics_collector(
                 successful_requests: state.successful_requests,
                 error_requests,
                 timeout_requests: state.timeout_requests,
+                transport_errors: state.transport_errors,
+                non_expected_status: state.non_expected_status,
                 min_latency_ms,
                 max_latency_ms: state.max_latency_ms,
                 avg_latency_ms,
@@ -291,10 +318,14 @@ pub fn setup_metrics_collector(
     })
 }
 
-fn prune_latency_window(window: &mut VecDeque<(Instant, u64)>, now: Instant) {
+fn prune_latency_window(
+    window: &mut VecDeque<(Instant, u64)>,
+    now: Instant,
+    window_span: Duration,
+) {
     while window
         .front()
-        .is_some_and(|(ts, _)| now.duration_since(*ts) > Duration::from_secs(10))
+        .is_some_and(|(ts, _)| now.duration_since(*ts) > window_span)
     {
         window.pop_front();
     }
@@ -311,7 +342,8 @@ fn process_metric_ui(
 
     state.current_requests = state.current_requests.saturating_add(1);
 
-    if status_code == expected_status_code && !msg.timed_out {
+    let is_success = status_code == expected_status_code && !msg.timed_out && !msg.transport_error;
+    if is_success {
         state.successful_requests = state.successful_requests.saturating_add(1);
         state.success_latency_sum_ms = state
             .success_latency_sum_ms
@@ -322,19 +354,24 @@ fn process_metric_ui(
         if latency_ms > state.success_max_latency_ms {
             state.success_max_latency_ms = latency_ms;
         }
+        state.latency_window_ok.push_back((now, latency_ms));
+        prune_latency_window(&mut state.latency_window_ok, now, state.ui_window);
         if let Some(histogram) = state.success_histogram.as_mut()
             && let Err(err) = histogram.record(latency_ms)
         {
             tracing::warn!("Disabling success latency histogram after error: {}", err);
             state.success_histogram = None;
         }
-    }
-    if msg.timed_out {
+    } else if msg.timed_out {
         state.timeout_requests = state.timeout_requests.saturating_add(1);
+    } else if msg.transport_error {
+        state.transport_errors = state.transport_errors.saturating_add(1);
+    } else if status_code != expected_status_code {
+        state.non_expected_status = state.non_expected_status.saturating_add(1);
     }
 
     state.latency_window.push_back((now, latency_ms));
-    prune_latency_window(&mut state.latency_window, now);
+    prune_latency_window(&mut state.latency_window, now, state.ui_window);
 
     record_rps(&mut state.rps_window, now);
     prune_rps_window(&mut state.rps_window, now);
@@ -469,6 +506,8 @@ fn build_stream_snapshot(state: &UiAggregationState, duration: Duration) -> Opti
         successful_requests,
         error_requests,
         timeout_requests: state.timeout_requests,
+        transport_errors: state.transport_errors,
+        non_expected_status: state.non_expected_status,
         min_latency_ms,
         max_latency_ms,
         latency_sum_ms: state.latency_sum_ms,

@@ -1,8 +1,12 @@
 mod aggregated;
 mod average;
 mod cumulative;
+mod errors;
+mod inflight;
 mod latency;
 mod rps;
+mod status;
+mod timeouts;
 
 #[cfg(test)]
 mod tests;
@@ -23,8 +27,12 @@ pub use average::plot_average_response_time;
 pub use cumulative::{
     plot_cumulative_error_rate, plot_cumulative_successful_requests, plot_cumulative_total_requests,
 };
+pub use errors::plot_error_rate_breakdown;
+pub use inflight::plot_inflight_requests;
 pub use latency::plot_latency_percentiles;
 pub use rps::plot_requests_per_second;
+pub use status::plot_status_code_distribution;
+pub use timeouts::plot_timeouts_per_second;
 
 pub async fn plot_metrics(
     metrics: &[MetricRecord],
@@ -63,11 +71,35 @@ pub async fn plot_metrics(
 
     info!("Plotting latency percentiles...");
 
-    plot_latency_percentiles(metrics, &format!("{}/latency_percentiles", path))?;
+    plot_latency_percentiles(
+        metrics,
+        expected_status_code,
+        &format!("{}/latency_percentiles", path),
+    )?;
 
     info!("Plotting requests per second...");
 
     plot_requests_per_second(metrics, &format!("{}/requests_per_second.png", path))?;
+
+    info!("Plotting timeouts per second...");
+
+    plot_timeouts_per_second(metrics, &format!("{}/timeouts_per_second.png", path))?;
+
+    info!("Plotting error rate breakdown...");
+
+    plot_error_rate_breakdown(
+        metrics,
+        expected_status_code,
+        &format!("{}/error_rate_breakdown.png", path),
+    )?;
+
+    info!("Plotting status code distribution...");
+
+    plot_status_code_distribution(metrics, &format!("{}/status_code_distribution.png", path))?;
+
+    info!("Plotting in-flight requests...");
+
+    plot_inflight_requests(metrics, &format!("{}/inflight_requests.png", path))?;
 
     info!("Plotting cumulative total requests...");
 

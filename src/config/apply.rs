@@ -125,6 +125,12 @@ pub fn apply_config(
         args.no_ui = no_ui;
     }
 
+    if !is_cli(matches, "ui_window_ms")
+        && let Some(window_ms) = config.ui_window_ms
+    {
+        args.ui_window_ms = ensure_positive_u64(window_ms, "ui_window_ms")?;
+    }
+
     if !is_cli(matches, "summary")
         && let Some(summary) = config.summary
     {

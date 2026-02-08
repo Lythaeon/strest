@@ -5,6 +5,18 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+## 0.1.1
+
+Released: 2026-02-09
+
+- Added timeout rate chart (timeouts per second) to visualize timeout spikes over time.
+- Added error-rate chart per second with breakdown by timeout vs non-2xx vs transport errors.
+- Added latency percentile chart with ok vs all overlay for tail comparisons.
+- Added UI metrics for timeouts, transport errors, non-expected status, and ok vs all percentiles.
+- Added `--ui-window-ms` to control the live UI chart window (default 10000ms).
+- Added HTTP status code distribution chart (stacked per-second counts).
+- Added in-flight request/concurrency chart to correlate load with latency changes.
+
 ## 0.1.0
 
 Released: 2026-02-07

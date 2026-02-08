@@ -103,6 +103,8 @@ pub(crate) fn merge_log_results(
     let mut total_requests: u64 = 0;
     let mut successful_requests: u64 = 0;
     let mut timeout_requests: u64 = 0;
+    let mut transport_errors: u64 = 0;
+    let mut non_expected_status: u64 = 0;
     let mut latency_sum_ms: u128 = 0;
     let mut success_latency_sum_ms: u128 = 0;
     let mut min_latency_ms: u64 = u64::MAX;
@@ -120,6 +122,9 @@ pub(crate) fn merge_log_results(
         successful_requests =
             successful_requests.saturating_add(result.summary.successful_requests);
         timeout_requests = timeout_requests.saturating_add(result.summary.timeout_requests);
+        transport_errors = transport_errors.saturating_add(result.summary.transport_errors);
+        non_expected_status =
+            non_expected_status.saturating_add(result.summary.non_expected_status);
         latency_sum_ms = latency_sum_ms.saturating_add(result.latency_sum_ms);
         success_latency_sum_ms =
             success_latency_sum_ms.saturating_add(result.success_latency_sum_ms);
@@ -187,6 +192,8 @@ pub(crate) fn merge_log_results(
             successful_requests,
             error_requests,
             timeout_requests,
+            transport_errors,
+            non_expected_status,
             min_latency_ms,
             max_latency_ms,
             avg_latency_ms,
@@ -210,6 +217,8 @@ pub(crate) const fn empty_summary() -> metrics::MetricsSummary {
         successful_requests: 0,
         error_requests: 0,
         timeout_requests: 0,
+        transport_errors: 0,
+        non_expected_status: 0,
         min_latency_ms: 0,
         max_latency_ms: 0,
         avg_latency_ms: 0,

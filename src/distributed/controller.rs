@@ -276,6 +276,7 @@ async fn run_controller_auto(args: &TesterArgs) -> Result<(), String> {
         let (shutdown_tx, _) = broadcast::channel::<u16>(1);
         let (ui_tx, _) = watch::channel(UiData {
             target_duration,
+            ui_window_ms: args.ui_window_ms.get(),
             ..UiData::default()
         });
         let handle = setup_render_ui(args, &shutdown_tx, &ui_tx);
@@ -1501,6 +1502,7 @@ async fn start_manual_run(
         let (shutdown_tx, _) = broadcast::channel::<u16>(1);
         let (ui_tx, _) = watch::channel(UiData {
             target_duration,
+            ui_window_ms: args.ui_window_ms.get(),
             ..UiData::default()
         });
         let handle = setup_render_ui(args, &shutdown_tx, &ui_tx);
@@ -1827,13 +1829,15 @@ fn update_ui(
     agent_states: &HashMap<String, AgentSnapshot>,
     latency_window: &mut VecDeque<(u64, u64)>,
 ) {
-    let Ok((summary, merged_hist, _success_hist)) = aggregate_snapshots(agent_states) else {
+    let Ok((summary, merged_hist, success_hist)) = aggregate_snapshots(agent_states) else {
         return;
     };
     let (p50, p90, p99) = merged_hist.percentiles();
+    let (p50_ok, p90_ok, p99_ok) = success_hist.percentiles();
     let stats = compute_summary_stats(&summary);
     let elapsed_ms = summary.duration.as_millis().min(u128::from(u64::MAX)) as u64;
-    let window_start = elapsed_ms.saturating_sub(10_000);
+    let ui_window_ms = args.ui_window_ms.get();
+    let window_start = elapsed_ms.saturating_sub(ui_window_ms);
     latency_window.push_back((elapsed_ms, summary.avg_latency_ms));
     while latency_window
         .front()
@@ -1848,10 +1852,17 @@ fn update_ui(
         target_duration: Duration::from_secs(args.target_duration.get()),
         current_requests: summary.total_requests,
         successful_requests: summary.successful_requests,
+        timeout_requests: summary.timeout_requests,
+        transport_errors: summary.transport_errors,
+        non_expected_status: summary.non_expected_status,
+        ui_window_ms,
         latencies,
         p50,
         p90,
         p99,
+        p50_ok,
+        p90_ok,
+        p99_ok,
         rps: stats.avg_rps_x100 / 100,
         rpm: stats.avg_rpm_x100 / 100,
     }));
@@ -2273,6 +2284,7 @@ mod tests {
             export_json: None,
             log_shards: crate::args::PositiveUsize::try_from(1)?,
             no_ui: true,
+            ui_window_ms: crate::args::PositiveU64::try_from(10_000)?,
             summary: false,
             tls_min: None,
             tls_max: None,
@@ -2306,6 +2318,8 @@ mod tests {
             successful_requests: 9,
             error_requests: 1,
             timeout_requests: 1,
+            transport_errors: 0,
+            non_expected_status: 0,
             success_min_latency_ms: 10,
             success_max_latency_ms: 50,
             success_latency_sum_ms: 900,
@@ -2319,6 +2333,8 @@ mod tests {
             successful_requests: 19,
             error_requests: 1,
             timeout_requests: 2,
+            transport_errors: 1,
+            non_expected_status: 0,
             success_min_latency_ms: 5,
             success_max_latency_ms: 40,
             success_latency_sum_ms: 1900,
@@ -2419,6 +2435,8 @@ mod tests {
             successful_requests: 9,
             error_requests: 1,
             timeout_requests: 0,
+            transport_errors: 0,
+            non_expected_status: 1,
             success_min_latency_ms: 10,
             success_max_latency_ms: 50,
             success_latency_sum_ms: 900,

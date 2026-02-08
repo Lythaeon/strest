@@ -70,6 +70,8 @@ pub(crate) fn print_summary(
     );
     println!("Errors: {}", errors);
     println!("Timeouts: {}", summary.timeout_requests);
+    println!("Transport Errors: {}", summary.transport_errors);
+    println!("Non-Expected Status: {}", summary.non_expected_status);
     println!("Avg Latency (all): {}ms", summary.avg_latency_ms);
     println!("Avg Latency (ok): {}ms", summary.success_avg_latency_ms);
     println!(

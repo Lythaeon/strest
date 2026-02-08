@@ -49,6 +49,7 @@ fn base_args() -> Result<TesterArgs, String> {
         export_json: None,
         log_shards: positive_usize(1)?,
         no_ui: true,
+        ui_window_ms: positive_u64(10_000)?,
         summary: false,
         tls_min: None,
         tls_max: None,
@@ -176,6 +177,7 @@ fn updates_ui_data_on_tick() -> Result<(), String> {
             response_time: Duration::from_millis(12),
             status_code: 200,
             timed_out: false,
+            transport_error: false,
         }) {
             Ok(()) => {}
             Err(err) => return Err(format!("Failed to send metric: {}", err)),
@@ -312,6 +314,7 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
             response_time: Duration::from_millis(5),
             status_code: 200,
             timed_out: false,
+            transport_error: false,
         };
         let second_start = run_start
             .checked_add(Duration::from_millis(10))
@@ -321,6 +324,7 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
             response_time: Duration::from_millis(7),
             status_code: 500,
             timed_out: true,
+            transport_error: false,
         };
 
         if tx.send(first).is_err() {

@@ -13,21 +13,29 @@ fn sample_metrics() -> Vec<MetricRecord> {
             elapsed_ms: 0,
             latency_ms: 10,
             status_code: 200,
+            timed_out: false,
+            transport_error: false,
         },
         MetricRecord {
             elapsed_ms: 100,
             latency_ms: 15,
             status_code: 200,
+            timed_out: false,
+            transport_error: false,
         },
         MetricRecord {
             elapsed_ms: 200,
             latency_ms: 20,
             status_code: 200,
+            timed_out: false,
+            transport_error: false,
         },
         MetricRecord {
             elapsed_ms: 400,
             latency_ms: 30,
             status_code: 500,
+            timed_out: false,
+            transport_error: true,
         },
     ]
 }
@@ -43,7 +51,7 @@ fn plot_latency_percentiles_single_second() -> Result<(), String> {
         None => return Err("Failed to convert path to string".to_owned()),
     };
 
-    plot_latency_percentiles(&metrics, base_path_str)
+    plot_latency_percentiles(&metrics, 200, base_path_str)
         .map_err(|err| format!("plot_latency_percentiles failed: {}", err))?;
 
     let p50_path = format!("{}_P50.png", base_path_str);
@@ -119,6 +127,7 @@ fn plot_metrics_creates_files() -> Result<(), String> {
             export_json: None,
             log_shards: PositiveUsize::try_from(1)?,
             no_ui: true,
+            ui_window_ms: PositiveU64::try_from(10_000)?,
             summary: false,
             tls_min: None,
             tls_max: None,
@@ -155,6 +164,10 @@ fn plot_metrics_creates_files() -> Result<(), String> {
             "latency_percentiles_P90.png",
             "latency_percentiles_P99.png",
             "requests_per_second.png",
+            "timeouts_per_second.png",
+            "error_rate_breakdown.png",
+            "status_code_distribution.png",
+            "inflight_requests.png",
             "cumulative_total_requests.png",
         ];
 

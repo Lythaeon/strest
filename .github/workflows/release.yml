@@ -158,7 +158,7 @@ jobs:
           tag: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           body: |
-            ## 🚀 What's New in ${{ github.ref_name }}
+            ### 🚀 What's New
             ${{ steps.changelog_reader.outputs.changes }}
             
             ### 📦 Installation

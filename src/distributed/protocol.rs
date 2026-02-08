@@ -158,6 +158,10 @@ pub(super) struct WireSummary {
     #[serde(default)]
     pub(super) timeout_requests: u64,
     #[serde(default)]
+    pub(super) transport_errors: u64,
+    #[serde(default)]
+    pub(super) non_expected_status: u64,
+    #[serde(default)]
     pub(super) success_min_latency_ms: u64,
     #[serde(default)]
     pub(super) success_max_latency_ms: u64,
