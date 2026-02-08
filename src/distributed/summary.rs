@@ -167,15 +167,11 @@ pub(super) fn print_summary(
     );
     println!(
         "P50/P90/P99 Latency (all): {}ms / {}ms / {}ms",
-        percentiles.all.p50,
-        percentiles.all.p90,
-        percentiles.all.p99
+        percentiles.all.p50, percentiles.all.p90, percentiles.all.p99
     );
     println!(
         "P50/P90/P99 Latency (ok): {}ms / {}ms / {}ms",
-        percentiles.ok.p50,
-        percentiles.ok.p90,
-        percentiles.ok.p99
+        percentiles.ok.p50, percentiles.ok.p90, percentiles.ok.p99
     );
     println!(
         "Avg RPS: {}.{:02}",
