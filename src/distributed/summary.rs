@@ -91,6 +91,19 @@ pub(super) struct SummaryStats {
     pub(super) avg_rpm_x100: u64,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct Percentiles {
+    pub(super) p50: u64,
+    pub(super) p90: u64,
+    pub(super) p99: u64,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct SummaryPercentiles {
+    pub(super) all: Percentiles,
+    pub(super) ok: Percentiles,
+}
+
 pub(super) fn compute_summary_stats(summary: &MetricsSummary) -> SummaryStats {
     let duration_ms = summary.duration.as_millis().max(1);
     let total = summary.total_requests;
@@ -126,12 +139,7 @@ pub(super) fn compute_summary_stats(summary: &MetricsSummary) -> SummaryStats {
 
 pub(super) fn print_summary(
     summary: &MetricsSummary,
-    p50: u64,
-    p90: u64,
-    p99: u64,
-    success_p50: u64,
-    success_p90: u64,
-    success_p99: u64,
+    percentiles: SummaryPercentiles,
     args: &TesterArgs,
     charts_written: bool,
 ) {
@@ -159,11 +167,15 @@ pub(super) fn print_summary(
     );
     println!(
         "P50/P90/P99 Latency (all): {}ms / {}ms / {}ms",
-        p50, p90, p99
+        percentiles.all.p50,
+        percentiles.all.p90,
+        percentiles.all.p99
     );
     println!(
         "P50/P90/P99 Latency (ok): {}ms / {}ms / {}ms",
-        success_p50, success_p90, success_p99
+        percentiles.ok.p50,
+        percentiles.ok.p90,
+        percentiles.ok.p99
     );
     println!(
         "Avg RPS: {}.{:02}",

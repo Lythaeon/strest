@@ -23,7 +23,9 @@ use super::protocol::{
     ConfigMessage, ErrorMessage, ReportMessage, StartMessage, StopMessage, StreamMessage,
     WireMessage, WireSummary, read_message, send_message,
 };
-use super::summary::{compute_summary_stats, merge_summaries, print_summary};
+use super::summary::{
+    Percentiles, SummaryPercentiles, compute_summary_stats, merge_summaries, print_summary,
+};
 use super::utils::build_run_id;
 use super::wire::build_wire_args;
 
@@ -518,17 +520,16 @@ async fn run_controller_auto(args: &TesterArgs) -> Result<(), String> {
             }
         }
 
-        print_summary(
-            &summary,
-            p50,
-            p90,
-            p99,
-            success_p50,
-            success_p90,
-            success_p99,
-            args,
-            charts_written,
-        );
+        let percentiles = SummaryPercentiles {
+            all: Percentiles { p50, p90, p99 },
+            ok: Percentiles {
+                p50: success_p50,
+                p90: success_p90,
+                p99: success_p99,
+            },
+        };
+
+        print_summary(&summary, percentiles, args, charts_written);
 
         if let Some(sinks) = args.sinks.as_ref() {
             let sink_stats = SinkStats {
@@ -1614,17 +1615,16 @@ async fn finalize_manual_run(args: &TesterArgs, state: &mut ManualRunState) -> R
             }
         }
 
-        print_summary(
-            &summary,
-            p50,
-            p90,
-            p99,
-            success_p50,
-            success_p90,
-            success_p99,
-            args,
-            charts_written,
-        );
+        let percentiles = SummaryPercentiles {
+            all: Percentiles { p50, p90, p99 },
+            ok: Percentiles {
+                p50: success_p50,
+                p90: success_p90,
+                p99: success_p99,
+            },
+        };
+
+        print_summary(&summary, percentiles, args, charts_written);
 
         if let Some(sinks) = args.sinks.as_ref() {
             let sink_stats = SinkStats {

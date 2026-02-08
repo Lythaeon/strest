@@ -78,6 +78,9 @@ args = [
     "clippy",
     "--all-targets",
     "--locked",
+    "--",
+    "-D",
+    "warnings",
     "${@}",
 ]
 

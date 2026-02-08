@@ -76,6 +76,7 @@ rust_2024_guarded_string_incompatible_syntax = "warn"
 deprecated_safe_2024 = "warn"
 
 [lints.clippy]
+allow_attributes = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 inefficient_to_string = "deny"
