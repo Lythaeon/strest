@@ -175,6 +175,7 @@ fn updates_ui_data_on_tick() -> Result<(), String> {
             start: tokio::time::Instant::now(),
             response_time: Duration::from_millis(12),
             status_code: 200,
+            timed_out: false,
         }) {
             Ok(()) => {}
             Err(err) => return Err(format!("Failed to send metric: {}", err)),
@@ -310,6 +311,7 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
             start: run_start,
             response_time: Duration::from_millis(5),
             status_code: 200,
+            timed_out: false,
         };
         let second_start = run_start
             .checked_add(Duration::from_millis(10))
@@ -318,6 +320,7 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
             start: second_start,
             response_time: Duration::from_millis(7),
             status_code: 500,
+            timed_out: true,
         };
 
         if tx.send(first).is_err() {
@@ -343,6 +346,12 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
             return Err(format!(
                 "Expected 1 successful request, got {}",
                 result.summary.successful_requests
+            ));
+        }
+        if result.summary.timeout_requests != 1 {
+            return Err(format!(
+                "Expected 1 timeout request, got {}",
+                result.summary.timeout_requests
             ));
         }
         if result.records.len() != 1 {

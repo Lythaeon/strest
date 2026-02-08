@@ -2,7 +2,7 @@
 name = "strest"
 version = "0.1.0"
 edition = "2024"
-description = "CLI stress-testing tool for web servers with real-time metrics, sinks and distributed runs."
+description = "Blazing-fast async HTTP load tester in Rust - lock-free design, real-time stats, distributed runs, and optional chart exports for high-load API testing."
 license = "AGPL-3.0-only"
 readme = "README.md"
 authors = ["Lythaeon"]
@@ -10,13 +10,11 @@ repository = "https://github.com/Lythaeon/strest"
 homepage = "https://github.com/Lythaeon/strest"
 documentation = "https://docs.rs/strest"
 keywords = [
-    "stress-test",
-    "stress-testing",
     "load-testing",
     "http",
-    "benchmark",
     "cli",
-    "performance"
+    "performance",
+    "stress-test"
 ]
 categories = [
     "command-line-utilities",
@@ -36,6 +34,7 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 hdrhistogram = { version = "7.5.4", features = ["serialization"] }
 base64 = "0.22.1"
+ratatui = "0.23.0"
 crossterm = "0.27.0"
 once_cell = "1.21.3"
 plotters = "0.3.7"

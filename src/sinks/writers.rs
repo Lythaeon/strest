@@ -69,6 +69,16 @@ async fn write_prometheus(config: &PrometheusSinkConfig, stats: &SinkStats) -> R
 
     write_line(
         &mut output,
+        "# HELP strest_requests_timeout_total Timed-out requests.",
+    )?;
+    write_line(&mut output, "# TYPE strest_requests_timeout_total counter")?;
+    write_line(
+        &mut output,
+        &format!("strest_requests_timeout_total {}", stats.timeout_requests),
+    )?;
+
+    write_line(
+        &mut output,
         "# HELP strest_success_rate Success rate (percentage).",
     )?;
     write_line(&mut output, "# TYPE strest_success_rate gauge")?;
@@ -155,6 +165,7 @@ async fn write_otel(config: &OtelSinkConfig, stats: &SinkStats) -> Result<(), St
             { "name": "strest.requests_total", "value": stats.total_requests },
             { "name": "strest.requests_success_total", "value": stats.successful_requests },
             { "name": "strest.requests_error_total", "value": stats.error_requests },
+            { "name": "strest.requests_timeout_total", "value": stats.timeout_requests },
             { "name": "strest.latency_min_ms", "value": stats.min_latency_ms },
             { "name": "strest.latency_avg_ms", "value": stats.avg_latency_ms },
             { "name": "strest.latency_max_ms", "value": stats.max_latency_ms },
@@ -177,11 +188,12 @@ async fn write_otel(config: &OtelSinkConfig, stats: &SinkStats) -> Result<(), St
 
 async fn write_influx(config: &InfluxSinkConfig, stats: &SinkStats) -> Result<(), String> {
     let line = format!(
-        "strest_summary duration_ms={}i,total_requests={}i,successful_requests={}i,error_requests={}i,min_latency_ms={}i,max_latency_ms={}i,avg_latency_ms={}i,p50_latency_ms={}i,p90_latency_ms={}i,p99_latency_ms={}i,success_rate={},avg_rps={},avg_rpm={}\n",
+        "strest_summary duration_ms={}i,total_requests={}i,successful_requests={}i,error_requests={}i,timeout_requests={}i,min_latency_ms={}i,max_latency_ms={}i,avg_latency_ms={}i,p50_latency_ms={}i,p90_latency_ms={}i,p99_latency_ms={}i,success_rate={},avg_rps={},avg_rpm={}\n",
         stats.duration.as_millis(),
         stats.total_requests,
         stats.successful_requests,
         stats.error_requests,
+        stats.timeout_requests,
         stats.min_latency_ms,
         stats.max_latency_ms,
         stats.avg_latency_ms,

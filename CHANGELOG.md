@@ -5,9 +5,6 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
-- Replaced the TUI charts dependency with a crossterm-rendered status view.
-- WASM loader now parses exported constants directly (no JIT backend), requiring constant `scenario_ptr`/`scenario_len`.
-
 ## 0.1.0
 
 Released: 2026-02-07
@@ -24,6 +21,8 @@ Released: 2026-02-07
 - Added log sharding via `--log-shards` to scale write throughput.
 - Added clearer runtime error reporting with non-zero exit status when logging fails.
 - Added a no-UI progress indicator using a terminal progress bar.
+- Added separate timeout counts alongside error totals in summaries and sinks.
+- Added success-only latency stats alongside overall latency metrics in summaries.
 - Added config file support (`--config`, plus `strest.toml`/`strest.json` auto-load).
 - Added load profile support in config (`[load]` with stages and ramped targets).
 - Added scenario scripts with templated payloads and per-step asserts.
@@ -55,7 +54,6 @@ Released: 2026-02-07
 - Added HTTP/3 support behind a build flag (`--features http3`, `reqwest_unstable`).
 - Added Linux systemd install/uninstall helpers (`--install-service`, `--uninstall-service`).
 - Added `--verbose` to enable debug logging for troubleshooting distributed runs.
-- Added `--verbose` to enable debug logging for troubleshooting distributed runs.
 - Fixed distributed auto controller closing agent connections before reports were sent.
 - Added `--agent-wait-timeout-ms` / `distributed.agent_wait_timeout_ms` to bound controller wait time for min agents.
 - Added aggregated charting for distributed runs (requires `--stream-summaries`).
@@ -63,5 +61,10 @@ Released: 2026-02-07
 - Added README warning about authorized use only and clearer HTTP/3/WASM guidance.
 - Added distributed agent heartbeat health checks with configurable interval/timeout.
 - Manual `/start` now supports run-only inline scenarios (no storage) and storing named scenarios when `scenario_name` is provided.
+- Updated the CLI description and help text for the expanded feature set.
+- Running `strest` with no args (or `--`) now prints help unless a default config exists.
+- Missing URL errors now emit a log entry before exiting.
+- Restored the ratatui-based TUI after the fallback UI proved unreliable.
+- Fixed the UI chart Y-axis when latency samples are zero.
 
 ## 0.0.0

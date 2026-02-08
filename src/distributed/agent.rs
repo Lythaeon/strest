@@ -307,6 +307,7 @@ async fn run_agent_run(
                         agent_id: agent_id.clone(),
                         summary: snapshot_to_wire_summary(&snapshot),
                         histogram_b64: snapshot.histogram_b64,
+                        success_histogram_b64: None,
                     }));
                     if send_wire(out_tx, message).is_err() {
                         return Err("Controller connection closed.".to_owned());
@@ -341,11 +342,16 @@ async fn run_agent_run(
         run_outcome.runtime_errors.len()
     );
     let histogram_b64 = run_outcome.histogram.encode_base64()?;
+    let success_histogram_b64 = run_outcome.success_histogram.encode_base64()?;
     let summary = WireSummary {
         duration_ms: duration_to_ms(run_outcome.summary.duration),
         total_requests: run_outcome.summary.total_requests,
         successful_requests: run_outcome.summary.successful_requests,
         error_requests: run_outcome.summary.error_requests,
+        timeout_requests: run_outcome.summary.timeout_requests,
+        success_min_latency_ms: run_outcome.summary.success_min_latency_ms,
+        success_max_latency_ms: run_outcome.summary.success_max_latency_ms,
+        success_latency_sum_ms: run_outcome.success_latency_sum_ms,
         min_latency_ms: run_outcome.summary.min_latency_ms,
         max_latency_ms: run_outcome.summary.max_latency_ms,
         latency_sum_ms: run_outcome.latency_sum_ms,
@@ -356,6 +362,7 @@ async fn run_agent_run(
         agent_id,
         summary,
         histogram_b64,
+        success_histogram_b64: Some(success_histogram_b64),
         runtime_errors: run_outcome.runtime_errors,
     };
     debug!("Sending report for run {}", report.run_id);
@@ -377,6 +384,10 @@ fn snapshot_to_wire_summary(snapshot: &StreamSnapshot) -> WireSummary {
         total_requests: snapshot.total_requests,
         successful_requests: snapshot.successful_requests,
         error_requests: snapshot.error_requests,
+        timeout_requests: snapshot.timeout_requests,
+        success_min_latency_ms: snapshot.success_min_latency_ms,
+        success_max_latency_ms: snapshot.success_max_latency_ms,
+        success_latency_sum_ms: snapshot.success_latency_sum_ms,
         min_latency_ms: snapshot.min_latency_ms,
         max_latency_ms: snapshot.max_latency_ms,
         latency_sum_ms: snapshot.latency_sum_ms,

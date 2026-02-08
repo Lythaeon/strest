@@ -30,6 +30,7 @@ pub struct SinkStats {
     pub total_requests: u64,
     pub successful_requests: u64,
     pub error_requests: u64,
+    pub timeout_requests: u64,
     pub min_latency_ms: u64,
     pub max_latency_ms: u64,
     pub avg_latency_ms: u64,

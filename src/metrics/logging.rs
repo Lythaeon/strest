@@ -54,7 +54,9 @@ pub struct LogResult {
     pub summary: MetricsSummary,
     pub metrics_truncated: bool,
     pub latency_sum_ms: u128,
+    pub success_latency_sum_ms: u128,
     pub histogram: LatencyHistogram,
+    pub success_histogram: LatencyHistogram,
 }
 
 #[derive(Debug, Clone)]
@@ -86,12 +88,17 @@ pub fn setup_metrics_logger(
         let mut metrics_truncated = false;
         let collect_records = config.metrics_max > 0;
         let mut histogram = LatencyHistogram::new()?;
+        let mut success_histogram = LatencyHistogram::new()?;
 
         let mut total_requests: u64 = 0;
         let mut successful_requests: u64 = 0;
+        let mut timeout_requests: u64 = 0;
         let mut latency_sum_ms: u128 = 0;
+        let mut success_latency_sum_ms: u128 = 0;
         let mut min_latency_ms: u64 = u64::MAX;
         let mut max_latency_ms: u64 = 0;
+        let mut success_min_latency_ms: u64 = u64::MAX;
+        let mut success_max_latency_ms: u64 = 0;
         let mut max_elapsed_ms: u64 = 0;
 
         while let Some(msg) = log_rx.recv().await {
@@ -109,8 +116,11 @@ pub fn setup_metrics_logger(
 
             if writeln!(
                 &mut buffer,
-                "{},{},{}",
-                elapsed_ms, latency_ms, msg.status_code
+                "{},{},{},{}",
+                elapsed_ms,
+                latency_ms,
+                msg.status_code,
+                u8::from(msg.timed_out)
             )
             .is_err()
             {
@@ -126,8 +136,20 @@ pub fn setup_metrics_logger(
             }
 
             total_requests = total_requests.saturating_add(1);
-            if msg.status_code == config.expected_status_code {
+            if msg.status_code == config.expected_status_code && !msg.timed_out {
                 successful_requests = successful_requests.saturating_add(1);
+                success_latency_sum_ms =
+                    success_latency_sum_ms.saturating_add(u128::from(latency_ms));
+                if latency_ms < success_min_latency_ms {
+                    success_min_latency_ms = latency_ms;
+                }
+                if latency_ms > success_max_latency_ms {
+                    success_max_latency_ms = latency_ms;
+                }
+                success_histogram.record(latency_ms)?;
+            }
+            if msg.timed_out {
+                timeout_requests = timeout_requests.saturating_add(1);
             }
             latency_sum_ms = latency_sum_ms.saturating_add(u128::from(latency_ms));
             if latency_ms < min_latency_ms {
@@ -185,6 +207,24 @@ pub fn setup_metrics_logger(
         } else {
             0
         };
+        let success_avg_latency_ms = if successful_requests > 0 {
+            let avg = success_latency_sum_ms
+                .checked_div(u128::from(successful_requests))
+                .unwrap_or(0);
+            u64::try_from(avg).map_or(u64::MAX, |value| value)
+        } else {
+            0
+        };
+        let success_min_latency_ms = if successful_requests > 0 {
+            success_min_latency_ms
+        } else {
+            0
+        };
+        let success_max_latency_ms = if successful_requests > 0 {
+            success_max_latency_ms
+        } else {
+            0
+        };
         let error_requests = total_requests.saturating_sub(successful_requests);
 
         Ok(LogResult {
@@ -194,13 +234,19 @@ pub fn setup_metrics_logger(
                 total_requests,
                 successful_requests,
                 error_requests,
+                timeout_requests,
                 min_latency_ms,
                 max_latency_ms,
                 avg_latency_ms,
+                success_min_latency_ms,
+                success_max_latency_ms,
+                success_avg_latency_ms,
             },
             metrics_truncated,
             latency_sum_ms,
+            success_latency_sum_ms,
             histogram,
+            success_histogram,
         })
     })
 }
@@ -231,12 +277,17 @@ pub async fn read_metrics_log(
     let mut metrics_truncated = false;
     let collect_records = metrics_max > 0;
     let mut histogram = LatencyHistogram::new()?;
+    let mut success_histogram = LatencyHistogram::new()?;
 
     let mut total_requests: u64 = 0;
     let mut successful_requests: u64 = 0;
+    let mut timeout_requests: u64 = 0;
     let mut latency_sum_ms: u128 = 0;
+    let mut success_latency_sum_ms: u128 = 0;
     let mut min_latency_ms: u64 = u64::MAX;
     let mut max_latency_ms: u64 = 0;
+    let mut success_min_latency_ms: u64 = u64::MAX;
+    let mut success_max_latency_ms: u64 = 0;
     let mut max_elapsed_ms: u64 = 0;
 
     loop {
@@ -267,10 +318,25 @@ pub async fn read_metrics_log(
             Some(value) => value,
             None => continue,
         };
+        let timed_out = parts
+            .next()
+            .and_then(|value| value.parse::<u8>().ok())
+            .is_some_and(|value| value != 0);
 
         total_requests = total_requests.saturating_add(1);
-        if status_code == expected_status_code {
+        if status_code == expected_status_code && !timed_out {
             successful_requests = successful_requests.saturating_add(1);
+            success_latency_sum_ms = success_latency_sum_ms.saturating_add(u128::from(latency_ms));
+            if latency_ms < success_min_latency_ms {
+                success_min_latency_ms = latency_ms;
+            }
+            if latency_ms > success_max_latency_ms {
+                success_max_latency_ms = latency_ms;
+            }
+            success_histogram.record(latency_ms)?;
+        }
+        if timed_out {
+            timeout_requests = timeout_requests.saturating_add(1);
         }
         latency_sum_ms = latency_sum_ms.saturating_add(u128::from(latency_ms));
         if latency_ms < min_latency_ms {
@@ -319,6 +385,24 @@ pub async fn read_metrics_log(
     } else {
         0
     };
+    let success_avg_latency_ms = if successful_requests > 0 {
+        let avg = success_latency_sum_ms
+            .checked_div(u128::from(successful_requests))
+            .unwrap_or(0);
+        u64::try_from(avg).map_or(u64::MAX, |value| value)
+    } else {
+        0
+    };
+    let success_min_latency_ms = if successful_requests > 0 {
+        success_min_latency_ms
+    } else {
+        0
+    };
+    let success_max_latency_ms = if successful_requests > 0 {
+        success_max_latency_ms
+    } else {
+        0
+    };
     let error_requests = total_requests.saturating_sub(successful_requests);
 
     Ok(LogResult {
@@ -328,12 +412,18 @@ pub async fn read_metrics_log(
             total_requests,
             successful_requests,
             error_requests,
+            timeout_requests,
             min_latency_ms,
             max_latency_ms,
             avg_latency_ms,
+            success_min_latency_ms,
+            success_max_latency_ms,
+            success_avg_latency_ms,
         },
         metrics_truncated,
         latency_sum_ms,
+        success_latency_sum_ms,
         histogram,
+        success_histogram,
     })
 }

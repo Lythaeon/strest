@@ -24,12 +24,17 @@ const STREAM_UPDATE_INTERVAL: Duration = Duration::from_secs(1);
 struct UiAggregationState {
     current_requests: u64,
     successful_requests: u64,
+    timeout_requests: u64,
     latency_sum_ms: u128,
+    success_latency_sum_ms: u128,
     min_latency_ms: u64,
     max_latency_ms: u64,
+    success_min_latency_ms: u64,
+    success_max_latency_ms: u64,
     latency_window: VecDeque<(Instant, u64)>,
     rps_window: VecDeque<(Instant, u64)>,
     histogram: Option<LatencyHistogram>,
+    success_histogram: Option<LatencyHistogram>,
 }
 
 impl UiAggregationState {
@@ -41,16 +46,28 @@ impl UiAggregationState {
                 None
             }
         };
+        let success_histogram = match LatencyHistogram::new() {
+            Ok(success_histogram) => Some(success_histogram),
+            Err(err) => {
+                tracing::warn!("Failed to initialize success latency histogram: {}", err);
+                None
+            }
+        };
 
         Self {
             current_requests: 0,
             successful_requests: 0,
+            timeout_requests: 0,
             latency_sum_ms: 0,
+            success_latency_sum_ms: 0,
             min_latency_ms: u64::MAX,
             max_latency_ms: 0,
+            success_min_latency_ms: u64::MAX,
+            success_max_latency_ms: 0,
             latency_window: VecDeque::new(),
             rps_window: VecDeque::new(),
             histogram,
+            success_histogram,
         }
     }
 }
@@ -228,8 +245,27 @@ pub fn setup_metrics_collector(
         } else {
             0
         };
+        let success_avg_latency_ms = if state.successful_requests > 0 {
+            let avg = state
+                .success_latency_sum_ms
+                .checked_div(u128::from(state.successful_requests))
+                .unwrap_or(0);
+            u64::try_from(avg).map_or(u64::MAX, |value| value)
+        } else {
+            0
+        };
         let min_latency_ms = if state.current_requests > 0 {
             state.min_latency_ms
+        } else {
+            0
+        };
+        let success_min_latency_ms = if state.successful_requests > 0 {
+            state.success_min_latency_ms
+        } else {
+            0
+        };
+        let success_max_latency_ms = if state.successful_requests > 0 {
+            state.success_max_latency_ms
         } else {
             0
         };
@@ -243,9 +279,13 @@ pub fn setup_metrics_collector(
                 total_requests: state.current_requests,
                 successful_requests: state.successful_requests,
                 error_requests,
+                timeout_requests: state.timeout_requests,
                 min_latency_ms,
                 max_latency_ms: state.max_latency_ms,
                 avg_latency_ms,
+                success_min_latency_ms,
+                success_max_latency_ms,
+                success_avg_latency_ms,
             },
         }
     })
@@ -271,8 +311,26 @@ fn process_metric_ui(
 
     state.current_requests = state.current_requests.saturating_add(1);
 
-    if status_code == expected_status_code {
+    if status_code == expected_status_code && !msg.timed_out {
         state.successful_requests = state.successful_requests.saturating_add(1);
+        state.success_latency_sum_ms = state
+            .success_latency_sum_ms
+            .saturating_add(u128::from(latency_ms));
+        if latency_ms < state.success_min_latency_ms {
+            state.success_min_latency_ms = latency_ms;
+        }
+        if latency_ms > state.success_max_latency_ms {
+            state.success_max_latency_ms = latency_ms;
+        }
+        if let Some(histogram) = state.success_histogram.as_mut()
+            && let Err(err) = histogram.record(latency_ms)
+        {
+            tracing::warn!("Disabling success latency histogram after error: {}", err);
+            state.success_histogram = None;
+        }
+    }
+    if msg.timed_out {
+        state.timeout_requests = state.timeout_requests.saturating_add(1);
     }
 
     state.latency_window.push_back((now, latency_ms));
@@ -358,6 +416,7 @@ fn build_sink_stats(state: &UiAggregationState, duration: Duration) -> SinkStats
         total_requests,
         successful_requests,
         error_requests,
+        timeout_requests: state.timeout_requests,
         min_latency_ms,
         max_latency_ms,
         avg_latency_ms,
@@ -393,15 +452,29 @@ fn build_stream_snapshot(state: &UiAggregationState, duration: Duration) -> Opti
     } else {
         0
     };
+    let success_min_latency_ms = if successful_requests > 0 {
+        state.success_min_latency_ms
+    } else {
+        0
+    };
+    let success_max_latency_ms = if successful_requests > 0 {
+        state.success_max_latency_ms
+    } else {
+        0
+    };
 
     Some(StreamSnapshot {
         duration,
         total_requests,
         successful_requests,
         error_requests,
+        timeout_requests: state.timeout_requests,
         min_latency_ms,
         max_latency_ms,
         latency_sum_ms: state.latency_sum_ms,
+        success_min_latency_ms,
+        success_max_latency_ms,
+        success_latency_sum_ms: state.success_latency_sum_ms,
         histogram_b64,
     })
 }

@@ -109,6 +109,7 @@ enum ControlCommand {
 struct AgentSnapshot {
     summary: WireSummary,
     histogram: LatencyHistogram,
+    success_histogram: LatencyHistogram,
 }
 
 enum AgentEvent {
@@ -505,8 +506,9 @@ async fn run_controller_auto(args: &TesterArgs) -> Result<(), String> {
 
     if agent_states.is_empty() {
         runtime_errors.push("No successful agent reports received.".to_owned());
-    } else if let Ok((summary, merged_hist)) = aggregate_snapshots(&agent_states) {
+    } else if let Ok((summary, merged_hist, success_hist)) = aggregate_snapshots(&agent_states) {
         let (p50, p90, p99) = merged_hist.percentiles();
+        let (success_p50, success_p90, success_p99) = success_hist.percentiles();
         let stats = compute_summary_stats(&summary);
         let mut charts_written = false;
         if charts_enabled {
@@ -516,7 +518,17 @@ async fn run_controller_auto(args: &TesterArgs) -> Result<(), String> {
             }
         }
 
-        print_summary(&summary, p50, p90, p99, args, charts_written);
+        print_summary(
+            &summary,
+            p50,
+            p90,
+            p99,
+            success_p50,
+            success_p90,
+            success_p99,
+            args,
+            charts_written,
+        );
 
         if let Some(sinks) = args.sinks.as_ref() {
             let sink_stats = SinkStats {
@@ -524,6 +536,7 @@ async fn run_controller_auto(args: &TesterArgs) -> Result<(), String> {
                 total_requests: summary.total_requests,
                 successful_requests: summary.successful_requests,
                 error_requests: summary.error_requests,
+                timeout_requests: summary.timeout_requests,
                 min_latency_ms: summary.min_latency_ms,
                 max_latency_ms: summary.max_latency_ms,
                 avg_latency_ms: summary.avg_latency_ms,
@@ -1587,8 +1600,11 @@ async fn finalize_manual_run(args: &TesterArgs, state: &mut ManualRunState) -> R
         state
             .runtime_errors
             .push("No successful agent reports received.".to_owned());
-    } else if let Ok((summary, merged_hist)) = aggregate_snapshots(&state.agent_states) {
+    } else if let Ok((summary, merged_hist, success_hist)) =
+        aggregate_snapshots(&state.agent_states)
+    {
         let (p50, p90, p99) = merged_hist.percentiles();
+        let (success_p50, success_p90, success_p99) = success_hist.percentiles();
         let stats = compute_summary_stats(&summary);
         let mut charts_written = false;
         if state.charts_enabled {
@@ -1598,7 +1614,17 @@ async fn finalize_manual_run(args: &TesterArgs, state: &mut ManualRunState) -> R
             }
         }
 
-        print_summary(&summary, p50, p90, p99, args, charts_written);
+        print_summary(
+            &summary,
+            p50,
+            p90,
+            p99,
+            success_p50,
+            success_p90,
+            success_p99,
+            args,
+            charts_written,
+        );
 
         if let Some(sinks) = args.sinks.as_ref() {
             let sink_stats = SinkStats {
@@ -1606,6 +1632,7 @@ async fn finalize_manual_run(args: &TesterArgs, state: &mut ManualRunState) -> R
                 total_requests: summary.total_requests,
                 successful_requests: summary.successful_requests,
                 error_requests: summary.error_requests,
+                timeout_requests: summary.timeout_requests,
                 min_latency_ms: summary.min_latency_ms,
                 max_latency_ms: summary.max_latency_ms,
                 avg_latency_ms: summary.avg_latency_ms,
@@ -1668,11 +1695,34 @@ fn handle_agent_event(
             }
             match LatencyHistogram::decode_base64(&message.histogram_b64) {
                 Ok(histogram) => {
+                    let success_histogram = match message.success_histogram_b64.as_deref() {
+                        Some(encoded) => match LatencyHistogram::decode_base64(encoded) {
+                            Ok(success_histogram) => success_histogram,
+                            Err(err) => {
+                                runtime_errors.push(format!(
+                                    "Agent {} success histogram decode failed: {}",
+                                    agent_id, err
+                                ));
+                                return;
+                            }
+                        },
+                        None => match LatencyHistogram::new() {
+                            Ok(success_histogram) => success_histogram,
+                            Err(err) => {
+                                runtime_errors.push(format!(
+                                    "Agent {} success histogram init failed: {}",
+                                    agent_id, err
+                                ));
+                                return;
+                            }
+                        },
+                    };
                     agent_states.insert(
                         agent_id,
                         AgentSnapshot {
                             summary: message.summary,
                             histogram,
+                            success_histogram,
                         },
                     );
                     *sink_dirty = true;
@@ -1708,11 +1758,34 @@ fn handle_agent_event(
             }
             match LatencyHistogram::decode_base64(&message.histogram_b64) {
                 Ok(histogram) => {
+                    let success_histogram = match message.success_histogram_b64.as_deref() {
+                        Some(encoded) => match LatencyHistogram::decode_base64(encoded) {
+                            Ok(success_histogram) => success_histogram,
+                            Err(err) => {
+                                runtime_errors.push(format!(
+                                    "Agent {} success histogram decode failed: {}",
+                                    agent_id, err
+                                ));
+                                return;
+                            }
+                        },
+                        None => match LatencyHistogram::new() {
+                            Ok(success_histogram) => success_histogram,
+                            Err(err) => {
+                                runtime_errors.push(format!(
+                                    "Agent {} success histogram init failed: {}",
+                                    agent_id, err
+                                ));
+                                return;
+                            }
+                        },
+                    };
                     agent_states.insert(
                         agent_id.clone(),
                         AgentSnapshot {
                             summary: message.summary,
                             histogram,
+                            success_histogram,
                         },
                     );
                     *sink_dirty = true;
@@ -1754,7 +1827,7 @@ fn update_ui(
     agent_states: &HashMap<String, AgentSnapshot>,
     latency_window: &mut VecDeque<(u64, u64)>,
 ) {
-    let Ok((summary, merged_hist)) = aggregate_snapshots(agent_states) else {
+    let Ok((summary, merged_hist, _success_hist)) = aggregate_snapshots(agent_states) else {
         return;
     };
     let (p50, p90, p99) = merged_hist.percentiles();
@@ -1791,7 +1864,7 @@ async fn write_streaming_sinks(
     if agent_states.is_empty() {
         return Ok(());
     }
-    let (summary, merged_hist) = aggregate_snapshots(agent_states)?;
+    let (summary, merged_hist, _success_hist) = aggregate_snapshots(agent_states)?;
     let (p50, p90, p99) = merged_hist.percentiles();
     let stats = compute_summary_stats(&summary);
     if let Some(sinks) = args.sinks.as_ref() {
@@ -1800,6 +1873,7 @@ async fn write_streaming_sinks(
             total_requests: summary.total_requests,
             successful_requests: summary.successful_requests,
             error_requests: summary.error_requests,
+            timeout_requests: summary.timeout_requests,
             min_latency_ms: summary.min_latency_ms,
             max_latency_ms: summary.max_latency_ms,
             avg_latency_ms: summary.avg_latency_ms,
@@ -1819,21 +1893,34 @@ async fn write_streaming_sinks(
 
 fn aggregate_snapshots(
     agent_states: &HashMap<String, AgentSnapshot>,
-) -> Result<(crate::metrics::MetricsSummary, LatencyHistogram), String> {
+) -> Result<
+    (
+        crate::metrics::MetricsSummary,
+        LatencyHistogram,
+        LatencyHistogram,
+    ),
+    String,
+> {
     let mut summaries = Vec::with_capacity(agent_states.len());
     let mut merged_hist = LatencyHistogram::new()?;
+    let mut merged_success_hist = LatencyHistogram::new()?;
     for snapshot in agent_states.values() {
         summaries.push(snapshot.summary.clone());
         merged_hist.merge(&snapshot.histogram)?;
+        merged_success_hist.merge(&snapshot.success_histogram)?;
     }
-    Ok((merge_summaries(&summaries), merged_hist))
+    Ok((
+        merge_summaries(&summaries),
+        merged_hist,
+        merged_success_hist,
+    ))
 }
 
 fn record_aggregated_sample(
     samples: &mut Vec<AggregatedMetricSample>,
     agent_states: &HashMap<String, AgentSnapshot>,
 ) {
-    let Ok((summary, merged_hist)) = aggregate_snapshots(agent_states) else {
+    let Ok((summary, merged_hist, _success_hist)) = aggregate_snapshots(agent_states) else {
         return;
     };
     let (p50, p90, p99) = merged_hist.percentiles();
@@ -2218,6 +2305,10 @@ mod tests {
             total_requests: 10,
             successful_requests: 9,
             error_requests: 1,
+            timeout_requests: 1,
+            success_min_latency_ms: 10,
+            success_max_latency_ms: 50,
+            success_latency_sum_ms: 900,
             min_latency_ms: 10,
             max_latency_ms: 50,
             latency_sum_ms: 1000,
@@ -2227,6 +2318,10 @@ mod tests {
             total_requests: 20,
             successful_requests: 19,
             error_requests: 1,
+            timeout_requests: 2,
+            success_min_latency_ms: 5,
+            success_max_latency_ms: 40,
+            success_latency_sum_ms: 1900,
             min_latency_ms: 5,
             max_latency_ms: 40,
             latency_sum_ms: 600,
@@ -2234,6 +2329,8 @@ mod tests {
 
         let hist_a = build_hist(&[10, 20])?;
         let hist_b = build_hist(&[30, 40])?;
+        let success_hist_a = build_hist(&[10, 20])?;
+        let success_hist_b = build_hist(&[30, 40])?;
 
         let mut agent_states = HashMap::new();
         agent_states.insert(
@@ -2241,6 +2338,7 @@ mod tests {
             AgentSnapshot {
                 summary: summary_a,
                 histogram: hist_a,
+                success_histogram: success_hist_a,
             },
         );
         agent_states.insert(
@@ -2248,10 +2346,11 @@ mod tests {
             AgentSnapshot {
                 summary: summary_b,
                 histogram: hist_b,
+                success_histogram: success_hist_b,
             },
         );
 
-        let (summary, merged_hist) = aggregate_snapshots(&agent_states)?;
+        let (summary, merged_hist, _success_hist) = aggregate_snapshots(&agent_states)?;
         if summary.total_requests != 30 {
             return Err(format!(
                 "Unexpected total_requests: {}",
@@ -2268,6 +2367,18 @@ mod tests {
             return Err(format!(
                 "Unexpected error_requests: {}",
                 summary.error_requests
+            ));
+        }
+        if summary.timeout_requests != 3 {
+            return Err(format!(
+                "Unexpected timeout_requests: {}",
+                summary.timeout_requests
+            ));
+        }
+        if summary.success_avg_latency_ms != 100 {
+            return Err(format!(
+                "Unexpected success_avg_latency_ms: {}",
+                summary.success_avg_latency_ms
             ));
         }
         if summary.min_latency_ms != 5 {
@@ -2307,11 +2418,16 @@ mod tests {
             total_requests: 10,
             successful_requests: 9,
             error_requests: 1,
+            timeout_requests: 0,
+            success_min_latency_ms: 10,
+            success_max_latency_ms: 50,
+            success_latency_sum_ms: 900,
             min_latency_ms: 10,
             max_latency_ms: 50,
             latency_sum_ms: 1000,
         };
         let hist = build_hist(&[10, 20, 30])?;
+        let success_hist = build_hist(&[10, 20, 30])?;
 
         let mut agent_states = HashMap::new();
         agent_states.insert(
@@ -2319,6 +2435,7 @@ mod tests {
             AgentSnapshot {
                 summary,
                 histogram: hist,
+                success_histogram: success_hist,
             },
         );
 

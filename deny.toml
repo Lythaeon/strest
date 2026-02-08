@@ -5,7 +5,10 @@
 all-features = true
 
 [advisories]
-ignore = []
+ignore = [
+    # paste is a transitive dependency of ratatui; no safe upgrade is available.
+    "RUSTSEC-2024-0436",
+]
 
 [licenses]
 confidence-threshold = 0.93

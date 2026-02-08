@@ -54,6 +54,8 @@ pub(super) struct ReportMessage {
     pub(super) agent_id: String,
     pub(super) summary: WireSummary,
     pub(super) histogram_b64: String,
+    #[serde(default)]
+    pub(super) success_histogram_b64: Option<String>,
     pub(super) runtime_errors: Vec<String>,
 }
 
@@ -63,6 +65,8 @@ pub(super) struct StreamMessage {
     pub(super) agent_id: String,
     pub(super) summary: WireSummary,
     pub(super) histogram_b64: String,
+    #[serde(default)]
+    pub(super) success_histogram_b64: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -151,6 +155,14 @@ pub(super) struct WireSummary {
     pub(super) total_requests: u64,
     pub(super) successful_requests: u64,
     pub(super) error_requests: u64,
+    #[serde(default)]
+    pub(super) timeout_requests: u64,
+    #[serde(default)]
+    pub(super) success_min_latency_ms: u64,
+    #[serde(default)]
+    pub(super) success_max_latency_ms: u64,
+    #[serde(default, with = "serde_u128")]
+    pub(super) success_latency_sum_ms: u128,
     pub(super) min_latency_ms: u64,
     pub(super) max_latency_ms: u64,
     #[serde(with = "serde_u128")]

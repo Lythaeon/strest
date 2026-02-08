@@ -13,7 +13,10 @@ use super::types::{
 };
 
 #[derive(Debug, Parser, Clone)]
-#[clap(version, about = "Simple HTTP stress tester")]
+#[clap(
+    version,
+    about = "Blazing-fast async HTTP load tester in Rust - lock-free design, real-time stats, distributed runs, and optional chart exports for high-load API testing."
+)]
 pub struct TesterArgs {
     /// HTTP method to use
     #[arg(long, short = 'X', default_value = "get", ignore_case = true)]

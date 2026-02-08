@@ -1,12 +1,18 @@
 use crossterm::{
-    cursor, execute,
-    terminal::{
-        Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
-        enable_raw_mode,
-    },
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+};
+use ratatui::{
+    Terminal,
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
+    prelude::{Backend, text},
+    style::{Color, Style},
+    text::Span,
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
 use std::error::Error;
-use std::io::{self, Write};
+use std::io;
 use tokio::sync::{
     broadcast::{self},
     watch,
@@ -16,40 +22,35 @@ use crate::args::TesterArgs;
 
 use super::model::{UiData, UiRenderData};
 
-pub struct UiTerminal {
-    stdout: io::Stdout,
-}
-
-impl UiTerminal {
-    fn new() -> Self {
-        Self {
-            stdout: io::stdout(),
-        }
-    }
-}
-
 pub trait UiActions {
     /// Initializes the terminal for UI rendering.
     ///
     /// # Errors
     ///
     /// Returns an error when terminal setup fails.
-    fn setup_terminal() -> Result<UiTerminal, Box<dyn Error>>;
+    fn setup_terminal() -> Result<Terminal<CrosstermBackend<std::io::Stdout>>, Box<dyn Error>>;
     fn cleanup();
-    fn render(terminal: &mut UiTerminal, data: &UiRenderData);
+    fn render<B: Backend>(terminal: &mut Terminal<B>, data: &UiRenderData);
 }
 
 pub struct Ui;
 
 impl UiActions for Ui {
-    fn setup_terminal() -> Result<UiTerminal, Box<dyn Error>> {
+    fn setup_terminal() -> Result<Terminal<CrosstermBackend<std::io::Stdout>>, Box<dyn Error>> {
         enable_raw_mode()?;
         if let Err(err) = execute!(io::stdout(), EnterAlternateScreen) {
             disable_raw_mode().ok();
             return Err(err.into());
         }
 
-        Ok(UiTerminal::new())
+        let backend = CrosstermBackend::new(io::stdout());
+        match Terminal::new(backend) {
+            Ok(terminal) => Ok(terminal),
+            Err(err) => {
+                Self::cleanup();
+                Err(err.into())
+            }
+        }
     }
 
     fn cleanup() {
@@ -57,79 +58,137 @@ impl UiActions for Ui {
         execute!(std::io::stdout(), LeaveAlternateScreen).ok();
     }
 
-    fn render(terminal: &mut UiTerminal, data: &UiRenderData) {
-        let width = crossterm::terminal::size()
-            .map(|(cols, _)| usize::from(cols))
-            .unwrap_or(80);
-        let lines = format_lines(data, width);
+    fn render<B: Backend>(terminal: &mut Terminal<B>, data: &UiRenderData) {
+        if let Err(err) = terminal.draw(|f| {
+            let size = f.size();
 
-        if execute!(terminal.stdout, cursor::MoveTo(0, 0), Clear(ClearType::All)).is_err() {
-            eprintln!("Failed to clear UI terminal.");
-            return;
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(1)
+                .constraints([
+                    Constraint::Length(5),
+                    Constraint::Length(5),
+                    Constraint::Min(10),
+                ])
+                .split(size);
+
+            let (stats_chunk, percentiles_chunk, chart_chunk) = match chunks.as_ref() {
+                [a, b, c] => (a, b, c),
+                _ => return,
+            };
+
+            let stats_text = Paragraph::new(vec![
+                text::Line::from(vec![
+                    Span::from("Elapsed Time: "),
+                    Span::styled(
+                        format!("{:.2}s", data.elapsed_time.as_secs_f64()),
+                        Style::default().fg(Color::Green),
+                    ),
+                    Span::from("   Target: "),
+                    Span::styled(
+                        format!("{}s", data.target_duration.as_secs()),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                ]),
+                text::Line::from(vec![
+                    Span::from("Requests: "),
+                    Span::styled(
+                        data.current_request.to_string(),
+                        Style::default().fg(Color::LightBlue),
+                    ),
+                    Span::from("   Success: "),
+                    Span::styled(
+                        data.successful_requests.to_string(),
+                        Style::default().fg(Color::Magenta),
+                    ),
+                ]),
+                text::Line::from(vec![
+                    Span::from("RPS: "),
+                    Span::styled(format!("{}", data.rps), Style::default().fg(Color::Cyan)),
+                    Span::from("   RPM: "),
+                    Span::styled(format!("{}", data.rpm), Style::default().fg(Color::Cyan)),
+                ]),
+            ])
+            .block(Block::default().title("Stats").borders(Borders::ALL))
+            .wrap(Wrap { trim: true });
+
+            f.render_widget(stats_text, *stats_chunk);
+
+            let percentiles_text = Paragraph::new(vec![text::Line::from(vec![
+                Span::from("P50: "),
+                Span::styled(format!("{}ms", data.p50), Style::default().fg(Color::Green)),
+                Span::from("   P90: "),
+                Span::styled(
+                    format!("{}ms", data.p90),
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::from("   P99: "),
+                Span::styled(format!("{}ms", data.p99), Style::default().fg(Color::Red)),
+            ])])
+            .block(
+                Block::default()
+                    .title("Latency Percentiles")
+                    .borders(Borders::ALL),
+            )
+            .wrap(Wrap { trim: true });
+
+            f.render_widget(percentiles_text, *percentiles_chunk);
+
+            let data_points: Vec<(u64, u64)> = data.latencies.clone();
+            let y_max = data
+                .latencies
+                .iter()
+                .map(|(_, latency)| (*latency).max(1))
+                .fold(1, u64::max)
+                .max(10);
+            let x_max = data_points
+                .last()
+                .map(|(x, _)| x.saturating_add(1))
+                .unwrap_or(1);
+            let x_min = x_max.saturating_sub(10_000);
+
+            let chart_points: Vec<(f64, f64)> = data_points
+                .iter()
+                .map(|(x, y)| (*x as f64, (*y).max(1) as f64))
+                .collect();
+            let datasets = vec![
+                ratatui::widgets::Dataset::default()
+                    .name("Latency Chart")
+                    .marker(ratatui::symbols::Marker::Dot)
+                    .style(Style::default().fg(Color::Cyan))
+                    .data(&chart_points),
+            ];
+
+            let chart = ratatui::widgets::Chart::new(datasets)
+                .block(Block::default().borders(Borders::ALL))
+                .x_axis(
+                    ratatui::widgets::Axis::default()
+                        .title("Window Second")
+                        .style(Style::default().fg(Color::Gray))
+                        .bounds([x_min as f64, x_max as f64])
+                        .labels(vec![
+                            Span::raw(format!("{}s", x_min / 1000)),
+                            Span::raw(format!("{}s", x_min.saturating_add(x_max) / 2 / 1000)),
+                            Span::raw(format!("{}s", x_max / 1000)),
+                        ]),
+                )
+                .y_axis(
+                    ratatui::widgets::Axis::default()
+                        .title("Latency (ms)")
+                        .style(Style::default().fg(Color::Gray))
+                        .bounds([0.0, y_max as f64])
+                        .labels(vec![
+                            Span::raw("0"),
+                            Span::raw(format!("{}", y_max / 2)),
+                            Span::raw(format!("{}", y_max)),
+                        ]),
+                );
+
+            f.render_widget(chart, *chart_chunk);
+        }) {
+            eprintln!("Failed to render UI: {}", err);
         }
-
-        for mut line in lines {
-            if line.len() > width {
-                line.truncate(width);
-            }
-            if writeln!(terminal.stdout, "{}", line).is_err() {
-                eprintln!("Failed to render UI.");
-                return;
-            }
-        }
-
-        terminal.stdout.flush().ok();
     }
-}
-
-pub(crate) fn format_lines(data: &UiRenderData, width: usize) -> Vec<String> {
-    let mut lines = Vec::with_capacity(5);
-    lines.push(format!(
-        "Elapsed: {:.2}s   Target: {}s",
-        data.elapsed_time.as_secs_f64(),
-        data.target_duration.as_secs()
-    ));
-    lines.push(format!(
-        "Requests: {}   Success: {}",
-        data.current_request, data.successful_requests
-    ));
-    lines.push(format!("RPS: {}   RPM: {}", data.rps, data.rpm));
-    lines.push(format!(
-        "P50: {}ms   P90: {}ms   P99: {}ms",
-        data.p50, data.p90, data.p99
-    ));
-    lines.push(format_latency_line(&data.latencies, width));
-    lines
-}
-
-fn format_latency_line(latencies: &[(u64, u64)], width: usize) -> String {
-    if latencies.is_empty() {
-        return "Latencies (ms): <no data>".to_owned();
-    }
-
-    let prefix = "Latencies (ms):";
-    let usable = width.saturating_sub(prefix.len().saturating_add(1));
-    let max_points = (usable / 4).max(1);
-    let mut points: Vec<u64> = latencies
-        .iter()
-        .rev()
-        .take(max_points)
-        .map(|(_, latency)| *latency)
-        .collect();
-    points.reverse();
-
-    let capacity = prefix
-        .len()
-        .saturating_add(points.len().saturating_mul(4))
-        .saturating_add(1);
-    let mut line = String::with_capacity(capacity);
-    line.push_str(prefix);
-    for value in points {
-        line.push(' ');
-        line.push_str(&value.to_string());
-    }
-
-    line
 }
 
 struct TerminalGuard;

@@ -42,6 +42,10 @@ pub(crate) async fn export_json(
         "total_requests": summary.total_requests,
         "successful_requests": summary.successful_requests,
         "error_requests": summary.error_requests,
+        "timeout_requests": summary.timeout_requests,
+        "success_min_latency_ms": summary.success_min_latency_ms,
+        "success_max_latency_ms": summary.success_max_latency_ms,
+        "success_avg_latency_ms": summary.success_avg_latency_ms,
         "min_latency_ms": summary.min_latency_ms,
         "max_latency_ms": summary.max_latency_ms,
         "avg_latency_ms": summary.avg_latency_ms
