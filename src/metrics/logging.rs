@@ -99,6 +99,8 @@ pub fn setup_metrics_logger(
         let mut max_latency_ms: u64 = 0;
         let mut success_min_latency_ms: u64 = u64::MAX;
         let mut success_max_latency_ms: u64 = 0;
+        let mut transport_errors: u64 = 0;
+        let mut non_expected_status: u64 = 0;
         let mut max_elapsed_ms: u64 = 0;
 
         while let Some(msg) = log_rx.recv().await {
@@ -116,11 +118,12 @@ pub fn setup_metrics_logger(
 
             if writeln!(
                 &mut buffer,
-                "{},{},{},{}",
+                "{},{},{},{},{}",
                 elapsed_ms,
                 latency_ms,
                 msg.status_code,
-                u8::from(msg.timed_out)
+                u8::from(msg.timed_out),
+                u8::from(msg.transport_error)
             )
             .is_err()
             {
@@ -136,7 +139,10 @@ pub fn setup_metrics_logger(
             }
 
             total_requests = total_requests.saturating_add(1);
-            if msg.status_code == config.expected_status_code && !msg.timed_out {
+            if msg.status_code == config.expected_status_code
+                && !msg.timed_out
+                && !msg.transport_error
+            {
                 successful_requests = successful_requests.saturating_add(1);
                 success_latency_sum_ms =
                     success_latency_sum_ms.saturating_add(u128::from(latency_ms));
@@ -150,6 +156,10 @@ pub fn setup_metrics_logger(
             }
             if msg.timed_out {
                 timeout_requests = timeout_requests.saturating_add(1);
+            } else if msg.transport_error {
+                transport_errors = transport_errors.saturating_add(1);
+            } else if msg.status_code != config.expected_status_code {
+                non_expected_status = non_expected_status.saturating_add(1);
             }
             latency_sum_ms = latency_sum_ms.saturating_add(u128::from(latency_ms));
             if latency_ms < min_latency_ms {
@@ -175,6 +185,8 @@ pub fn setup_metrics_logger(
                             elapsed_ms,
                             latency_ms,
                             status_code: msg.status_code,
+                            timed_out: msg.timed_out,
+                            transport_error: msg.transport_error,
                         });
                     } else {
                         metrics_truncated = true;
@@ -235,6 +247,8 @@ pub fn setup_metrics_logger(
                 successful_requests,
                 error_requests,
                 timeout_requests,
+                transport_errors,
+                non_expected_status,
                 min_latency_ms,
                 max_latency_ms,
                 avg_latency_ms,
@@ -288,6 +302,8 @@ pub async fn read_metrics_log(
     let mut max_latency_ms: u64 = 0;
     let mut success_min_latency_ms: u64 = u64::MAX;
     let mut success_max_latency_ms: u64 = 0;
+    let mut transport_errors: u64 = 0;
+    let mut non_expected_status: u64 = 0;
     let mut max_elapsed_ms: u64 = 0;
 
     loop {
@@ -322,9 +338,13 @@ pub async fn read_metrics_log(
             .next()
             .and_then(|value| value.parse::<u8>().ok())
             .is_some_and(|value| value != 0);
+        let transport_error = parts
+            .next()
+            .and_then(|value| value.parse::<u8>().ok())
+            .is_some_and(|value| value != 0);
 
         total_requests = total_requests.saturating_add(1);
-        if status_code == expected_status_code && !timed_out {
+        if status_code == expected_status_code && !timed_out && !transport_error {
             successful_requests = successful_requests.saturating_add(1);
             success_latency_sum_ms = success_latency_sum_ms.saturating_add(u128::from(latency_ms));
             if latency_ms < success_min_latency_ms {
@@ -337,6 +357,10 @@ pub async fn read_metrics_log(
         }
         if timed_out {
             timeout_requests = timeout_requests.saturating_add(1);
+        } else if transport_error {
+            transport_errors = transport_errors.saturating_add(1);
+        } else if status_code != expected_status_code {
+            non_expected_status = non_expected_status.saturating_add(1);
         }
         latency_sum_ms = latency_sum_ms.saturating_add(u128::from(latency_ms));
         if latency_ms < min_latency_ms {
@@ -363,6 +387,8 @@ pub async fn read_metrics_log(
                         elapsed_ms,
                         latency_ms,
                         status_code,
+                        timed_out,
+                        transport_error,
                     });
                 } else {
                     metrics_truncated = true;
@@ -413,6 +439,8 @@ pub async fn read_metrics_log(
             successful_requests,
             error_requests,
             timeout_requests,
+            transport_errors,
+            non_expected_status,
             min_latency_ms,
             max_latency_ms,
             avg_latency_ms,

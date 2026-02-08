@@ -83,6 +83,12 @@ fn parse_args_defaults() -> Result<(), String> {
     if args.no_ui {
         return Err("Expected no_ui to be false".to_owned());
     }
+    if args.ui_window_ms.get() != 10_000 {
+        return Err(format!(
+            "Unexpected ui_window_ms: {}",
+            args.ui_window_ms.get()
+        ));
+    }
     if args.summary {
         return Err("Expected summary to be false".to_owned());
     }

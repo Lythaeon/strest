@@ -65,19 +65,42 @@ impl UiActions for Ui {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
-                .constraints([
-                    Constraint::Length(5),
-                    Constraint::Length(5),
-                    Constraint::Min(10),
-                ])
+                .constraints([Constraint::Length(7), Constraint::Min(10)])
                 .split(size);
 
-            let (stats_chunk, percentiles_chunk, chart_chunk) = match chunks.as_ref() {
+            let (summary_chunk, chart_chunk) = match chunks.as_ref() {
+                [a, b] => (a, b),
+                _ => return,
+            };
+
+            let summary_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(34),
+                    Constraint::Percentage(33),
+                    Constraint::Percentage(33),
+                ])
+                .split(*summary_chunk);
+
+            let (run_chunk, results_chunk, latency_chunk) = match summary_chunks.as_ref() {
                 [a, b, c] => (a, b, c),
                 _ => return,
             };
 
-            let stats_text = Paragraph::new(vec![
+            let total_requests = data.current_request;
+            let success_requests = data.successful_requests;
+            let error_requests = total_requests.saturating_sub(success_requests);
+            let success_rate_x100 = if total_requests > 0 {
+                let scaled = u128::from(success_requests)
+                    .saturating_mul(10_000)
+                    .checked_div(u128::from(total_requests))
+                    .unwrap_or(0);
+                u64::try_from(scaled).unwrap_or(u64::MAX)
+            } else {
+                0
+            };
+
+            let run_text = Paragraph::new(vec![
                 text::Line::from(vec![
                     Span::from("Elapsed Time: "),
                     Span::styled(
@@ -91,48 +114,101 @@ impl UiActions for Ui {
                     ),
                 ]),
                 text::Line::from(vec![
+                    Span::from("Success %: "),
+                    Span::styled(
+                        format!(
+                            "{}.{:02}%",
+                            success_rate_x100 / 100,
+                            success_rate_x100 % 100
+                        ),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                ]),
+            ])
+            .block(Block::default().title("Run").borders(Borders::ALL))
+            .wrap(Wrap { trim: true });
+
+            let results_text = Paragraph::new(vec![
+                text::Line::from(vec![
                     Span::from("Requests: "),
                     Span::styled(
-                        data.current_request.to_string(),
+                        format!("{:>6}", total_requests),
                         Style::default().fg(Color::LightBlue),
                     ),
-                    Span::from("   Success: "),
+                    Span::from("   OK: "),
                     Span::styled(
-                        data.successful_requests.to_string(),
-                        Style::default().fg(Color::Magenta),
+                        format!("{:>6}", success_requests),
+                        Style::default().fg(Color::Green),
+                    ),
+                    Span::from("   Errors: "),
+                    Span::styled(
+                        format!("{:>6}", error_requests),
+                        Style::default().fg(Color::Red),
+                    ),
+                ]),
+                text::Line::from(vec![
+                    Span::from("Timeouts: "),
+                    Span::styled(
+                        format!("{:>6}", data.timeout_requests),
+                        Style::default().fg(Color::Red),
+                    ),
+                    Span::from("   Transport: "),
+                    Span::styled(
+                        format!("{:>6}", data.transport_errors),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                    Span::from("   Non-Expected: "),
+                    Span::styled(
+                        format!("{:>6}", data.non_expected_status),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                ]),
+            ])
+            .block(Block::default().title("Results").borders(Borders::ALL))
+            .wrap(Wrap { trim: true });
+
+            let latency_text = Paragraph::new(vec![
+                text::Line::from(vec![
+                    Span::from("All  P50: "),
+                    Span::styled(format!("{}ms", data.p50), Style::default().fg(Color::Green)),
+                    Span::from("   P90: "),
+                    Span::styled(
+                        format!("{}ms", data.p90),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                    Span::from("   P99: "),
+                    Span::styled(format!("{}ms", data.p99), Style::default().fg(Color::Red)),
+                ]),
+                text::Line::from(vec![
+                    Span::from("OK   P50: "),
+                    Span::styled(
+                        format!("{}ms", data.p50_ok),
+                        Style::default().fg(Color::Green),
+                    ),
+                    Span::from("   P90: "),
+                    Span::styled(
+                        format!("{}ms", data.p90_ok),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                    Span::from("   P99: "),
+                    Span::styled(
+                        format!("{}ms", data.p99_ok),
+                        Style::default().fg(Color::Red),
                     ),
                 ]),
                 text::Line::from(vec![
                     Span::from("RPS: "),
-                    Span::styled(format!("{}", data.rps), Style::default().fg(Color::Cyan)),
+                    Span::styled(format!("{:>6}", data.rps), Style::default().fg(Color::Cyan)),
                     Span::from("   RPM: "),
-                    Span::styled(format!("{}", data.rpm), Style::default().fg(Color::Cyan)),
+                    Span::styled(format!("{:>6}", data.rpm), Style::default().fg(Color::Cyan)),
                 ]),
             ])
-            .block(Block::default().title("Stats").borders(Borders::ALL))
+            .block(Block::default().title("Latency").borders(Borders::ALL))
             .wrap(Wrap { trim: true });
 
-            f.render_widget(stats_text, *stats_chunk);
-
-            let percentiles_text = Paragraph::new(vec![text::Line::from(vec![
-                Span::from("P50: "),
-                Span::styled(format!("{}ms", data.p50), Style::default().fg(Color::Green)),
-                Span::from("   P90: "),
-                Span::styled(
-                    format!("{}ms", data.p90),
-                    Style::default().fg(Color::Yellow),
-                ),
-                Span::from("   P99: "),
-                Span::styled(format!("{}ms", data.p99), Style::default().fg(Color::Red)),
-            ])])
-            .block(
-                Block::default()
-                    .title("Latency Percentiles")
-                    .borders(Borders::ALL),
-            )
-            .wrap(Wrap { trim: true });
-
-            f.render_widget(percentiles_text, *percentiles_chunk);
+            f.render_widget(run_text, *run_chunk);
+            f.render_widget(results_text, *results_chunk);
+            f.render_widget(latency_text, *latency_chunk);
 
             let data_points: Vec<(u64, u64)> = data.latencies.clone();
             let y_max = data
@@ -141,16 +217,25 @@ impl UiActions for Ui {
                 .map(|(_, latency)| (*latency).max(1))
                 .fold(1, u64::max)
                 .max(10);
-            let x_max = data_points
-                .last()
-                .map(|(x, _)| x.saturating_add(1))
-                .unwrap_or(1);
-            let x_min = x_max.saturating_sub(10_000);
+            let window_ms = data.ui_window_ms.max(1);
+            let x_max = data_points.last().map(|(x, _)| *x).unwrap_or(0);
+            let x_start = x_max.saturating_sub(window_ms);
+            let x_span = x_max.saturating_sub(x_start).max(1);
 
             let chart_points: Vec<(f64, f64)> = data_points
                 .iter()
-                .map(|(x, y)| (*x as f64, (*y).max(1) as f64))
+                .filter(|(x, _)| *x >= x_start)
+                .map(|(x, y)| (x.saturating_sub(x_start) as f64, (*y).max(1) as f64))
                 .collect();
+            let fmt_secs = |ms: u64| {
+                let secs = ms / 1000;
+                let tenths = (ms % 1000) / 100;
+                format!("{}.{:01}s", secs, tenths)
+            };
+            let label_left = x_start;
+            let label_mid = x_start.saturating_add(x_span / 2);
+            let label_right = x_start.saturating_add(x_span);
+            let window_label = fmt_secs(window_ms);
             let datasets = vec![
                 ratatui::widgets::Dataset::default()
                     .name("Latency Chart")
@@ -160,16 +245,20 @@ impl UiActions for Ui {
             ];
 
             let chart = ratatui::widgets::Chart::new(datasets)
-                .block(Block::default().borders(Borders::ALL))
+                .block(
+                    Block::default()
+                        .title(format!("Latency (last {})", window_label))
+                        .borders(Borders::ALL),
+                )
                 .x_axis(
                     ratatui::widgets::Axis::default()
-                        .title("Window Second")
+                        .title("Elapsed (s)")
                         .style(Style::default().fg(Color::Gray))
-                        .bounds([x_min as f64, x_max as f64])
+                        .bounds([0.0, x_span as f64])
                         .labels(vec![
-                            Span::raw(format!("{}s", x_min / 1000)),
-                            Span::raw(format!("{}s", x_min.saturating_add(x_max) / 2 / 1000)),
-                            Span::raw(format!("{}s", x_max / 1000)),
+                            Span::raw(fmt_secs(label_left)),
+                            Span::raw(fmt_secs(label_mid)),
+                            Span::raw(fmt_secs(label_right)),
                         ]),
                 )
                 .y_axis(

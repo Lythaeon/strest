@@ -48,6 +48,7 @@ fn base_args(url: String) -> Result<TesterArgs, String> {
         export_json: None,
         log_shards: positive_usize(1)?,
         no_ui: true,
+        ui_window_ms: positive_u64(10_000)?,
         summary: false,
         tls_min: None,
         tls_max: None,

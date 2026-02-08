@@ -24,6 +24,7 @@ pub struct ConfigFile {
     pub export_json: Option<String>,
     pub log_shards: Option<usize>,
     pub no_ui: Option<bool>,
+    pub ui_window_ms: Option<u64>,
     pub summary: Option<bool>,
     pub tls_min: Option<crate::args::TlsVersion>,
     pub tls_max: Option<crate::args::TlsVersion>,

@@ -10,6 +10,8 @@ pub(super) fn merge_summaries(summaries: &[WireSummary]) -> MetricsSummary {
     let mut successful_requests = 0u64;
     let mut error_requests = 0u64;
     let mut timeout_requests = 0u64;
+    let mut transport_errors = 0u64;
+    let mut non_expected_status = 0u64;
     let mut min_latency_ms = u64::MAX;
     let mut max_latency_ms = 0u64;
     let mut latency_sum_ms = 0u128;
@@ -23,6 +25,8 @@ pub(super) fn merge_summaries(summaries: &[WireSummary]) -> MetricsSummary {
         successful_requests = successful_requests.saturating_add(summary.successful_requests);
         error_requests = error_requests.saturating_add(summary.error_requests);
         timeout_requests = timeout_requests.saturating_add(summary.timeout_requests);
+        transport_errors = transport_errors.saturating_add(summary.transport_errors);
+        non_expected_status = non_expected_status.saturating_add(summary.non_expected_status);
         if summary.total_requests > 0 {
             min_latency_ms = min_latency_ms.min(summary.min_latency_ms);
             max_latency_ms = max_latency_ms.max(summary.max_latency_ms);
@@ -76,6 +80,8 @@ pub(super) fn merge_summaries(summaries: &[WireSummary]) -> MetricsSummary {
         successful_requests,
         error_requests,
         timeout_requests,
+        transport_errors,
+        non_expected_status,
         min_latency_ms,
         max_latency_ms,
         avg_latency_ms,
@@ -155,6 +161,8 @@ pub(super) fn print_summary(
     );
     println!("Errors: {}", summary.error_requests);
     println!("Timeouts: {}", summary.timeout_requests);
+    println!("Transport Errors: {}", summary.transport_errors);
+    println!("Non-Expected Status: {}", summary.non_expected_status);
     println!("Avg Latency (all): {}ms", summary.avg_latency_ms);
     println!("Avg Latency (ok): {}ms", summary.success_avg_latency_ms);
     println!(

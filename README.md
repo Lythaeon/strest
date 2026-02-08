@@ -2,57 +2,95 @@
 
 ⚠️ Warning: Only use strest for testing infrastructure you own or have explicit permission to test. Unauthorized use may be illegal.
 
-Strest is a command-line tool for stress testing web servers by sending a large number of HTTP requests. It provides insights into server performance by measuring average response times, reporting observed requests per minute (RPM), and other relevant metrics.
+strest is a command-line tool for stress testing web servers by sending a large number of HTTP requests. It provides insights into server performance by measuring average response times, reporting observed requests per minute (RPM), and other relevant metrics.
 
 # Screenshot Overview  
-These screenshots showcase key metrics and real-time statistics from Strest’s stress testing, including charts with response time, error rate, request count, latency percentile, and throughput.
+These screenshots showcase key metrics and real-time statistics from strest’s stress testing, including response time, error rate, request count, latency percentiles (all vs ok), timeouts, status distribution, and throughput.
 
 <div style="text-align: center;">
   <img src="docs/screenshot.png" alt="CLI Screenshot" width="1000" />
 </div>
 
-<p align="center" width="100%">
-  <span style="display: inline-block; width: 150px;">
-    <a href="docs/average_response_time.png" target="_blank">
-      <img src="docs/average_response_time.png" alt="Average Response Time" width="150" style="border: 1px solid #ddd; border-radius: 4px;" />
-    </a>
-  </span>
-  <span style="display: inline-block; width: 150px;">
-    <a href="docs/cumulative_error_rate.png" target="_blank">
-      <img src="docs/cumulative_error_rate.png" alt="Cumulative Error Rate" width="150" style="border: 1px solid #ddd; border-radius: 4px;" />
-    </a>
-  </span>
-  <span style="display: inline-block; width: 150px;">
-    <a href="docs/cumulative_successful_requests.png" target="_blank">
-      <img src="docs/cumulative_successful_requests.png" alt="Cumulative Successful Requests" width="150" style="border: 1px solid #ddd; border-radius: 4px;" />
-    </a>
-  </span>
-  <span style="display: inline-block; width: 150px;">
-    <a href="docs/cumulative_total_requests.png" target="_blank">
-      <img src="docs/cumulative_total_requests.png" alt="Cumulative Total Requests" width="150" style="border: 1px solid #ddd; border-radius: 4px;" />
-    </a>
-  </span>
-  <span style="display: inline-block; width: 150px;">
-    <a href="docs/latency_percentiles_P50.png" target="_blank">
-      <img src="docs/latency_percentiles_P50.png" alt="Latency Percentiles P50" width="150" style="border: 1px solid #ddd; border-radius: 4px;" />
-    </a>
-  </span>
-  <span style="display: inline-block; width: 150px;">
-    <a href="docs/latency_percentiles_P90.png" target="_blank">
-      <img src="docs/latency_percentiles_P90.png" alt="Latency Percentiles P90" width="150" style="border: 1px solid #ddd; border-radius: 4px;" />
-    </a>
-  </span>
-  <span style="display: inline-block; width: 150px;">
-    <a href="docs/latency_percentiles_P99.png" target="_blank">
-      <img src="docs/latency_percentiles_P99.png" alt="Latency Percentiles P99" width="150" style="border: 1px solid #ddd; border-radius: 4px;" />
-    </a>
-  </span>
-  <span style="display: inline-block; width: 150px;">
-    <a href="docs/requests_per_second.png" target="_blank">
-      <img src="docs/requests_per_second.png" alt="Requests Per Second" width="150" style="border: 1px solid #ddd; border-radius: 4px;" />
-    </a>
-  </span>
-</p>
+### Latency
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="docs/average_response_time.png" target="_blank">
+        <img src="docs/average_response_time.png" alt="Average Response Time" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/latency_percentiles_P50.png" target="_blank">
+        <img src="docs/latency_percentiles_P50.png" alt="Latency Percentiles P50" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/latency_percentiles_P90.png" target="_blank">
+        <img src="docs/latency_percentiles_P90.png" alt="Latency Percentiles P90" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/latency_percentiles_P99.png" target="_blank">
+        <img src="docs/latency_percentiles_P99.png" alt="Latency Percentiles P99" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      </a>
+    </td>
+  </tr>
+</table>
+
+### Throughput
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="docs/requests_per_second.png" target="_blank">
+        <img src="docs/requests_per_second.png" alt="Requests Per Second" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/cumulative_total_requests.png" target="_blank">
+        <img src="docs/cumulative_total_requests.png" alt="Cumulative Total Requests" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/cumulative_successful_requests.png" target="_blank">
+        <img src="docs/cumulative_successful_requests.png" alt="Cumulative Successful Requests" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/inflight_requests.png" target="_blank">
+        <img src="docs/inflight_requests.png" alt="In-Flight Requests" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      </a>
+    </td>
+  </tr>
+</table>
+
+### Errors
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="docs/cumulative_error_rate.png" target="_blank">
+        <img src="docs/cumulative_error_rate.png" alt="Cumulative Error Rate" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/error_rate_breakdown.png" target="_blank">
+        <img src="docs/error_rate_breakdown.png" alt="Error Rate Breakdown" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/timeouts_per_second.png" target="_blank">
+        <img src="docs/timeouts_per_second.png" alt="Timeouts Per Second" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      </a>
+    </td>
+    <td align="center">
+      <a href="docs/status_code_distribution.png" target="_blank">
+        <img src="docs/status_code_distribution.png" alt="Status Code Distribution" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      </a>
+    </td>
+  </tr>
+</table>
 
 ## Features
 
@@ -61,6 +99,8 @@ These screenshots showcase key metrics and real-time statistics from Strest’s 
 - Measure the average response time of successful requests.
 - Report the observed requests per minute (RPM) metric.
 - Display real-time statistics and progress in the terminal.
+- UI shows timeouts, transport errors, non-expected status, and ok vs all percentiles.
+- UI chart window length is configurable via `--ui-window-ms` (default: 10000).
 - Optional non-interactive summary output for long-running tests.
 - Streams run metrics to disk while aggregating summary and chart data during the run.
 - Optional rate limiting for controlled load generation.
@@ -77,6 +117,18 @@ These screenshots showcase key metrics and real-time statistics from Strest’s 
 - Agent standby mode with automatic reconnects between runs.
 - Experimental HTTP/3 support (build flag required).
 - Linux systemd install/uninstall helpers for controller/agent services.
+
+## Who It's For
+
+- Engineers who want a config-first, CLI-driven load test tool.
+- Teams who need multi-step scenarios with assertions, not full JS runtimes.
+- CI and lab users who want reproducible runs and exportable metrics.
+- Distributed testing setups with controller/agent coordination.
+
+## Not a Fit For
+
+- k6 users looking for JavaScript scripting or k6-compatible workflows.
+- GUI-first users who want a hosted dashboard-first experience today.
 
 ## Prerequisites
 
@@ -96,7 +148,7 @@ Prebuilt binaries are attached to GitHub Releases for tagged versions (Linux, ma
 
 ### From source
 
-To use Strest from source, follow these installation instructions:
+To use strest from source, follow these installation instructions:
 
 1. Clone the repository to your local machine:
 
@@ -157,7 +209,7 @@ strest --config strest.toml -t 30 --no-ui --summary --no-charts
 
 ## Usage
 
-Strest is used via the command line. Here's a basic example of how to use it:
+strest is used via the command line. Here's a basic example of how to use it:
 
 ```bash
 strest -u http://localhost:3000 -t 60 --no-charts
@@ -224,6 +276,27 @@ By default charts are stored in `~/.strest/charts` (or `%USERPROFILE%\\.strest\\
 
 To disable charts use the `--no-charts` flag.
 
+Charts produced:
+- `average_response_time.png`
+- `cumulative_successful_requests.png`
+- `cumulative_error_rate.png`
+- `cumulative_total_requests.png`
+- `requests_per_second.png`
+- `latency_percentiles_P50.png` (all vs ok overlay)
+- `latency_percentiles_P90.png` (all vs ok overlay)
+- `latency_percentiles_P99.png` (all vs ok overlay)
+- `timeouts_per_second.png`
+- `error_rate_breakdown.png` (timeouts vs transport vs non-expected)
+- `status_code_distribution.png`
+- `inflight_requests.png`
+
+### UI Metrics
+
+The UI highlights:
+- Total requests, success count, and error breakdown (timeouts, transport errors, non-expected status).
+- All vs ok latency percentiles (P50/P90/P99).
+- Live RPS and RPM.
+
 ### Temp Data
 
 Run data is logged to a temporary file during the test while summary and chart data are aggregated during the run. This keeps the request pipeline from blocking on metrics in long runs. By default this lives in `~/.strest/tmp` (or `%USERPROFILE%\\.strest\\tmp` on Windows). You can change the location via `--tmp-path`. Temporary data is deleted after the run unless `--keep-tmp` is set.
@@ -241,6 +314,7 @@ Charts collection can be bounded for long runs:
 - `--data` (`-d`) sets the request body data (POST/PUT/PATCH).
 - `--duration` (`-t`) sets the test duration in seconds.
 - `--no-ui` disables the interactive UI and shows a progress bar in the terminal (summary output is printed automatically).
+- `--ui-window-ms` sets the UI chart window length in milliseconds (default: `10000`).
 - `--summary` prints an end-of-run summary.
 - `--status` (`-s`) sets the expected HTTP status code.
 - `--timeout` sets the request timeout (supports `ms`, `s`, `m`, `h`).
@@ -299,6 +373,7 @@ timeout = "10s"
 warmup = "5s"
 status = 200
 no_ui = true
+ui_window_ms = 10000
 summary = true
 no_charts = true
 
@@ -339,6 +414,7 @@ Example `strest.json`:
   "warmup": "5s",
   "status": 200,
   "no_ui": true,
+  "ui_window_ms": 10000,
   "summary": true,
   "no_charts": true,
   "tls_min": "1.2",
@@ -690,36 +766,6 @@ sudo strest --controller-listen 0.0.0.0:9009 --uninstall-service --service-name 
 
 Systemd install/uninstall writes to `/etc/systemd/system` and runs `systemctl`, so it must be executed with sudo.
 
-### k6 Migration (Quick Mapping)
-
-Strest is not a drop-in replacement for k6. k6 uses JS scripts and its own execution model, while strest is config + CLI. That said, for simple single-URL workloads, you can map a few common settings:
-
-```
-k6             -> strest
-vus            -> --max-tasks
-duration       -> -t / --duration
-rate (RPS)     -> --rate
-stages         -> [load] + [[load.stages]]
-```
-
-Example k6 snippet:
-
-```js
-export const options = {
-  vus: 200,
-  duration: "2m",
-  rate: 400
-};
-```
-
-Approximate strest equivalent:
-
-```bash
-strest -u http://localhost:3000 -t 120 --max-tasks 200 --rate 400 --no-ui --summary --no-charts
-```
-
-For k6 scripts with multiple requests, custom JS logic, or checks, use strest scenarios instead. There is no automatic conversion for those today.
-
 ### Reproducible Builds
 
 Use `--locked` to ensure the build uses the exact dependency versions in `Cargo.lock`:
@@ -758,17 +804,13 @@ cargo make format
 
 ## Contributions
 
-If you'd like to contribute, I appreciate it. Please:
+If you'd like to contribute, please start with `CONTRIBUTING.md` for the exact workflow and checks.
 
-1. Fork the repo and create a dedicated branch.
-2. Implement changes and keep them aligned with existing conventions.
-3. Open a pull request and include context for the change.
-
-I review contributions as time allows and will respond when I can.
+I'm a solo maintainer, so response times may vary. I review contributions as time allows and will respond when I can.
 
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU AGPL v3.0 - see the [LICENSE](LICENSE) file for details.
 
 ## Motivation 
 
-Strest was born out of the need to stress test web servers and gain valuable insights into their performance.
+strest was born to provide performance insight for stexs and the infrastructure behind it.

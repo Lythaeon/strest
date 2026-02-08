@@ -8,12 +8,16 @@ pub(crate) async fn export_csv(
     let file = tokio::fs::File::create(path).await?;
     let mut writer = BufWriter::new(file);
     writer
-        .write_all(b"elapsed_ms,latency_ms,status_code\n")
+        .write_all(b"elapsed_ms,latency_ms,status_code,timed_out,transport_error\n")
         .await?;
     for record in records {
         let line = format!(
-            "{},{},{}\n",
-            record.elapsed_ms, record.latency_ms, record.status_code
+            "{},{},{},{},{}\n",
+            record.elapsed_ms,
+            record.latency_ms,
+            record.status_code,
+            u8::from(record.timed_out),
+            u8::from(record.transport_error)
         );
         writer.write_all(line.as_bytes()).await?;
     }
@@ -32,7 +36,9 @@ pub(crate) async fn export_json(
             serde_json::json!({
                 "elapsed_ms": record.elapsed_ms,
                 "latency_ms": record.latency_ms,
-                "status_code": record.status_code
+                "status_code": record.status_code,
+                "timed_out": record.timed_out,
+                "transport_error": record.transport_error
             })
         })
         .collect();
@@ -43,6 +49,8 @@ pub(crate) async fn export_json(
         "successful_requests": summary.successful_requests,
         "error_requests": summary.error_requests,
         "timeout_requests": summary.timeout_requests,
+        "transport_errors": summary.transport_errors,
+        "non_expected_status": summary.non_expected_status,
         "success_min_latency_ms": summary.success_min_latency_ms,
         "success_max_latency_ms": summary.success_max_latency_ms,
         "success_avg_latency_ms": summary.success_avg_latency_ms,

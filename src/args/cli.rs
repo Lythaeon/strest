@@ -99,6 +99,14 @@ pub struct TesterArgs {
     #[arg(long = "no-ui")]
     pub no_ui: bool,
 
+    /// UI chart window length in milliseconds (default: 10000)
+    #[arg(
+        long = "ui-window-ms",
+        default_value = "10000",
+        value_parser = parse_positive_u64
+    )]
+    pub ui_window_ms: PositiveU64,
+
     /// Print summary at the end of the run (implied by --no-ui)
     #[arg(long = "summary")]
     pub summary: bool,
