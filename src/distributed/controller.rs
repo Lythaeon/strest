@@ -2254,6 +2254,8 @@ mod tests {
             method: crate::args::HttpMethod::Get,
             url: Some("http://localhost".to_owned()),
             headers: vec![],
+            no_ua: false,
+            authorized: false,
             data: String::new(),
             target_duration: crate::args::PositiveU64::try_from(1)?,
             expected_status_code: 200,

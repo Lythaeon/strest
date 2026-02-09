@@ -86,6 +86,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
+        if args.no_ua && !args.authorized {
+            tracing::error!(
+                "Refusing to disable the default User-Agent without explicit authorization."
+            );
+            return Err(std::io::Error::other(
+                "Disabling the default User-Agent requires --authorized (or config authorized = true).",
+            )
+            .into());
+        }
+
         if args.agent_join.is_some() {
             distributed::run_agent(args)
                 .await

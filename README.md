@@ -1,6 +1,7 @@
 # strest
 
-⚠️ Warning: Only use strest for testing infrastructure you own or have explicit permission to test. Unauthorized use may be illegal.
+> [!WARNING]
+> Only use strest for testing infrastructure you own or have explicit permission to test. Unauthorized use may be illegal.
 
 strest is a command-line tool for stress testing web servers by sending a large number of HTTP requests. It provides insights into server performance by measuring average response times, reporting observed requests per minute (RPM), and other relevant metrics.
 
@@ -311,6 +312,8 @@ Charts collection can be bounded for long runs:
 - `--method` (`-X`) sets the HTTP method.
 - `--url` (`-u`) sets the target URL.
 - `--headers` (`-H`) adds request headers (repeatable, `Key: Value`).
+- `--no-ua` disables the default `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)` header (requires `--authorized`).
+- `--authorized` confirms you have explicit permission to run tests when using `--no-ua`.
 - `--data` (`-d`) sets the request body data (POST/PUT/PATCH).
 - `--duration` (`-t`) sets the test duration in seconds.
 - `--no-ui` disables the interactive UI and shows a progress bar in the terminal (summary output is printed automatically).
@@ -362,6 +365,7 @@ RUSTFLAGS="--cfg reqwest_unstable" cargo build --release --features http3
 ### Configuration File
 
 You can provide a config file with `--config path`. If no config is specified, `strest` will look for `./strest.toml` or `./strest.json` (TOML is preferred if both exist). CLI flags override config values.
+By default, strest sends `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)`. To disable, set `no_ua = true` and `authorized = true`.
 
 Example `strest.toml`:
 

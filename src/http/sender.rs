@@ -8,7 +8,7 @@ use tokio::time::{interval, sleep};
 use tracing::error;
 
 use crate::{
-    args::{HttpMethod, TesterArgs},
+    args::{DEFAULT_USER_AGENT, HttpMethod, TesterArgs},
     metrics::{LogSink, Metrics},
 };
 
@@ -33,6 +33,10 @@ pub fn setup_request_sender(
     let metrics_tx = metrics_tx.clone();
 
     let mut client_builder = Client::builder().timeout(args.request_timeout);
+
+    if !args.no_ua {
+        client_builder = client_builder.user_agent(DEFAULT_USER_AGENT);
+    }
 
     client_builder = apply_tls_settings(client_builder, args)?;
 
