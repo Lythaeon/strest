@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest::{Client, Proxy};
+use reqwest::{Client, Proxy, redirect};
 use tokio::sync::Semaphore;
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::{interval, sleep};
@@ -39,6 +39,24 @@ pub fn setup_request_sender(
 
     if !args.no_ua {
         client_builder = client_builder.user_agent(DEFAULT_USER_AGENT);
+    }
+
+    if args.redirect_limit == 0 {
+        client_builder = client_builder.redirect(redirect::Policy::none());
+    } else {
+        client_builder = client_builder.redirect(redirect::Policy::limited(
+            usize::try_from(args.redirect_limit).unwrap_or(10),
+        ));
+    }
+
+    if args.disable_keepalive {
+        client_builder = client_builder
+            .pool_max_idle_per_host(0)
+            .pool_idle_timeout(Some(std::time::Duration::from_secs(0)));
+    }
+
+    if args.disable_compression {
+        client_builder = client_builder.gzip(false).brotli(false).deflate(false);
     }
 
     client_builder = apply_tls_settings(client_builder, args)?;

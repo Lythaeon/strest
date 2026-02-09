@@ -147,6 +147,18 @@ pub struct TesterArgs {
     )]
     pub request_timeout: Duration,
 
+    /// Limit the number of redirects to follow (0 disables redirects)
+    #[arg(long = "redirect", default_value = "10")]
+    pub redirect_limit: u32,
+
+    /// Disable keep-alive (prevents re-use of TCP connections)
+    #[arg(long = "disable-keepalive")]
+    pub disable_keepalive: bool,
+
+    /// Disable compression (gzip, brotli, deflate)
+    #[arg(long = "disable-compression")]
+    pub disable_compression: bool,
+
     /// Timeout for establishing a new connection (supports ms/s/m/h)
     #[arg(
         long = "connect-timeout",

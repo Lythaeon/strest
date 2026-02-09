@@ -101,6 +101,24 @@ pub fn apply_config(
         args.request_timeout = timeout.to_duration()?;
     }
 
+    if !is_cli(matches, "redirect_limit")
+        && let Some(limit) = config.redirect
+    {
+        args.redirect_limit = limit;
+    }
+
+    if !is_cli(matches, "disable_keepalive")
+        && let Some(disable) = config.disable_keepalive
+    {
+        args.disable_keepalive = disable;
+    }
+
+    if !is_cli(matches, "disable_compression")
+        && let Some(disable) = config.disable_compression
+    {
+        args.disable_compression = disable;
+    }
+
     if !is_cli(matches, "connect_timeout")
         && let Some(timeout) = config.connect_timeout.as_ref()
     {

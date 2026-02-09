@@ -112,6 +112,9 @@ connect_timeout = "3s"
 accept = "application/json"
 content_type = "text/plain"
 requests = 12
+redirect = 0
+disable_keepalive = true
+disable_compression = true
 "#;
     std::fs::write(&path, content).map_err(|err| format!("write failed: {}", err))?;
 
@@ -150,6 +153,18 @@ requests = 12
     }
     if args.requests.map(u64::from) != Some(12) {
         return Err("Unexpected requests".to_owned());
+    }
+    if args.redirect_limit != 0 {
+        return Err(format!(
+            "Unexpected redirect_limit: {}",
+            args.redirect_limit
+        ));
+    }
+    if !args.disable_keepalive {
+        return Err("Expected disable_keepalive to be true".to_owned());
+    }
+    if !args.disable_compression {
+        return Err("Expected disable_compression to be true".to_owned());
     }
 
     Ok(())

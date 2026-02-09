@@ -73,6 +73,18 @@ fn parse_args_defaults() -> Result<(), String> {
             args.request_timeout
         ));
     }
+    if args.redirect_limit != 10 {
+        return Err(format!(
+            "Unexpected redirect_limit: {}",
+            args.redirect_limit
+        ));
+    }
+    if args.disable_keepalive {
+        return Err("Expected disable_keepalive to be false".to_owned());
+    }
+    if args.disable_compression {
+        return Err("Expected disable_compression to be false".to_owned());
+    }
     if args.connect_timeout != Duration::from_secs(5) {
         return Err(format!(
             "Unexpected connect_timeout: {:?}",
