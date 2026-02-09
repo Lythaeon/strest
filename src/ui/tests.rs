@@ -50,6 +50,7 @@ fn ui_render_data_from_ui_data() -> Result<(), String> {
         transport_errors: 0,
         non_expected_status: 1,
         ui_window_ms: 10_000,
+        no_color: false,
         latencies: vec![(0, 5), (100, 7)],
         p50: 6,
         p90: 7,

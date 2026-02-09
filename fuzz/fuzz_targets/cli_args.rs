@@ -28,6 +28,7 @@ fuzz_target!(|data: &[u8]| {
             debug_assert!(parsed.agent_heartbeat_interval_ms.get() >= 1);
             debug_assert!(parsed.agent_heartbeat_timeout_ms.get() >= 1);
             debug_assert!(parsed.connect_timeout.as_millis() > 0);
+            debug_assert!(parsed.ui_fps >= 1);
             if let Some(interval) = parsed.distributed_stream_interval_ms {
                 debug_assert!(interval.get() >= 1);
             }

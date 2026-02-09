@@ -1,6 +1,6 @@
 use reqwest::ClientBuilder;
 
-use crate::args::{TesterArgs, TlsVersion};
+use crate::args::{HttpVersion, TesterArgs, TlsVersion};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum AlpnChoice {
@@ -33,6 +33,12 @@ pub(super) fn apply_tls_settings(
     }
 
     let alpn = resolve_alpn(&args.alpn)?;
+
+    if let Some(version) = args.http_version {
+        builder = apply_explicit_http_version(builder, version)?;
+        return Ok(builder);
+    }
+
     if alpn.has_h3 && !args.http3 {
         return Err("ALPN includes h3, but http3 is not enabled.".to_owned());
     }
@@ -76,6 +82,35 @@ and set RUSTFLAGS=\"--cfg reqwest_unstable\"."
         }
     };
 
+    Ok(builder)
+}
+
+fn apply_explicit_http_version(
+    mut builder: ClientBuilder,
+    version: HttpVersion,
+) -> Result<ClientBuilder, String> {
+    match version {
+        HttpVersion::V0_9 | HttpVersion::V1_0 | HttpVersion::V1_1 => {
+            builder = builder.http1_only();
+        }
+        HttpVersion::V2 => {
+            builder = builder.http2_prior_knowledge();
+        }
+        HttpVersion::V3 => {
+            #[cfg(feature = "http3")]
+            {
+                builder = builder.http3_prior_knowledge();
+            }
+            #[cfg(not(feature = "http3"))]
+            {
+                return Err(
+                    "HTTP/3 support is not enabled in this build. Rebuild with --features http3 \
+and set RUSTFLAGS=\"--cfg reqwest_unstable\"."
+                        .to_owned(),
+                );
+            }
+        }
+    }
     Ok(builder)
 }
 

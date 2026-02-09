@@ -85,6 +85,9 @@ fn parse_args_defaults() -> Result<(), String> {
     if args.disable_compression {
         return Err("Expected disable_compression to be false".to_owned());
     }
+    if args.http_version.is_some() {
+        return Err("Expected http_version to be None".to_owned());
+    }
     if args.connect_timeout != Duration::from_secs(5) {
         return Err(format!(
             "Unexpected connect_timeout: {:?}",
@@ -150,6 +153,15 @@ fn parse_args_defaults() -> Result<(), String> {
     if !args.alpn.is_empty() {
         return Err("Expected alpn to be empty".to_owned());
     }
+    if !args.proxy_headers.is_empty() {
+        return Err("Expected proxy_headers to be empty".to_owned());
+    }
+    if args.proxy_http_version.is_some() {
+        return Err("Expected proxy_http_version to be None".to_owned());
+    }
+    if args.proxy_http2 {
+        return Err("Expected proxy_http2 to be false".to_owned());
+    }
     if args.export_csv.is_some() {
         return Err("Expected export_csv to be None".to_owned());
     }
@@ -179,6 +191,33 @@ fn parse_args_defaults() -> Result<(), String> {
     }
     if args.rate_limit.is_some() {
         return Err("Expected rate_limit to be None".to_owned());
+    }
+    if !args.connect_to.is_empty() {
+        return Err("Expected connect_to to be empty".to_owned());
+    }
+    if args.host_header.is_some() {
+        return Err("Expected host_header to be None".to_owned());
+    }
+    if args.ipv6_only {
+        return Err("Expected ipv6_only to be false".to_owned());
+    }
+    if args.ipv4_only {
+        return Err("Expected ipv4_only to be false".to_owned());
+    }
+    if args.no_pre_lookup {
+        return Err("Expected no_pre_lookup to be false".to_owned());
+    }
+    if args.no_color {
+        return Err("Expected no_color to be false".to_owned());
+    }
+    if args.ui_fps != 16 {
+        return Err(format!("Unexpected ui_fps: {}", args.ui_fps));
+    }
+    if args.stats_success_breakdown {
+        return Err("Expected stats_success_breakdown to be false".to_owned());
+    }
+    if args.unix_socket.is_some() {
+        return Err("Expected unix_socket to be None".to_owned());
     }
     if args.load_profile.is_some() {
         return Err("Expected load_profile to be None".to_owned());
@@ -439,6 +478,73 @@ fn parse_args_data_file_and_lines() -> Result<(), String> {
         return Err("Expected data_lines to be Some".to_owned());
     }
 
+    Ok(())
+}
+
+#[test]
+fn parse_args_network_flags() -> Result<(), String> {
+    let args_result = TesterArgs::try_parse_from([
+        "strest",
+        "-u",
+        "http://localhost",
+        "--http-version",
+        "1.1",
+        "--proxy-header",
+        "Proxy-Auth: secret",
+        "--proxy-http-version",
+        "2",
+        "--host",
+        "example.com",
+        "--connect-to",
+        "example.com:443:localhost:8443",
+        "--ipv4",
+        "--no-pre-lookup",
+        "--no-color",
+        "--fps",
+        "30",
+        "--stats-success-breakdown",
+        "--unix-socket",
+        "/tmp/strest.sock",
+    ]);
+    let args = match args_result {
+        Ok(args) => args,
+        Err(err) => {
+            return Err(format!("Expected Ok, got Err: {}", err));
+        }
+    };
+    if args.http_version != Some(HttpVersion::V1_1) {
+        return Err("Unexpected http_version".to_owned());
+    }
+    if args.proxy_headers.len() != 1 {
+        return Err("Unexpected proxy_headers".to_owned());
+    }
+    if args.proxy_http_version != Some(HttpVersion::V2) {
+        return Err("Unexpected proxy_http_version".to_owned());
+    }
+    if args.host_header.as_deref() != Some("example.com") {
+        return Err("Unexpected host_header".to_owned());
+    }
+    if args.connect_to.len() != 1 {
+        return Err("Unexpected connect_to".to_owned());
+    }
+    if !args.ipv4_only {
+        return Err("Expected ipv4_only to be true".to_owned());
+    }
+    if !args.no_pre_lookup {
+        return Err("Expected no_pre_lookup to be true".to_owned());
+    }
+    if !args.no_color {
+        return Err("Expected no_color to be true".to_owned());
+    }
+    if args.ui_fps != 30 {
+        return Err("Unexpected ui_fps".to_owned());
+    }
+    if !args.stats_success_breakdown {
+        return Err("Expected stats_success_breakdown to be true".to_owned());
+    }
+    if args.unix_socket.as_deref() != Some("/tmp/strest.sock") {
+        return Err("Unexpected unix_socket".to_owned());
+    }
     Ok(())
 }
 #[test]

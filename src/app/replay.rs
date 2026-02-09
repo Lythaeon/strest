@@ -108,6 +108,7 @@ pub(crate) async fn run_replay(args: &TesterArgs) -> Result<(), Box<dyn Error>> 
     let initial_ui = UiData {
         target_duration: Duration::from_millis(end_ms.saturating_sub(start_ms)),
         ui_window_ms: args.ui_window_ms.get(),
+        no_color: args.no_color,
         ..UiData::default()
     };
     let (ui_tx, _) = watch::channel(initial_ui);
@@ -1050,6 +1051,7 @@ fn build_ui_data(
         transport_errors: summary_output.summary.transport_errors,
         non_expected_status: summary_output.summary.non_expected_status,
         ui_window_ms,
+        no_color: args.no_color,
         latencies,
         p50,
         p90,

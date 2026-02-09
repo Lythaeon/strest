@@ -3,7 +3,7 @@ use clap::parser::ValueSource;
 
 use crate::args::{
     LoadProfile, LoadStage, PositiveU64, PositiveUsize, Scenario, ScenarioStep, TesterArgs,
-    parse_header,
+    parse_connect_to, parse_header,
 };
 use crate::metrics::MetricsRange;
 
@@ -233,6 +233,12 @@ pub fn apply_config(
         args.http2 = http2;
     }
 
+    if !is_cli(matches, "http_version")
+        && let Some(version) = config.http_version
+    {
+        args.http_version = Some(version);
+    }
+
     if !is_cli(matches, "http3")
         && let Some(http3) = config.http3
     {
@@ -249,6 +255,28 @@ pub fn apply_config(
         && let Some(proxy) = config.proxy_url.clone()
     {
         args.proxy_url = Some(proxy);
+    }
+
+    if !is_cli(matches, "proxy_headers")
+        && let Some(headers) = config.proxy_headers.as_ref()
+    {
+        let mut parsed = Vec::with_capacity(headers.len());
+        for header in headers {
+            parsed.push(parse_header(header)?);
+        }
+        args.proxy_headers = parsed;
+    }
+
+    if !is_cli(matches, "proxy_http_version")
+        && let Some(version) = config.proxy_http_version
+    {
+        args.proxy_http_version = Some(version);
+    }
+
+    if !is_cli(matches, "proxy_http2")
+        && let Some(proxy_http2) = config.proxy_http2
+    {
+        args.proxy_http2 = proxy_http2;
     }
 
     if !is_cli(matches, "max_tasks")
@@ -277,6 +305,68 @@ pub fn apply_config(
         } else if config.rate.is_some() || config.rpm.is_some() {
             args.load_profile = Some(parse_simple_load(config.rate, config.rpm)?);
         }
+    }
+
+    if !is_cli(matches, "connect_to")
+        && let Some(entries) = config.connect_to.as_ref()
+    {
+        let mut parsed = Vec::with_capacity(entries.len());
+        for entry in entries {
+            parsed.push(parse_connect_to(entry)?);
+        }
+        args.connect_to = parsed;
+    }
+
+    if !is_cli(matches, "host_header")
+        && let Some(host) = config.host.clone()
+    {
+        args.host_header = Some(host);
+    }
+
+    if !is_cli(matches, "ipv6_only")
+        && let Some(ipv6) = config.ipv6
+    {
+        args.ipv6_only = ipv6;
+    }
+
+    if !is_cli(matches, "ipv4_only")
+        && let Some(ipv4) = config.ipv4
+    {
+        args.ipv4_only = ipv4;
+    }
+
+    if !is_cli(matches, "no_pre_lookup")
+        && let Some(no_pre_lookup) = config.no_pre_lookup
+    {
+        args.no_pre_lookup = no_pre_lookup;
+    }
+
+    if !is_cli(matches, "no_color")
+        && let Some(no_color) = config.no_color
+    {
+        args.no_color = no_color;
+    }
+
+    if !is_cli(matches, "ui_fps")
+        && let Some(fps) = config.fps
+    {
+        args.ui_fps = fps;
+    }
+
+    if !is_cli(matches, "stats_success_breakdown")
+        && let Some(flag) = config.stats_success_breakdown
+    {
+        args.stats_success_breakdown = flag;
+    }
+
+    if !is_cli(matches, "unix_socket")
+        && let Some(path) = config.unix_socket.clone()
+    {
+        args.unix_socket = Some(path);
+    }
+
+    if args.ipv4_only && args.ipv6_only {
+        return Err("Config cannot set both 'ipv4' and 'ipv6'.".to_owned());
     }
 
     if !is_cli(matches, "metrics_range")

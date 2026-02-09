@@ -6,10 +6,12 @@ use crate::sinks::config::SinksConfig;
 
 use super::defaults::{default_charts_path, default_tmp_path};
 use super::parsers::{
-    parse_duration_arg, parse_header, parse_positive_u64, parse_positive_usize, parse_tls_version,
+    parse_connect_to, parse_duration_arg, parse_header, parse_positive_u64, parse_positive_usize,
+    parse_tls_version,
 };
 use super::types::{
-    ControllerMode, HttpMethod, LoadProfile, PositiveU64, PositiveUsize, Scenario, TlsVersion,
+    ConnectToMapping, ControllerMode, HttpMethod, HttpVersion, LoadProfile, PositiveU64,
+    PositiveUsize, Scenario, TlsVersion,
 };
 
 #[derive(Debug, Subcommand, Clone)]
@@ -159,6 +161,10 @@ pub struct TesterArgs {
     #[arg(long = "disable-compression")]
     pub disable_compression: bool,
 
+    /// Prefer HTTP version (0.9, 1.0, 1.1, 2, 3)
+    #[arg(long = "http-version", value_enum)]
+    pub http_version: Option<HttpVersion>,
+
     /// Timeout for establishing a new connection (supports ms/s/m/h)
     #[arg(
         long = "connect-timeout",
@@ -247,6 +253,18 @@ pub struct TesterArgs {
     #[arg(long = "proxy", short = 'p', alias = "proxy-url")]
     pub proxy_url: Option<String>,
 
+    /// Proxy HTTP header (repeatable, 'Key: Value')
+    #[arg(long = "proxy-header", value_parser = parse_header)]
+    pub proxy_headers: Vec<(String, String)>,
+
+    /// Proxy HTTP version (0.9, 1.0, 1.1, 2)
+    #[arg(long = "proxy-http-version", value_enum)]
+    pub proxy_http_version: Option<HttpVersion>,
+
+    /// Use HTTP/2 to connect to proxy (shorthand for --proxy-http-version=2)
+    #[arg(long = "proxy-http2")]
+    pub proxy_http2: bool,
+
     /// Max number of concurrent request tasks (default: 1000)
     #[arg(
         long = "max-tasks",
@@ -278,6 +296,42 @@ pub struct TesterArgs {
     /// Limit requests per second (optional)
     #[arg(long = "rate", value_parser = parse_positive_u64, required = false)]
     pub rate_limit: Option<PositiveU64>,
+
+    /// Override DNS resolution and port for a host (repeatable)
+    #[arg(long = "connect-to", value_parser = parse_connect_to)]
+    pub connect_to: Vec<ConnectToMapping>,
+
+    /// Override the Host header
+    #[arg(long = "host")]
+    pub host_header: Option<String>,
+
+    /// Lookup only ipv6
+    #[arg(long = "ipv6")]
+    pub ipv6_only: bool,
+
+    /// Lookup only ipv4
+    #[arg(long = "ipv4")]
+    pub ipv4_only: bool,
+
+    /// Do not perform a DNS pre-lookup
+    #[arg(long = "no-pre-lookup")]
+    pub no_pre_lookup: bool,
+
+    /// Disable color output
+    #[arg(long = "no-color", env = "NO_COLOR")]
+    pub no_color: bool,
+
+    /// Frame per second for the UI
+    #[arg(long = "fps", default_value = "16")]
+    pub ui_fps: u32,
+
+    /// Include successful vs non-successful status breakdown in stats
+    #[arg(long = "stats-success-breakdown")]
+    pub stats_success_breakdown: bool,
+
+    /// Connect to a unix socket instead of TCP (http only)
+    #[arg(long = "unix-socket")]
+    pub unix_socket: Option<String>,
 
     #[arg(skip)]
     pub load_profile: Option<LoadProfile>,

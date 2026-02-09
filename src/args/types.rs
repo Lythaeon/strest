@@ -15,6 +15,44 @@ pub enum HttpMethod {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
+pub enum HttpVersion {
+    #[serde(rename = "0.9")]
+    #[value(name = "0.9")]
+    V0_9,
+    #[serde(rename = "1.0")]
+    #[value(name = "1.0")]
+    V1_0,
+    #[serde(rename = "1.1")]
+    #[value(name = "1.1")]
+    V1_1,
+    #[serde(rename = "2")]
+    #[value(name = "2")]
+    V2,
+    #[serde(rename = "3")]
+    #[value(name = "3")]
+    V3,
+}
+
+impl std::str::FromStr for HttpVersion {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let normalized = s.trim();
+        match normalized {
+            "0.9" => Ok(HttpVersion::V0_9),
+            "1.0" => Ok(HttpVersion::V1_0),
+            "1.1" => Ok(HttpVersion::V1_1),
+            "2" => Ok(HttpVersion::V2),
+            "3" => Ok(HttpVersion::V3),
+            _ => Err(format!(
+                "Invalid HTTP version '{}'. Use 0.9, 1.0, 1.1, 2, or 3.",
+                s
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ControllerMode {
     Auto,
@@ -191,4 +229,12 @@ pub struct ScenarioStep {
     pub assert_body_contains: Option<String>,
     pub think_time: Option<Duration>,
     pub vars: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConnectToMapping {
+    pub source_host: String,
+    pub source_port: u16,
+    pub target_host: String,
+    pub target_port: u16,
 }

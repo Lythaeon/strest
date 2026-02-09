@@ -115,6 +115,17 @@ requests = 12
 redirect = 0
 disable_keepalive = true
 disable_compression = true
+http_version = "2"
+proxy_headers = ["Proxy-Auth: secret"]
+proxy_http2 = true
+connect_to = ["example.com:443:localhost:8443"]
+host = "example.com"
+ipv4 = true
+no_pre_lookup = true
+no_color = true
+fps = 24
+stats_success_breakdown = true
+unix_socket = "/tmp/strest.sock"
 "#;
     std::fs::write(&path, content).map_err(|err| format!("write failed: {}", err))?;
 
@@ -165,6 +176,59 @@ disable_compression = true
     }
     if !args.disable_compression {
         return Err("Expected disable_compression to be true".to_owned());
+    }
+    if args.http_version != Some(crate::args::HttpVersion::V2) {
+        return Err("Unexpected http_version".to_owned());
+    }
+    if args.proxy_headers.len() != 1 {
+        return Err("Unexpected proxy_headers".to_owned());
+    }
+    if !args.proxy_http2 {
+        return Err("Expected proxy_http2 to be true".to_owned());
+    }
+    if args.connect_to.len() != 1 {
+        return Err("Unexpected connect_to".to_owned());
+    }
+    if args.host_header.as_deref() != Some("example.com") {
+        return Err("Unexpected host_header".to_owned());
+    }
+    if !args.ipv4_only {
+        return Err("Expected ipv4_only to be true".to_owned());
+    }
+    if !args.no_pre_lookup {
+        return Err("Expected no_pre_lookup to be true".to_owned());
+    }
+    if !args.no_color {
+        return Err("Expected no_color to be true".to_owned());
+    }
+    if args.ui_fps != 24 {
+        return Err("Unexpected ui_fps".to_owned());
+    }
+    if !args.stats_success_breakdown {
+        return Err("Expected stats_success_breakdown to be true".to_owned());
+    }
+    if args.unix_socket.as_deref() != Some("/tmp/strest.sock") {
+        return Err("Unexpected unix_socket".to_owned());
+    }
+
+    Ok(())
+}
+
+#[test]
+fn apply_config_rejects_ipv4_ipv6_conflict() -> Result<(), String> {
+    let config = ConfigFile {
+        ipv4: Some(true),
+        ipv6: Some(true),
+        ..ConfigFile::default()
+    };
+
+    let cmd = TesterArgs::command();
+    let matches = cmd.get_matches_from(["strest"]);
+    let mut args = TesterArgs::from_arg_matches(&matches)
+        .map_err(|err| format!("parse args failed: {}", err))?;
+
+    if apply_config(&mut args, &matches, &config).is_ok() {
+        return Err("Expected ipv4/ipv6 conflict error".to_owned());
     }
 
     Ok(())

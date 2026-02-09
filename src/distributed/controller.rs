@@ -276,6 +276,7 @@ async fn run_controller_auto(args: &TesterArgs) -> Result<(), String> {
         let (ui_tx, _) = watch::channel(UiData {
             target_duration,
             ui_window_ms: args.ui_window_ms.get(),
+            no_color: args.no_color,
             ..UiData::default()
         });
         let handle = setup_render_ui(args, &shutdown_tx, &ui_tx);
@@ -1508,6 +1509,7 @@ async fn start_manual_run(
         let (ui_tx, _) = watch::channel(UiData {
             target_duration,
             ui_window_ms: args.ui_window_ms.get(),
+            no_color: args.no_color,
             ..UiData::default()
         });
         let handle = setup_render_ui(args, &shutdown_tx, &ui_tx);
@@ -1865,6 +1867,7 @@ fn update_ui(
         transport_errors: summary.transport_errors,
         non_expected_status: summary.non_expected_status,
         ui_window_ms,
+        no_color: args.no_color,
         latencies,
         p50,
         p90,
@@ -2288,6 +2291,7 @@ mod tests {
             redirect_limit: 10,
             disable_keepalive: false,
             disable_compression: false,
+            http_version: None,
             connect_timeout: Duration::from_secs(5),
             charts_path: "./charts".to_owned(),
             no_charts: true,
@@ -2324,10 +2328,22 @@ mod tests {
             http3: false,
             alpn: vec![],
             proxy_url: None,
+            proxy_headers: vec![],
+            proxy_http_version: None,
+            proxy_http2: false,
             max_tasks: crate::args::PositiveUsize::try_from(1)?,
             spawn_rate_per_tick: crate::args::PositiveUsize::try_from(1)?,
             tick_interval: crate::args::PositiveU64::try_from(100)?,
             rate_limit: None,
+            connect_to: vec![],
+            host_header: None,
+            ipv6_only: false,
+            ipv4_only: false,
+            no_pre_lookup: false,
+            no_color: false,
+            ui_fps: 16,
+            stats_success_breakdown: false,
+            unix_socket: None,
             metrics_range: None,
             metrics_max: crate::args::PositiveUsize::try_from(1_000)?,
             scenario: None,

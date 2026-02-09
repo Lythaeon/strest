@@ -50,6 +50,7 @@ pub(crate) async fn run_local(
     let initial_ui = UiData {
         target_duration: Duration::from_secs(args.target_duration.get()),
         ui_window_ms: args.ui_window_ms.get(),
+        no_color: args.no_color,
         ..UiData::default()
     };
     let (ui_tx, _) = watch::channel(initial_ui);

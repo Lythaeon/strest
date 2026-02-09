@@ -22,6 +22,14 @@ use crate::args::TesterArgs;
 
 use super::model::{UiData, UiRenderData};
 
+fn style_color(no_color: bool, color: Color) -> Style {
+    if no_color {
+        Style::default()
+    } else {
+        Style::default().fg(color)
+    }
+}
+
 pub trait UiActions {
     /// Initializes the terminal for UI rendering.
     ///
@@ -105,12 +113,12 @@ impl UiActions for Ui {
                     Span::from("Elapsed Time: "),
                     Span::styled(
                         format!("{:.2}s", data.elapsed_time.as_secs_f64()),
-                        Style::default().fg(Color::Green),
+                        style_color(data.no_color, Color::Green),
                     ),
                     Span::from("   Target: "),
                     Span::styled(
                         format!("{}s", data.target_duration.as_secs()),
-                        Style::default().fg(Color::Yellow),
+                        style_color(data.no_color, Color::Yellow),
                     ),
                 ]),
                 text::Line::from(vec![
@@ -121,7 +129,7 @@ impl UiActions for Ui {
                             success_rate_x100 / 100,
                             success_rate_x100 % 100
                         ),
-                        Style::default().fg(Color::Cyan),
+                        style_color(data.no_color, Color::Cyan),
                     ),
                 ]),
             ];
@@ -183,29 +191,29 @@ impl UiActions for Ui {
                     Span::from("   OK: "),
                     Span::styled(
                         format!("{:>6}", success_requests),
-                        Style::default().fg(Color::Green),
+                        style_color(data.no_color, Color::Green),
                     ),
                     Span::from("   Errors: "),
                     Span::styled(
                         format!("{:>6}", error_requests),
-                        Style::default().fg(Color::Red),
+                        style_color(data.no_color, Color::Red),
                     ),
                 ]),
                 text::Line::from(vec![
                     Span::from("Timeouts: "),
                     Span::styled(
                         format!("{:>6}", data.timeout_requests),
-                        Style::default().fg(Color::Red),
+                        style_color(data.no_color, Color::Red),
                     ),
                     Span::from("   Transport: "),
                     Span::styled(
                         format!("{:>6}", data.transport_errors),
-                        Style::default().fg(Color::Yellow),
+                        style_color(data.no_color, Color::Yellow),
                     ),
                     Span::from("   Non-Expected: "),
                     Span::styled(
                         format!("{:>6}", data.non_expected_status),
-                        Style::default().fg(Color::Yellow),
+                        style_color(data.no_color, Color::Yellow),
                     ),
                 ]),
             ])
@@ -215,37 +223,49 @@ impl UiActions for Ui {
             let latency_text = Paragraph::new(vec![
                 text::Line::from(vec![
                     Span::from("All  P50: "),
-                    Span::styled(format!("{}ms", data.p50), Style::default().fg(Color::Green)),
+                    Span::styled(
+                        format!("{}ms", data.p50),
+                        style_color(data.no_color, Color::Green),
+                    ),
                     Span::from("   P90: "),
                     Span::styled(
                         format!("{}ms", data.p90),
-                        Style::default().fg(Color::Yellow),
+                        style_color(data.no_color, Color::Yellow),
                     ),
                     Span::from("   P99: "),
-                    Span::styled(format!("{}ms", data.p99), Style::default().fg(Color::Red)),
+                    Span::styled(
+                        format!("{}ms", data.p99),
+                        style_color(data.no_color, Color::Red),
+                    ),
                 ]),
                 text::Line::from(vec![
                     Span::from("OK   P50: "),
                     Span::styled(
                         format!("{}ms", data.p50_ok),
-                        Style::default().fg(Color::Green),
+                        style_color(data.no_color, Color::Green),
                     ),
                     Span::from("   P90: "),
                     Span::styled(
                         format!("{}ms", data.p90_ok),
-                        Style::default().fg(Color::Yellow),
+                        style_color(data.no_color, Color::Yellow),
                     ),
                     Span::from("   P99: "),
                     Span::styled(
                         format!("{}ms", data.p99_ok),
-                        Style::default().fg(Color::Red),
+                        style_color(data.no_color, Color::Red),
                     ),
                 ]),
                 text::Line::from(vec![
                     Span::from("RPS: "),
-                    Span::styled(format!("{:>6}", data.rps), Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        format!("{:>6}", data.rps),
+                        style_color(data.no_color, Color::Cyan),
+                    ),
                     Span::from("   RPM: "),
-                    Span::styled(format!("{:>6}", data.rpm), Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        format!("{:>6}", data.rpm),
+                        style_color(data.no_color, Color::Cyan),
+                    ),
                 ]),
             ])
             .block(Block::default().title("Latency").borders(Borders::ALL))
@@ -285,7 +305,7 @@ impl UiActions for Ui {
                 ratatui::widgets::Dataset::default()
                     .name("Latency Chart")
                     .marker(ratatui::symbols::Marker::Dot)
-                    .style(Style::default().fg(Color::Cyan))
+                    .style(style_color(data.no_color, Color::Cyan))
                     .data(&chart_points),
             ];
 

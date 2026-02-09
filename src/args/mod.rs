@@ -9,8 +9,8 @@ mod tests;
 
 pub use cli::{CleanupArgs, Command, TesterArgs};
 pub use types::{
-    ControllerMode, HttpMethod, LoadProfile, LoadStage, PositiveU64, PositiveUsize, Scenario,
-    ScenarioStep, TlsVersion,
+    ConnectToMapping, ControllerMode, HttpMethod, HttpVersion, LoadProfile, LoadStage, PositiveU64,
+    PositiveUsize, Scenario, ScenarioStep, TlsVersion,
 };
 
 pub(crate) use defaults::DEFAULT_USER_AGENT;

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use super::types::{PositiveU64, PositiveUsize, TlsVersion};
+use super::types::{ConnectToMapping, PositiveU64, PositiveUsize, TlsVersion};
 
 pub(crate) fn parse_header(s: &str) -> Result<(String, String), String> {
     match s.split_once(':') {
@@ -22,6 +22,35 @@ pub(super) fn parse_positive_usize(s: &str) -> Result<PositiveUsize, String> {
 
 pub(super) fn parse_tls_version(s: &str) -> Result<TlsVersion, String> {
     s.parse::<TlsVersion>()
+}
+
+pub(super) fn parse_connect_to(s: &str) -> Result<ConnectToMapping, String> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() != 4 {
+        return Err(format!(
+            "Invalid connect-to '{}'. Expected 'source_host:source_port:target_host:target_port'.",
+            s
+        ));
+    }
+    let source_host = parts[0].trim();
+    let source_port: u16 = parts[1]
+        .trim()
+        .parse()
+        .map_err(|_| format!("Invalid source port in '{}'.", s))?;
+    let target_host = parts[2].trim();
+    let target_port: u16 = parts[3]
+        .trim()
+        .parse()
+        .map_err(|_| format!("Invalid target port in '{}'.", s))?;
+    if source_host.is_empty() || target_host.is_empty() {
+        return Err(format!("Invalid connect-to '{}'. Host must not be empty.", s));
+    }
+    Ok(ConnectToMapping {
+        source_host: source_host.to_owned(),
+        source_port,
+        target_host: target_host.to_owned(),
+        target_port,
+    })
 }
 
 pub(crate) fn parse_duration_arg(s: &str) -> Result<Duration, String> {

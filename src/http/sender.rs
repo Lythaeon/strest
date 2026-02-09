@@ -1,14 +1,19 @@
+use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest::{Client, Proxy, redirect};
+use reqwest::{
+    Client, Proxy, Url,
+    header::{HeaderMap, HeaderName, HeaderValue},
+    redirect,
+};
 use tokio::sync::Semaphore;
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::{interval, sleep};
 use tracing::error;
 
 use crate::{
-    args::{DEFAULT_USER_AGENT, HttpMethod, TesterArgs},
+    args::{ConnectToMapping, DEFAULT_USER_AGENT, HttpMethod, HttpVersion, TesterArgs},
     metrics::{LogSink, Metrics},
 };
 
@@ -33,12 +38,34 @@ pub fn setup_request_sender(
     let shutdown_tx = shutdown_tx.clone();
     let metrics_tx = metrics_tx.clone();
 
+    if args.ipv4_only && args.ipv6_only {
+        return Err("Cannot enable both ipv4 and ipv6 only modes.".to_owned());
+    }
+    if args.proxy_http2
+        && args.proxy_http_version.is_some()
+        && args.proxy_http_version != Some(HttpVersion::V2)
+    {
+        return Err("proxy-http2 conflicts with proxy-http-version.".to_owned());
+    }
+
     let mut client_builder = Client::builder()
         .timeout(args.request_timeout)
         .connect_timeout(args.connect_timeout);
 
     if !args.no_ua {
         client_builder = client_builder.user_agent(DEFAULT_USER_AGENT);
+    }
+
+    if let Some((host, port)) = resolve_primary_host(args)? {
+        if args.ipv4_only || args.ipv6_only {
+            let addrs = resolve_addrs(&host, port, args.ipv4_only, args.ipv6_only)?;
+            if addrs.is_empty() {
+                return Err(format!("No addresses resolved for {}.", host));
+            }
+            client_builder = client_builder.resolve_to_addrs(&host, &addrs);
+        } else if !args.no_pre_lookup {
+            let _ = resolve_addrs(&host, port, false, false)?;
+        }
     }
 
     if args.redirect_limit == 0 {
@@ -63,7 +90,20 @@ pub fn setup_request_sender(
 
     if let Some(ref proxy_url) = args.proxy_url {
         match Proxy::all(proxy_url) {
-            Ok(proxy) => {
+            Ok(mut proxy) => {
+                if !args.proxy_headers.is_empty() {
+                    let mut headers = HeaderMap::new();
+                    for (key, value) in &args.proxy_headers {
+                        let name = HeaderName::from_bytes(key.as_bytes()).map_err(|_| {
+                            format!("Invalid proxy header name '{}'.", key)
+                        })?;
+                        let val = HeaderValue::from_str(value).map_err(|_| {
+                            format!("Invalid proxy header value for '{}'.", key)
+                        })?;
+                        headers.insert(name, val);
+                    }
+                    proxy = proxy.headers(headers);
+                }
                 client_builder = client_builder.proxy(proxy);
             }
             Err(e) => {
@@ -71,6 +111,17 @@ pub fn setup_request_sender(
                 return Err(format!("Invalid proxy URL '{}': {}", proxy_url, e));
             }
         }
+    }
+
+    if args.proxy_http2 {
+        client_builder = client_builder.http2_prior_knowledge();
+    }
+    if let Some(version) = args.proxy_http_version {
+        client_builder = apply_proxy_http_version(client_builder, version)?;
+    }
+
+    if let Some(path) = args.unix_socket.as_ref() {
+        client_builder = client_builder.unix_socket(path);
     }
 
     let client = match client_builder.build() {
@@ -82,7 +133,11 @@ pub fn setup_request_sender(
     };
 
     let workload = if let Some(scenario) = args.scenario.clone() {
-        Workload::Scenario(Arc::new(scenario))
+        Workload::Scenario(
+            Arc::new(scenario),
+            Arc::new(args.connect_to.clone()),
+            args.host_header.clone(),
+        )
     } else {
         let url = args
             .url
@@ -98,29 +153,40 @@ pub fn setup_request_sender(
                 url: url.to_owned(),
                 headers,
                 body: body_source,
+                connect_to: Arc::new(args.connect_to.clone()),
             })),
             BodySource::Static(body) => {
-                let mut request_builder = match args.method {
-                    HttpMethod::Get => client.get(url),
-                    HttpMethod::Post => client.post(url),
-                    HttpMethod::Patch => client.patch(url),
-                    HttpMethod::Put => client.put(url),
-                    HttpMethod::Delete => client.delete(url),
-                };
+                if !args.connect_to.is_empty() {
+                    Workload::SingleDynamic(Arc::new(SingleRequestSpec {
+                        method: args.method,
+                        url: url.to_owned(),
+                        headers,
+                        body: BodySource::Static(body),
+                        connect_to: Arc::new(args.connect_to.clone()),
+                    }))
+                } else {
+                    let mut request_builder = match args.method {
+                        HttpMethod::Get => client.get(url),
+                        HttpMethod::Post => client.post(url),
+                        HttpMethod::Patch => client.patch(url),
+                        HttpMethod::Put => client.put(url),
+                        HttpMethod::Delete => client.delete(url),
+                    };
 
-                for (key, value) in &headers {
-                    request_builder = request_builder.header(key, value);
-                }
-
-                let request = match request_builder.body(body).build() {
-                    Ok(req) => req,
-                    Err(e) => {
-                        error!("Failed to build request: {}", e);
-                        return Err(format!("Failed to build request: {}", e));
+                    for (key, value) in &headers {
+                        request_builder = request_builder.header(key, value);
                     }
-                };
 
-                Workload::Single(Arc::new(request))
+                    let request = match request_builder.body(body).build() {
+                        Ok(req) => req,
+                        Err(e) => {
+                            error!("Failed to build request: {}", e);
+                            return Err(format!("Failed to build request: {}", e));
+                        }
+                    };
+
+                    Workload::Single(Arc::new(request))
+                }
             }
         }
     };
@@ -209,10 +275,12 @@ fn create_sender_task(
                             run_single_dynamic_iteration(&mut shutdown_rx_worker, &worker, spec)
                                 .await
                         }
-                        Workload::Scenario(scenario) => {
+                        Workload::Scenario(scenario, connect_to, host_header) => {
                             let mut context = ScenarioRunContext {
                                 client: &client,
                                 scenario,
+                                connect_to,
+                                host_header: host_header.as_deref(),
                                 expected_status_code,
                                 log_sink: &log_sink,
                                 metrics_tx: &metrics_tx,
@@ -264,6 +332,11 @@ fn create_sender_task(
 
 fn build_headers(args: &TesterArgs) -> Vec<(String, String)> {
     let mut headers = Vec::new();
+    if let Some(host) = args.host_header.as_ref() {
+        if !has_host_header(&args.headers) {
+            headers.push(("Host".to_owned(), host.clone()));
+        }
+    }
     if let Some(accept) = args.accept_header.as_ref() {
         headers.push(("Accept".to_owned(), accept.clone()));
     }
@@ -272,6 +345,12 @@ fn build_headers(args: &TesterArgs) -> Vec<(String, String)> {
     }
     headers.extend(args.headers.clone());
     headers
+}
+
+fn has_host_header(headers: &[(String, String)]) -> bool {
+    headers
+        .iter()
+        .any(|(key, _)| key.eq_ignore_ascii_case("host"))
 }
 
 fn resolve_body_source(args: &TesterArgs) -> Result<BodySource, String> {
@@ -295,4 +374,75 @@ fn resolve_body_source(args: &TesterArgs) -> Result<BodySource, String> {
     }
 
     Ok(BodySource::Static(args.data.clone()))
+}
+
+fn apply_proxy_http_version(
+    mut builder: reqwest::ClientBuilder,
+    version: HttpVersion,
+) -> Result<reqwest::ClientBuilder, String> {
+    match version {
+        HttpVersion::V0_9 | HttpVersion::V1_0 | HttpVersion::V1_1 => {
+            builder = builder.http1_only();
+        }
+        HttpVersion::V2 => {
+            builder = builder.http2_prior_knowledge();
+        }
+        HttpVersion::V3 => {
+            return Err("proxy http version 3 is not supported.".to_owned());
+        }
+    }
+    Ok(builder)
+}
+
+fn resolve_primary_host(args: &TesterArgs) -> Result<Option<(String, u16)>, String> {
+    if let Some(url) = args.url.as_deref() {
+        let parsed = Url::parse(url).map_err(|err| format!("Invalid URL '{}': {}", url, err))?;
+        let host = parsed
+            .host_str()
+            .ok_or_else(|| "URL is missing host.".to_owned())?;
+        let port = parsed.port_or_known_default().unwrap_or(80);
+        return Ok(Some((host.to_owned(), port)));
+    }
+    if let Some(scenario) = args.scenario.as_ref() {
+        if let Some(base_url) = scenario.base_url.as_ref() {
+            let parsed = Url::parse(base_url)
+                .map_err(|err| format!("Invalid base_url '{}': {}", base_url, err))?;
+            let host = parsed
+                .host_str()
+                .ok_or_else(|| "Scenario base_url is missing host.".to_owned())?;
+            let port = parsed.port_or_known_default().unwrap_or(80);
+            return Ok(Some((host.to_owned(), port)));
+        }
+        if let Some(step) = scenario.steps.first() {
+            if let Some(url) = step.url.as_ref() {
+                let parsed = Url::parse(url)
+                    .map_err(|err| format!("Invalid scenario url '{}': {}", url, err))?;
+                let host = parsed
+                    .host_str()
+                    .ok_or_else(|| "Scenario url is missing host.".to_owned())?;
+                let port = parsed.port_or_known_default().unwrap_or(80);
+                return Ok(Some((host.to_owned(), port)));
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn resolve_addrs(
+    host: &str,
+    port: u16,
+    ipv4_only: bool,
+    ipv6_only: bool,
+) -> Result<Vec<std::net::SocketAddr>, String> {
+    let mut addrs: Vec<std::net::SocketAddr> = (host, port)
+        .to_socket_addrs()
+        .map_err(|err| format!("Failed to resolve {}:{} ({})", host, port, err))?
+        .collect();
+    if ipv4_only {
+        addrs.retain(|addr| addr.is_ipv4());
+    }
+    if ipv6_only {
+        addrs.retain(|addr| addr.is_ipv6());
+    }
+    Ok(addrs)
 }

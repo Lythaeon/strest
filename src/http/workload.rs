@@ -14,7 +14,7 @@ use tokio::{
 use tracing::error;
 
 use crate::{
-    args::{HttpMethod, Scenario, ScenarioStep},
+    args::{ConnectToMapping, HttpMethod, Scenario, ScenarioStep},
     metrics::{LogSink, Metrics},
 };
 
@@ -24,7 +24,7 @@ const ASSERT_FAILED_STATUS: u16 = 0;
 pub(super) enum Workload {
     Single(Arc<Request>),
     SingleDynamic(Arc<SingleRequestSpec>),
-    Scenario(Arc<Scenario>),
+    Scenario(Arc<Scenario>, Arc<Vec<ConnectToMapping>>, Option<String>),
 }
 
 #[derive(Debug)]
@@ -78,6 +78,7 @@ pub(super) struct SingleRequestSpec {
     pub(super) url: String,
     pub(super) headers: Vec<(String, String)>,
     pub(super) body: BodySource,
+    pub(super) connect_to: Arc<Vec<ConnectToMapping>>,
 }
 
 pub(super) struct WorkerContext<'ctx> {
@@ -107,13 +108,20 @@ pub(super) async fn preflight_request(client: &Client, workload: &Workload) -> R
                 .map_err(|err| format!("Test request failed: {}", err))?;
             Ok(())
         }
-        Workload::Scenario(scenario) => {
+        Workload::Scenario(scenario, connect_to, host_header) => {
             let step = scenario
                 .steps
                 .first()
                 .ok_or_else(|| "Scenario has no steps.".to_owned())?;
             let vars = build_template_vars(scenario, step, 0, 0);
-            let request = build_step_request(client, scenario, step, &vars)?;
+            let request = build_step_request(
+                client,
+                scenario,
+                step,
+                &vars,
+                connect_to,
+                host_header.as_deref(),
+            )?;
             execute_request(client, request, true)
                 .await
                 .map_err(|err| format!("Scenario preflight failed: {}", err))?;
@@ -221,6 +229,8 @@ pub(super) async fn run_single_dynamic_iteration(
 pub(super) struct ScenarioRunContext<'ctx> {
     pub(super) client: &'ctx Client,
     pub(super) scenario: &'ctx Scenario,
+    pub(super) connect_to: &'ctx [ConnectToMapping],
+    pub(super) host_header: Option<&'ctx str>,
     pub(super) expected_status_code: u16,
     pub(super) log_sink: &'ctx Option<Arc<LogSink>>,
     pub(super) metrics_tx: &'ctx mpsc::Sender<Metrics>,
@@ -249,7 +259,14 @@ pub(super) async fn run_scenario_iteration(
         }
 
         let vars = build_template_vars(context.scenario, step, *context.request_seq, step_index);
-        let request = match build_step_request(context.client, context.scenario, step, &vars) {
+        let request = match build_step_request(
+            context.client,
+            context.scenario,
+            step,
+            &vars,
+            context.connect_to,
+            context.host_header,
+        ) {
             Ok(request) => request,
             Err(err) => {
                 error!("Failed to build scenario request: {}", err);
@@ -383,16 +400,25 @@ async fn execute_request_with_asserts(
 }
 
 fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> Result<Request, String> {
+    let url = Url::parse(&spec.url)
+        .map_err(|err| format!("Invalid URL '{}': {}", spec.url, err))?;
+    let (url, host_override) = apply_connect_to(&url, &spec.connect_to)?;
+
     let mut request_builder = match spec.method {
-        HttpMethod::Get => client.get(&spec.url),
-        HttpMethod::Post => client.post(&spec.url),
-        HttpMethod::Patch => client.patch(&spec.url),
-        HttpMethod::Put => client.put(&spec.url),
-        HttpMethod::Delete => client.delete(&spec.url),
+        HttpMethod::Get => client.get(url.clone()),
+        HttpMethod::Post => client.post(url.clone()),
+        HttpMethod::Patch => client.patch(url.clone()),
+        HttpMethod::Put => client.put(url.clone()),
+        HttpMethod::Delete => client.delete(url.clone()),
     };
 
     for (key, value) in &spec.headers {
         request_builder = request_builder.header(key, value);
+    }
+    if let Some(host) = host_override {
+        if !has_host_header(&spec.headers) {
+            request_builder = request_builder.header("Host", host);
+        }
     }
 
     let body = match &spec.body {
@@ -411,9 +437,7 @@ fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> Result<
         }
     };
 
-    request_builder
-        .body(body)
-        .build()
+    request_builder.body(body).build()
         .map_err(|err| format!("Failed to build request: {}", err))
 }
 
@@ -422,20 +446,30 @@ pub(crate) fn build_step_request(
     scenario: &Scenario,
     step: &ScenarioStep,
     vars: &BTreeMap<String, String>,
+    connect_to: &[ConnectToMapping],
+    host_header: Option<&str>,
 ) -> Result<Request, String> {
     let url = resolve_step_url(scenario, step, vars)?;
+    let (url, host_override) = apply_connect_to(&url, connect_to)?;
     let mut request_builder = match step.method {
-        HttpMethod::Get => client.get(url),
-        HttpMethod::Post => client.post(url),
-        HttpMethod::Patch => client.patch(url),
-        HttpMethod::Put => client.put(url),
-        HttpMethod::Delete => client.delete(url),
+        HttpMethod::Get => client.get(url.clone()),
+        HttpMethod::Post => client.post(url.clone()),
+        HttpMethod::Patch => client.patch(url.clone()),
+        HttpMethod::Put => client.put(url.clone()),
+        HttpMethod::Delete => client.delete(url.clone()),
     };
 
     for (key, value) in &step.headers {
         let key_rendered = render_template(key, vars);
         let value_rendered = render_template(value, vars);
         request_builder = request_builder.header(key_rendered, value_rendered);
+    }
+    if !has_host_header(&step.headers) {
+        if let Some(host) = host_header {
+            request_builder = request_builder.header("Host", host);
+        } else if let Some(host) = host_override {
+            request_builder = request_builder.header("Host", host);
+        }
     }
 
     if let Some(body) = step.body.as_ref() {
@@ -448,13 +482,49 @@ pub(crate) fn build_step_request(
         .map_err(|err| format!("Failed to build request: {}", err))
 }
 
+fn apply_connect_to(
+    url: &Url,
+    connect_to: &[ConnectToMapping],
+) -> Result<(Url, Option<String>), String> {
+    let Some(host) = url.host_str() else {
+        return Ok((url.clone(), None));
+    };
+    let port = url.port_or_known_default().unwrap_or(80);
+    for mapping in connect_to {
+        if mapping.source_host == host && mapping.source_port == port {
+            let mut rewritten = url.clone();
+            rewritten
+                .set_host(Some(&mapping.target_host))
+                .map_err(|err| format!("Invalid connect-to host: {}", err))?;
+            rewritten
+                .set_port(Some(mapping.target_port))
+                .map_err(|err| format!("Invalid connect-to port: {}", err))?;
+            let host_header = if port == 80 || port == 443 {
+                host.to_owned()
+            } else {
+                format!("{}:{}", host, port)
+            };
+            return Ok((rewritten, Some(host_header)));
+        }
+    }
+    Ok((url.clone(), None))
+}
+
+fn has_host_header(headers: &[(String, String)]) -> bool {
+    headers
+        .iter()
+        .any(|(key, _)| key.eq_ignore_ascii_case("host"))
+}
+
 fn resolve_step_url(
     scenario: &Scenario,
     step: &ScenarioStep,
     vars: &BTreeMap<String, String>,
-) -> Result<String, String> {
+) -> Result<Url, String> {
     if let Some(url) = step.url.as_ref() {
-        return Ok(render_template(url, vars));
+        let rendered = render_template(url, vars);
+        return Url::parse(&rendered)
+            .map_err(|err| format!("Invalid scenario url '{}': {}", rendered, err));
     }
 
     let path = step
@@ -471,7 +541,7 @@ fn resolve_step_url(
     let joined = base
         .join(&rendered_path)
         .map_err(|err| format!("Failed to join URL '{}': {}", rendered_path, err))?;
-    Ok(joined.to_string())
+    Ok(joined)
 }
 
 pub(crate) fn build_template_vars(
