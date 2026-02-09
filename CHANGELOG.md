@@ -5,6 +5,10 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+## 0.1.2
+
+Released: 2026-02-09
+
 - Added a default `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)` header; disabling it requires `--no-ua` plus `--authorized` (or config `no_ua = true` + `authorized = true`).
 
 ## 0.1.1
