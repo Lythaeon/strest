@@ -19,6 +19,7 @@ pub struct ConfigFile {
     pub charts_path: Option<String>,
     pub no_charts: Option<bool>,
     pub no_ua: Option<bool>,
+    pub authorized: Option<bool>,
     pub tmp_path: Option<String>,
     pub keep_tmp: Option<bool>,
     pub export_csv: Option<String>,

@@ -95,6 +95,12 @@ pub fn apply_config(
         args.no_ua = no_ua;
     }
 
+    if !is_cli(matches, "authorized")
+        && let Some(authorized) = config.authorized
+    {
+        args.authorized = authorized;
+    }
+
     if !is_cli(matches, "tmp_path")
         && let Some(path) = config.tmp_path.clone()
     {

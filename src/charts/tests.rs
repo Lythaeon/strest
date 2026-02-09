@@ -98,6 +98,7 @@ fn plot_metrics_creates_files() -> Result<(), String> {
             url: Some("http://localhost".to_owned()),
             headers: vec![],
             no_ua: false,
+            authorized: false,
             data: String::new(),
             target_duration: PositiveU64::try_from(1)?,
             expected_status_code: 200,

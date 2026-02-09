@@ -30,9 +30,13 @@ pub struct TesterArgs {
     #[arg(long, short = 'H', value_parser = parse_header)]
     pub headers: Vec<(String, String)>,
 
-    /// Disable the default User-Agent header (strest-loadtest/<version>)
+    /// Disable the default User-Agent header (strest-loadtest/<version> (+https://github.com/Lythaeon/strest)); requires --authorized
     #[arg(long = "no-ua", alias = "no-default-ua")]
     pub no_ua: bool,
+
+    /// Confirm you have authorization to run tests when disabling the default User-Agent
+    #[arg(long = "authorized")]
+    pub authorized: bool,
 
     /// Request body data (for POST/PUT)
     #[arg(long, short, default_value = "")]

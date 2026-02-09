@@ -312,7 +312,8 @@ Charts collection can be bounded for long runs:
 - `--method` (`-X`) sets the HTTP method.
 - `--url` (`-u`) sets the target URL.
 - `--headers` (`-H`) adds request headers (repeatable, `Key: Value`).
-- `--no-ua` disables the default `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)` header.
+- `--no-ua` disables the default `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)` header (requires `--authorized`).
+- `--authorized` confirms you have explicit permission to run tests when using `--no-ua`.
 - `--data` (`-d`) sets the request body data (POST/PUT/PATCH).
 - `--duration` (`-t`) sets the test duration in seconds.
 - `--no-ui` disables the interactive UI and shows a progress bar in the terminal (summary output is printed automatically).
@@ -364,7 +365,7 @@ RUSTFLAGS="--cfg reqwest_unstable" cargo build --release --features http3
 ### Configuration File
 
 You can provide a config file with `--config path`. If no config is specified, `strest` will look for `./strest.toml` or `./strest.json` (TOML is preferred if both exist). CLI flags override config values.
-By default, strest sends `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)`; set `no_ua = true` to disable.
+By default, strest sends `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)`. To disable, set `no_ua = true` and `authorized = true`.
 
 Example `strest.toml`:
 

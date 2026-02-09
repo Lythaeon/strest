@@ -22,6 +22,7 @@ fn base_args(url: String, tmp_path: String) -> Result<TesterArgs, String> {
         url: Some(url),
         headers: vec![],
         no_ua: false,
+        authorized: false,
         data: String::new(),
         target_duration: positive_u64(1)?,
         expected_status_code: 200,
