@@ -358,55 +358,30 @@ strest --replay --tmp-path ~/.strest/tmp --replay-snapshot-start 10s --replay-sn
 Controls: `space` play/pause, `←/→` seek, `r` restart, `q` quit, `s` mark snapshot start, `e` mark snapshot end, `w` write snapshot.
 Snapshots default to `~/.strest/snapshots` (or `%USERPROFILE%\\.strest\\snapshots` on Windows) unless `--replay-snapshot-out` is set.
 
-### Common Options
+### CLI Quick Reference
 
-- `--method` (`-X`) sets the HTTP method.
+Everyday flags:
+
 - `--url` (`-u`) sets the target URL.
-- `--urls-from-file` reads newline-delimited URLs from the file specified by `--url`.
-- `--rand-regex-url` treats `--url` as a rand_regex pattern and generates URLs per request.
-- `--max-repeat` bounds rand_regex repeat counts (default `4`).
-- `--dump-urls` prints generated URLs and exits (requires `--rand-regex-url`).
-- `--headers` (`-H`) adds request headers (repeatable, `Key: Value`).
-- `--accept` (`-A`) sets the Accept header (shortcut for `-H "Accept: ..."`)
-- `--content-type` (`-T`) sets the Content-Type header (shortcut for `-H "Content-Type: ..."`)
-- `--no-ua` disables the default `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)` header (requires `--authorized`).
-- `--authorized` confirms you have explicit permission to run tests when using `--no-ua`.
-- `--basic-auth` (`-a`) sets Basic auth (username:password) or AWS credentials (access_key:secret_key).
-- `--aws-session` sets the AWS session token (requires `--aws-sigv4`).
-- `--aws-sigv4` enables AWS SigV4 signing (format `aws:amz:region:service`).
-- `--data` (`-d`) sets the request body data (POST/PUT/PATCH).
-- `--form` (`-F`) sets multipart form fields (`name=value` or `name=@path`, repeatable).
-- `--data-file` (`-D`) sets the request body from a file.
-- `--data-lines` (`-Z`) sets the request body from a file line by line.
 - `--duration` (`-t`) sets the test duration in seconds.
-- `--wait-ongoing-requests-after-deadline` waits for in-flight requests after duration.
-- `--requests` (`-n`) stops after N total requests.
-- `--no-tui` disables the interactive UI and shows a progress bar in the terminal (summary output is printed automatically).
-- `--ui-window-ms` sets the UI chart window length in milliseconds (default: `10000`).
-- `--fps` sets the UI frame rate (default: `16`).
-- `--no-color` disables colored output (`NO_COLOR=1` is supported).
-- `--summary` prints an end-of-run summary.
-- `--status` (`-s`) sets the expected HTTP status code.
-- `--timeout` sets the request timeout (supports `ms`, `s`, `m`, `h`).
-- `--connect-timeout` sets the connection timeout (supports `ms`, `s`, `m`, `h`).
-- `--warmup` ignores the first N seconds for summary/charts/exports (supports `ms`, `s`, `m`, `h`).
-- `--time-unit` sets the text output time unit (`ns`, `us`, `ms`, `s`, `m`, `h`).
-- `--proxy` (`-p`) sets a proxy URL.
-- `--proxy-header` adds proxy headers (repeatable).
-- `--proxy-http-version` forces the proxy HTTP version (`0.9`, `1.0`, `1.1`, `2`).
-- `--proxy-http2` uses HTTP/2 for proxy connections (alias for `--proxy-http-version=2`).
-- `--max-tasks` (`-m`) limits concurrent request tasks (`--concurrency`, `--connections` alias).
-- `--spawn-rate` (`-r`) and `--spawn-interval` (`-i`) control how quickly tasks are spawned.
 - `--rate` (`-q`) sets a global requests-per-second limit.
-- `--burst-delay` adds a delay between bursts (ignored when `--rate` is set).
-- `--burst-rate` sets the burst size (default `1`, ignored when `--rate` is set).
-- `--latency-correction` corrects latency for coordinated omission (ignored when `--rate` is unset).
-- `--redirect` limits redirects (0 disables).
-- `--disable-keepalive` disables connection reuse (HTTP/1 only).
-- `--disable-compression` disables gzip/brotli/deflate.
-- `--pool-max-idle-per-host` sets the max idle connections per host (0 disables idle pooling).
-- `--pool-idle-timeout-ms` sets the idle connection timeout for the HTTP pool (ms).
-- `--http-version` prefers an HTTP version (`0.9`, `1.0`, `1.1`, `2`, `3`).
+- `--max-tasks` (`-m`) limits concurrent request tasks (`--concurrency`, `--connections` alias).
+- `--no-tui` disables the interactive UI and shows a progress bar in the terminal (summary output is printed automatically).
+- `--summary` prints an end-of-run summary.
+- `--output` (`-o`) writes results to a file (aliases the export formats).
+
+CLI-only flags (not represented in config):
+
+- `--config` selects the config file (TOML/JSON).
+- `--verbose` enables debug logging (unless overridden by `STREST_LOG`/`RUST_LOG`).
+- `--charts-path` sets the chart output directory.
+- `--replay` replays a run from tmp logs or exported CSV/JSON/JSONL.
+- `--replay-start` and `--replay-end` set the replay window (supports `min`/`max` or durations like `10s`).
+- `--replay-step` sets the seek step for replay.
+- `--replay-snapshot-interval` writes snapshots every N seconds during replay.
+- `--replay-snapshot-start` and `--replay-snapshot-end` set the snapshot window for replay.
+- `--replay-snapshot-out` sets where snapshots are written (dir or file).
+- `--replay-snapshot-format` sets snapshot format (`json`, `jsonl`, `csv`).
 - `--controller-listen` starts a distributed controller (e.g., `0.0.0.0:9009`).
 - `--controller-mode` selects controller mode (`auto` or `manual`).
 - `--control-listen` sets the manual control-plane HTTP listen address.
@@ -422,44 +397,12 @@ Snapshots default to `~/.strest/snapshots` (or `%USERPROFILE%\\.strest\\snapshot
 - `--agent-heartbeat-interval-ms` sets the agent heartbeat interval.
 - `--agent-heartbeat-timeout-ms` sets the controller heartbeat timeout.
 - `--stream-interval-ms` sets the stream snapshot interval for distributed mode.
-- `--script` runs a WASM script that produces a scenario (requires `--features wasm` build).
-- `--replay` replays a run from tmp logs or exported CSV/JSON/JSONL.
-- `--replay-start` and `--replay-end` set the replay window (supports `min`/`max` or durations like `10s`).
-- `--replay-step` sets the seek step for replay.
-- `--replay-snapshot-interval` writes snapshots every N seconds during replay.
-- `--replay-snapshot-start` and `--replay-snapshot-end` set the snapshot window for replay.
-- `--replay-snapshot-out` sets where snapshots are written (dir or file).
-- `--replay-snapshot-format` sets snapshot format (`json`, `jsonl`, `csv`).
-- `--tls-min` and `--tls-max` set the TLS version floor/ceiling.
-- `--cacert` sets a CA bundle for TLS verification.
-- `--cert`/`--key` set the client certificate and key for mutual TLS.
-- `--insecure` disables TLS verification.
-- `--http2` enables HTTP/2 (adaptive).
-- `--http2-parallel` sets parallel HTTP/2 requests per connection.
-- `--http3` enables HTTP/3 (requires `--features http3` and `RUSTFLAGS=--cfg reqwest_unstable`).
-- `--alpn` sets the advertised protocols (repeatable, e.g. `--alpn h2`).
-- `--connect-to` overrides DNS resolution and ports (repeatable, `host:port:target_host:target_port`).
-- `--host` sets an explicit Host header.
-- `--no-pre-lookup` skips DNS pre-lookup.
-- `--ipv4` / `--ipv6` force DNS resolution to IPv4/IPv6.
-- `--unix-socket` connects over a unix socket (HTTP only).
-- `--stats-success-breakdown` adds success vs non-success breakdown in stats.
-- `--tmp-path` sets where temporary run data is written.
-- `--keep-tmp` keeps temporary run data after completion.
-- `--log-shards` controls the number of log writers (default `1`).
-- `--export-csv` writes metrics to a CSV file (bounded by `--metrics-range` and `--metrics-max`).
-- `--export-json` writes summary and metrics to a JSON file (bounded by `--metrics-range` and `--metrics-max`).
-- `--export-jsonl` writes summary and metrics as newline-delimited JSON (JSONL).
-- `--output` (`-o`) writes results to a file (aliases the export formats).
-- `--output-format` selects `text`, `json`, `jsonl`, `csv`, or `quiet` (or infer from extension for `--output`).
-- `--db-url` writes per-request metrics to a sqlite database (table `metrics`).
+- `--stream-summaries` enables streaming summaries in distributed mode.
 - `--install-service` installs a Linux systemd service for controller/agent.
 - `--uninstall-service` removes a Linux systemd service for controller/agent.
 - `--service-name` overrides the systemd service name.
-- `--rss-log-ms` logs RSS periodically when `--no-tui` is enabled (Linux only).
-- `--alloc-profiler-ms` logs jemalloc allocator stats periodically (requires `--features alloc-profiler`).
-- `--alloc-profiler-dump-ms` writes jemalloc heap profile dumps periodically (requires `--features alloc-profiler`).
-- `--alloc-profiler-dump-path` sets the output directory for heap dumps (default `./alloc-prof`).
+
+For full CLI options, run `strest --help`.
 
 HTTP/3 is experimental and requires building with `--features http3` plus
 `RUSTFLAGS="--cfg reqwest_unstable"` (reqwest requirement):
