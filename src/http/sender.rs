@@ -15,7 +15,7 @@ use crate::{
 use super::rate::build_rate_limiter;
 use super::tls::apply_tls_settings;
 use super::workload::{
-    BodySource, RequestLimiter, ScenarioRunContext, SingleRequestSpec, Workload, WorkerContext,
+    BodySource, RequestLimiter, ScenarioRunContext, SingleRequestSpec, WorkerContext, Workload,
     preflight_request, run_scenario_iteration, run_single_dynamic_iteration, run_single_iteration,
 };
 
@@ -184,20 +184,12 @@ fn create_sender_task(
                     };
                     let should_break = match &workload {
                         Workload::Single(request_template) => {
-                            run_single_iteration(
-                                &mut shutdown_rx_worker,
-                                &worker,
-                                request_template,
-                            )
-                            .await
+                            run_single_iteration(&mut shutdown_rx_worker, &worker, request_template)
+                                .await
                         }
                         Workload::SingleDynamic(spec) => {
-                            run_single_dynamic_iteration(
-                                &mut shutdown_rx_worker,
-                                &worker,
-                                spec,
-                            )
-                            .await
+                            run_single_dynamic_iteration(&mut shutdown_rx_worker, &worker, spec)
+                                .await
                         }
                         Workload::Scenario(scenario) => {
                             let mut context = ScenarioRunContext {
@@ -208,12 +200,8 @@ fn create_sender_task(
                                 metrics_tx: &metrics_tx,
                                 request_seq: &mut request_seq,
                             };
-                            run_scenario_iteration(
-                                &mut shutdown_rx_worker,
-                                &worker,
-                                &mut context,
-                            )
-                            .await
+                            run_scenario_iteration(&mut shutdown_rx_worker, &worker, &mut context)
+                                .await
                         }
                     };
 
