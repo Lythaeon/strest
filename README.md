@@ -358,55 +358,30 @@ strest --replay --tmp-path ~/.strest/tmp --replay-snapshot-start 10s --replay-sn
 Controls: `space` play/pause, `←/→` seek, `r` restart, `q` quit, `s` mark snapshot start, `e` mark snapshot end, `w` write snapshot.
 Snapshots default to `~/.strest/snapshots` (or `%USERPROFILE%\\.strest\\snapshots` on Windows) unless `--replay-snapshot-out` is set.
 
-### Common Options
+### CLI Quick Reference
 
-- `--method` (`-X`) sets the HTTP method.
+Everyday flags:
+
 - `--url` (`-u`) sets the target URL.
-- `--urls-from-file` reads newline-delimited URLs from the file specified by `--url`.
-- `--rand-regex-url` treats `--url` as a rand_regex pattern and generates URLs per request.
-- `--max-repeat` bounds rand_regex repeat counts (default `4`).
-- `--dump-urls` prints generated URLs and exits (requires `--rand-regex-url`).
-- `--headers` (`-H`) adds request headers (repeatable, `Key: Value`).
-- `--accept` (`-A`) sets the Accept header (shortcut for `-H "Accept: ..."`)
-- `--content-type` (`-T`) sets the Content-Type header (shortcut for `-H "Content-Type: ..."`)
-- `--no-ua` disables the default `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)` header (requires `--authorized`).
-- `--authorized` confirms you have explicit permission to run tests when using `--no-ua`.
-- `--basic-auth` (`-a`) sets Basic auth (username:password) or AWS credentials (access_key:secret_key).
-- `--aws-session` sets the AWS session token (requires `--aws-sigv4`).
-- `--aws-sigv4` enables AWS SigV4 signing (format `aws:amz:region:service`).
-- `--data` (`-d`) sets the request body data (POST/PUT/PATCH).
-- `--form` (`-F`) sets multipart form fields (`name=value` or `name=@path`, repeatable).
-- `--data-file` (`-D`) sets the request body from a file.
-- `--data-lines` (`-Z`) sets the request body from a file line by line.
 - `--duration` (`-t`) sets the test duration in seconds.
-- `--wait-ongoing-requests-after-deadline` waits for in-flight requests after duration.
-- `--requests` (`-n`) stops after N total requests.
-- `--no-tui` disables the interactive UI and shows a progress bar in the terminal (summary output is printed automatically).
-- `--ui-window-ms` sets the UI chart window length in milliseconds (default: `10000`).
-- `--fps` sets the UI frame rate (default: `16`).
-- `--no-color` disables colored output (`NO_COLOR=1` is supported).
-- `--summary` prints an end-of-run summary.
-- `--status` (`-s`) sets the expected HTTP status code.
-- `--timeout` sets the request timeout (supports `ms`, `s`, `m`, `h`).
-- `--connect-timeout` sets the connection timeout (supports `ms`, `s`, `m`, `h`).
-- `--warmup` ignores the first N seconds for summary/charts/exports (supports `ms`, `s`, `m`, `h`).
-- `--time-unit` sets the text output time unit (`ns`, `us`, `ms`, `s`, `m`, `h`).
-- `--proxy` (`-p`) sets a proxy URL.
-- `--proxy-header` adds proxy headers (repeatable).
-- `--proxy-http-version` forces the proxy HTTP version (`0.9`, `1.0`, `1.1`, `2`).
-- `--proxy-http2` uses HTTP/2 for proxy connections (alias for `--proxy-http-version=2`).
-- `--max-tasks` (`-m`) limits concurrent request tasks (`--concurrency`, `--connections` alias).
-- `--spawn-rate` (`-r`) and `--spawn-interval` (`-i`) control how quickly tasks are spawned.
 - `--rate` (`-q`) sets a global requests-per-second limit.
-- `--burst-delay` adds a delay between bursts (ignored when `--rate` is set).
-- `--burst-rate` sets the burst size (default `1`, ignored when `--rate` is set).
-- `--latency-correction` corrects latency for coordinated omission (ignored when `--rate` is unset).
-- `--redirect` limits redirects (0 disables).
-- `--disable-keepalive` disables connection reuse (HTTP/1 only).
-- `--disable-compression` disables gzip/brotli/deflate.
-- `--pool-max-idle-per-host` sets the max idle connections per host (0 disables idle pooling).
-- `--pool-idle-timeout-ms` sets the idle connection timeout for the HTTP pool (ms).
-- `--http-version` prefers an HTTP version (`0.9`, `1.0`, `1.1`, `2`, `3`).
+- `--max-tasks` (`-m`) limits concurrent request tasks (`--concurrency`, `--connections` alias).
+- `--no-tui` disables the interactive UI and shows a progress bar in the terminal (summary output is printed automatically).
+- `--summary` prints an end-of-run summary.
+- `--output` (`-o`) writes results to a file (aliases the export formats).
+
+CLI-only flags (not represented in config):
+
+- `--config` selects the config file (TOML/JSON).
+- `--verbose` enables debug logging (unless overridden by `STREST_LOG`/`RUST_LOG`).
+- `--charts-path` sets the chart output directory.
+- `--replay` replays a run from tmp logs or exported CSV/JSON/JSONL.
+- `--replay-start` and `--replay-end` set the replay window (supports `min`/`max` or durations like `10s`).
+- `--replay-step` sets the seek step for replay.
+- `--replay-snapshot-interval` writes snapshots every N seconds during replay.
+- `--replay-snapshot-start` and `--replay-snapshot-end` set the snapshot window for replay.
+- `--replay-snapshot-out` sets where snapshots are written (dir or file).
+- `--replay-snapshot-format` sets snapshot format (`json`, `jsonl`, `csv`).
 - `--controller-listen` starts a distributed controller (e.g., `0.0.0.0:9009`).
 - `--controller-mode` selects controller mode (`auto` or `manual`).
 - `--control-listen` sets the manual control-plane HTTP listen address.
@@ -422,44 +397,12 @@ Snapshots default to `~/.strest/snapshots` (or `%USERPROFILE%\\.strest\\snapshot
 - `--agent-heartbeat-interval-ms` sets the agent heartbeat interval.
 - `--agent-heartbeat-timeout-ms` sets the controller heartbeat timeout.
 - `--stream-interval-ms` sets the stream snapshot interval for distributed mode.
-- `--script` runs a WASM script that produces a scenario (requires `--features wasm` build).
-- `--replay` replays a run from tmp logs or exported CSV/JSON/JSONL.
-- `--replay-start` and `--replay-end` set the replay window (supports `min`/`max` or durations like `10s`).
-- `--replay-step` sets the seek step for replay.
-- `--replay-snapshot-interval` writes snapshots every N seconds during replay.
-- `--replay-snapshot-start` and `--replay-snapshot-end` set the snapshot window for replay.
-- `--replay-snapshot-out` sets where snapshots are written (dir or file).
-- `--replay-snapshot-format` sets snapshot format (`json`, `jsonl`, `csv`).
-- `--tls-min` and `--tls-max` set the TLS version floor/ceiling.
-- `--cacert` sets a CA bundle for TLS verification.
-- `--cert`/`--key` set the client certificate and key for mutual TLS.
-- `--insecure` disables TLS verification.
-- `--http2` enables HTTP/2 (adaptive).
-- `--http2-parallel` sets parallel HTTP/2 requests per connection.
-- `--http3` enables HTTP/3 (requires `--features http3` and `RUSTFLAGS=--cfg reqwest_unstable`).
-- `--alpn` sets the advertised protocols (repeatable, e.g. `--alpn h2`).
-- `--connect-to` overrides DNS resolution and ports (repeatable, `host:port:target_host:target_port`).
-- `--host` sets an explicit Host header.
-- `--no-pre-lookup` skips DNS pre-lookup.
-- `--ipv4` / `--ipv6` force DNS resolution to IPv4/IPv6.
-- `--unix-socket` connects over a unix socket (HTTP only).
-- `--stats-success-breakdown` adds success vs non-success breakdown in stats.
-- `--tmp-path` sets where temporary run data is written.
-- `--keep-tmp` keeps temporary run data after completion.
-- `--log-shards` controls the number of log writers (default `1`).
-- `--export-csv` writes metrics to a CSV file (bounded by `--metrics-range` and `--metrics-max`).
-- `--export-json` writes summary and metrics to a JSON file (bounded by `--metrics-range` and `--metrics-max`).
-- `--export-jsonl` writes summary and metrics as newline-delimited JSON (JSONL).
-- `--output` (`-o`) writes results to a file (aliases the export formats).
-- `--output-format` selects `text`, `json`, `jsonl`, `csv`, or `quiet` (or infer from extension for `--output`).
-- `--db-url` writes per-request metrics to a sqlite database (table `metrics`).
+- `--stream-summaries` enables streaming summaries in distributed mode.
 - `--install-service` installs a Linux systemd service for controller/agent.
 - `--uninstall-service` removes a Linux systemd service for controller/agent.
 - `--service-name` overrides the systemd service name.
-- `--rss-log-ms` logs RSS periodically when `--no-tui` is enabled (Linux only).
-- `--alloc-profiler-ms` logs jemalloc allocator stats periodically (requires `--features alloc-profiler`).
-- `--alloc-profiler-dump-ms` writes jemalloc heap profile dumps periodically (requires `--features alloc-profiler`).
-- `--alloc-profiler-dump-path` sets the output directory for heap dumps (default `./alloc-prof`).
+
+For full CLI options, run `strest --help`.
 
 HTTP/3 is experimental and requires building with `--features http3` plus
 `RUSTFLAGS="--cfg reqwest_unstable"` (reqwest requirement):
@@ -498,9 +441,169 @@ MALLOC_CONF=prof_active:true \
 You can provide a config file with `--config path`. If no config is specified, `strest` will look for `./strest.toml` or `./strest.json` (TOML is preferred if both exist). CLI flags override config values.
 By default, strest sends `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)`. To disable, set `no_ua = true` and `authorized = true`.
 
-Additional config keys:
-- `pool_max_idle_per_host` (integer) and `pool_idle_timeout_ms` (integer) tune the HTTP connection pool.
-- `rss_log_ms`, `alloc_profiler_ms`, `alloc_profiler_dump_ms`, and `alloc_profiler_dump_path` map to their CLI equivalents.
+Config keys (top-level):
+
+| Key | Type | CLI / Notes |
+| --- | --- | --- |
+| `method` | string | `--method` (`-X`) |
+| `url` | string | `--url` (`-u`) |
+| `urls_from_file` | bool | `--urls-from-file` (requires `url`) |
+| `rand_regex_url` | bool | `--rand-regex-url` (requires `url`) |
+| `max_repeat` | integer | `--max-repeat` |
+| `dump_urls` | integer | `--dump-urls` (requires `rand_regex_url`) |
+| `headers` | array[string] | `--headers` (`-H`) |
+| `accept` | string | `--accept` (`-A`) |
+| `content_type` | string | `--content-type` (`-T`) |
+| `data` | string | `--data` (`-d`) |
+| `form` | array[string] | `--form` (`-F`) |
+| `data_file` | string | `--data-file` (`-D`) |
+| `data_lines` | string | `--data-lines` (`-Z`) |
+| `basic_auth` | string | `--basic-auth` (`-a`) |
+| `aws_session` | string | `--aws-session` |
+| `aws_sigv4` | string | `--aws-sigv4` |
+| `duration` | integer | `--duration` (`-t`) |
+| `wait_ongoing_requests_after_deadline` | bool | `--wait-ongoing-requests-after-deadline` |
+| `requests` | integer | `--requests` (`-n`) |
+| `timeout` | duration | `--timeout` |
+| `connect_timeout` | duration | `--connect-timeout` |
+| `warmup` | duration | `--warmup` |
+| `status` | integer | `--status` (`-s`) |
+| `redirect` | integer | `--redirect` |
+| `disable_keepalive` | bool | `--disable-keepalive` |
+| `disable_compression` | bool | `--disable-compression` |
+| `pool_max_idle_per_host` | integer | `--pool-max-idle-per-host` |
+| `pool_idle_timeout_ms` | integer | `--pool-idle-timeout-ms` |
+| `charts_path` | string | `--charts-path` (`-c`) |
+| `no_charts` | bool | `--no-charts` |
+| `no_ua` | bool | `--no-ua` (requires `authorized = true`) |
+| `authorized` | bool | `--authorized` |
+| `tmp_path` | string | `--tmp-path` |
+| `keep_tmp` | bool | `--keep-tmp` |
+| `output` | string | `--output` (`-o`) |
+| `output_format` | string | `--output-format` |
+| `time_unit` | string | `--time-unit` |
+| `export_csv` | string | `--export-csv` |
+| `export_json` | string | `--export-json` |
+| `export_jsonl` | string | `--export-jsonl` |
+| `db_url` | string | `--db-url` |
+| `log_shards` | integer | `--log-shards` |
+| `no_ui` | bool | `--no-tui` / `--no-ui` |
+| `ui_window_ms` | integer | `--ui-window-ms` |
+| `summary` | bool | `--summary` |
+| `tls_min` | string | `--tls-min` |
+| `tls_max` | string | `--tls-max` |
+| `cacert` | string | `--cacert` |
+| `cert` | string | `--cert` |
+| `key` | string | `--key` |
+| `insecure` | bool | `--insecure` |
+| `http2` | bool | `--http2` |
+| `http2_parallel` | integer | `--http2-parallel` |
+| `http3` | bool | `--http3` |
+| `http_version` | string | `--http-version` |
+| `alpn` | array[string] | `--alpn` (repeatable) |
+| `proxy_url` | string | `--proxy` (`-p`), `proxy` is accepted as an alias in config |
+| `proxy_headers` | array[string] | `--proxy-header` (repeatable) |
+| `proxy_http_version` | string | `--proxy-http-version` |
+| `proxy_http2` | bool | `--proxy-http2` |
+| `max_tasks` | integer | `--max-tasks` (`--concurrency`/`--connections` aliases) |
+| `spawn_rate` | integer | `--spawn-rate` |
+| `spawn_interval` | integer | `--spawn-interval` |
+| `rate` | integer | `--rate` (`-q`) |
+| `rpm` | integer | `--rpm` |
+| `burst_delay` | duration | `--burst-delay` |
+| `burst_rate` | integer | `--burst-rate` |
+| `latency_correction` | bool | `--latency-correction` |
+| `connect_to` | array[string] | `--connect-to` (repeatable) |
+| `host` | string | `--host` |
+| `ipv6` | bool | `--ipv6` |
+| `ipv4` | bool | `--ipv4` |
+| `no_pre_lookup` | bool | `--no-pre-lookup` |
+| `no_color` | bool | `--no-color` |
+| `fps` | integer | `--fps` |
+| `stats_success_breakdown` | bool | `--stats-success-breakdown` |
+| `unix_socket` | string | `--unix-socket` |
+| `load` | object | See load profile keys below |
+| `metrics_range` | string | `--metrics-range` |
+| `metrics_max` | integer | `--metrics-max` |
+| `rss_log_ms` | integer | `--rss-log-ms` |
+| `alloc_profiler_ms` | integer | `--alloc-profiler-ms` |
+| `alloc_profiler_dump_ms` | integer | `--alloc-profiler-dump-ms` |
+| `alloc_profiler_dump_path` | string | `--alloc-profiler-dump-path` |
+| `scenario` | object | See scenario keys below |
+| `scenarios` | object | Map of name -> scenario config |
+| `script` | string | `--script` (WASM scenario generator) |
+| `sinks` | object | See sinks keys below |
+| `distributed` | object | See distributed keys below |
+
+Load profile keys:
+
+| Key | Type | Notes |
+| --- | --- | --- |
+| `load.rate` | integer | Initial RPS |
+| `load.rpm` | integer | Initial RPM |
+| `load.stages[].duration` | string | Duration per stage (e.g., `10s`) |
+| `load.stages[].target` | integer | Target RPS for stage |
+| `load.stages[].rate` | integer | Stage RPS (mutually exclusive with `target`/`rpm`) |
+| `load.stages[].rpm` | integer | Stage RPM (mutually exclusive with `target`/`rate`) |
+
+Scenario keys:
+
+| Key | Type | Notes |
+| --- | --- | --- |
+| `scenario.schema_version` | integer | Must be `1` for WASM scenarios |
+| `scenario.base_url` | string | Default URL when `url` is unset |
+| `scenario.method` | string | Default method for steps |
+| `scenario.headers` | array[string] | Default headers for steps |
+| `scenario.data` | string | Default body for steps |
+| `scenario.vars` | object | Global template vars |
+| `scenario.steps[]` | object | See step keys below |
+| `scenarios` | object | Map of name -> scenario config |
+
+Scenario step keys:
+
+| Key | Type | Notes |
+| --- | --- | --- |
+| `scenario.steps[].name` | string | Optional label |
+| `scenario.steps[].method` | string | Per-step method |
+| `scenario.steps[].url` | string | Full URL (overrides base + path) |
+| `scenario.steps[].path` | string | Path appended to base URL |
+| `scenario.steps[].headers` | array[string] | Per-step headers |
+| `scenario.steps[].data` | string | Per-step body |
+| `scenario.steps[].assert_status` | integer | Expected HTTP status |
+| `scenario.steps[].assert_body_contains` | string | Substring assertion |
+| `scenario.steps[].think_time` | duration | Delay after step |
+| `scenario.steps[].vars` | object | Per-step template vars |
+
+Sinks keys:
+
+| Key | Type | Notes |
+| --- | --- | --- |
+| `sinks.update_interval_ms` | integer | Default `1000` |
+| `sinks.prometheus.path` | string | Textfile output path |
+| `sinks.otel.path` | string | OTel JSON output path |
+| `sinks.influx.path` | string | Influx line protocol output path |
+
+Distributed keys:
+
+| Key | Type | Notes |
+| --- | --- | --- |
+| `distributed.role` | string | `controller` or `agent` |
+| `distributed.controller_mode` | string | `auto` or `manual` |
+| `distributed.listen` | string | Controller listen address |
+| `distributed.control_listen` | string | Manual control-plane listen |
+| `distributed.control_auth_token` | string | Control-plane bearer token |
+| `distributed.join` | string | Controller address to join |
+| `distributed.auth_token` | string | Shared controller/agent token |
+| `distributed.agent_id` | string | Explicit agent id |
+| `distributed.weight` | integer | Agent weight |
+| `distributed.min_agents` | integer | Minimum agents to start |
+| `distributed.agent_wait_timeout_ms` | integer | Max wait for min agents |
+| `distributed.agent_standby` | bool | Keep agent connected |
+| `distributed.agent_reconnect_ms` | integer | Standby reconnect interval |
+| `distributed.agent_heartbeat_interval_ms` | integer | Agent heartbeat interval |
+| `distributed.agent_heartbeat_timeout_ms` | integer | Controller heartbeat timeout |
+| `distributed.stream_summaries` | bool | Stream summaries to controller |
+| `distributed.stream_interval_ms` | integer | Stream cadence |
 
 Example `strest.toml`:
 
