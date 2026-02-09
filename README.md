@@ -208,7 +208,7 @@ assert_status = 200
 ```
 
 ```bash
-strest --config strest.toml -t 30 --no-ui --summary --no-charts
+strest --config strest.toml -t 30 --no-tui --summary --no-charts
 ```
 
 ## Usage
@@ -224,7 +224,7 @@ This command sends GET requests to `http://localhost:3000` for 60 seconds.
 For long-running or CI runs, disable the UI and print a summary:
 
 ```bash
-strest -u http://localhost:3000 -t 600 --no-ui --summary --no-charts
+strest -u http://localhost:3000 -t 600 --no-tui --summary --no-charts
 ```
 
 For more options and customization, use the --help flag to see the available command-line options and their descriptions.
@@ -248,7 +248,7 @@ strest -u http://localhost:3000 -t 15 --rate 50 --max-tasks 50 --spawn-rate 10 -
 Steady (sustained load, CI-friendly):
 
 ```bash
-strest -u http://localhost:3000 -t 300 --rate 500 --max-tasks 500 --spawn-rate 20 --spawn-interval 100 --no-ui --summary --no-charts
+strest -u http://localhost:3000 -t 300 --rate 500 --max-tasks 500 --spawn-rate 20 --spawn-interval 100 --no-tui --summary --no-charts
 ```
 
 Ramp (gradual increase):
@@ -271,7 +271,7 @@ target = 800
 ```
 
 ```bash
-strest --config ramp.toml --no-ui --summary --no-charts
+strest --config ramp.toml --no-tui --summary --no-charts
 ```
 
 ### Charts
@@ -361,18 +361,24 @@ Snapshots default to `~/.strest/snapshots` (or `%USERPROFILE%\\.strest\\snapshot
 - `--method` (`-X`) sets the HTTP method.
 - `--url` (`-u`) sets the target URL.
 - `--headers` (`-H`) adds request headers (repeatable, `Key: Value`).
+- `--accept` (`-A`) sets the Accept header (shortcut for `-H "Accept: ..."`)
+- `--content-type` (`-T`) sets the Content-Type header (shortcut for `-H "Content-Type: ..."`)
 - `--no-ua` disables the default `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)` header (requires `--authorized`).
 - `--authorized` confirms you have explicit permission to run tests when using `--no-ua`.
 - `--data` (`-d`) sets the request body data (POST/PUT/PATCH).
+- `--data-file` (`-D`) sets the request body from a file.
+- `--data-lines` (`-Z`) sets the request body from a file line by line.
 - `--duration` (`-t`) sets the test duration in seconds.
-- `--no-ui` disables the interactive UI and shows a progress bar in the terminal (summary output is printed automatically).
+- `--requests` stops after N total requests.
+- `--no-tui` disables the interactive UI and shows a progress bar in the terminal (summary output is printed automatically).
 - `--ui-window-ms` sets the UI chart window length in milliseconds (default: `10000`).
 - `--summary` prints an end-of-run summary.
 - `--status` (`-s`) sets the expected HTTP status code.
 - `--timeout` sets the request timeout (supports `ms`, `s`, `m`, `h`).
+- `--connect-timeout` sets the connection timeout (supports `ms`, `s`, `m`, `h`).
 - `--warmup` ignores the first N seconds for summary/charts/exports (supports `ms`, `s`, `m`, `h`).
 - `--proxy` (`-p`) sets a proxy URL.
-- `--max-tasks` (`-m`) limits concurrent request tasks (`--concurrency` alias).
+- `--max-tasks` (`-m`) limits concurrent request tasks (`--concurrency`, `--connections` alias).
 - `--spawn-rate` (`-r`) and `--spawn-interval` (`-i`) control how quickly tasks are spawned.
 - `--rate` sets a global requests-per-second limit.
 - `--controller-listen` starts a distributed controller (e.g., `0.0.0.0:9009`).
@@ -569,7 +575,7 @@ cargo build --release --features wasm
 Run with a WASM script:
 
 ```bash
-strest --script ./script.wasm --no-ui --summary --no-charts
+strest --script ./script.wasm --no-tui --summary --no-charts
 ```
 
 Example WASM script (prebuilt in this repo):
@@ -579,7 +585,7 @@ Example WASM script (prebuilt in this repo):
 wasm-tools parse examples/wasm/interesting.wat -o examples/wasm/interesting.wasm
 
 # Run the example scenario
-cargo run --features wasm -- --script examples/wasm/interesting.wasm -t 20 --no-ui --summary --no-charts
+cargo run --features wasm -- --script examples/wasm/interesting.wasm -t 20 --no-tui --summary --no-charts
 ```
 
 Note: the example scenario targets `http://localhost:8887` and expects `/health`, `/login`,

@@ -5,6 +5,14 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+- Added `--requests` to stop after N total requests.
+- Added `--connect-timeout` to control connection establishment timeout.
+- Added `--accept` (`-A`) and `--content-type` (`-T`) header shortcuts.
+- Added `--data-file` (`-D`) and `--data-lines` (`-Z`) for body sourcing.
+- Added `--connections` alias for `--max-tasks`.
+- Added `--no-tui` as the preferred UI disable flag (`--no-ui` remains as an alias).
+- Added fuzz coverage for usability-oriented CLI flags.
+
 ## 0.1.3
 
 Released: 2026-02-09
