@@ -241,6 +241,22 @@ pub struct TesterArgs {
     #[arg(long = "tls-max", value_parser = parse_tls_version)]
     pub tls_max: Option<TlsVersion>,
 
+    /// (TLS) Use the specified certificate file to verify the peer
+    #[arg(long = "cacert")]
+    pub cacert: Option<String>,
+
+    /// (TLS) Use the specified client certificate file (requires --key)
+    #[arg(long = "cert")]
+    pub cert: Option<String>,
+
+    /// (TLS) Use the specified client key file (requires --cert)
+    #[arg(long = "key")]
+    pub key: Option<String>,
+
+    /// (TLS) Accept invalid certs
+    #[arg(long = "insecure")]
+    pub insecure: bool,
+
     /// Enable HTTP/2 (adaptive)
     #[arg(long = "http2")]
     pub http2: bool,

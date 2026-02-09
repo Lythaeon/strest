@@ -88,6 +88,44 @@ pub fn setup_request_sender(
 
     client_builder = apply_tls_settings(client_builder, args)?;
 
+    if let Some(path) = args.cacert.as_ref() {
+        let bytes = std::fs::read(path)
+            .map_err(|err| format!("Failed to read cacert '{}': {}", path, err))?;
+        let cert = reqwest::Certificate::from_pem(&bytes)
+            .map_err(|err| format!("Invalid cacert '{}': {}", path, err))?;
+        client_builder = client_builder.add_root_certificate(cert);
+    }
+
+    if args.cert.is_some() || args.key.is_some() {
+        let cert_path = args
+            .cert
+            .as_ref()
+            .ok_or_else(|| "--cert requires --key.".to_owned())?;
+        let key_path = args
+            .key
+            .as_ref()
+            .ok_or_else(|| "--key requires --cert.".to_owned())?;
+        let mut pem = Vec::new();
+        pem.extend(
+            std::fs::read(cert_path)
+                .map_err(|err| format!("Failed to read cert '{}': {}", cert_path, err))?,
+        );
+        pem.extend(b"\n");
+        pem.extend(
+            std::fs::read(key_path)
+                .map_err(|err| format!("Failed to read key '{}': {}", key_path, err))?,
+        );
+        let identity = reqwest::Identity::from_pem(&pem)
+            .map_err(|err| format!("Invalid cert/key: {}", err))?;
+        client_builder = client_builder.identity(identity);
+    }
+
+    if args.insecure {
+        client_builder = client_builder
+            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_hostnames(true);
+    }
+
     if let Some(ref proxy_url) = args.proxy_url {
         match Proxy::all(proxy_url) {
             Ok(mut proxy) => {

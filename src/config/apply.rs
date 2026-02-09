@@ -227,6 +227,30 @@ pub fn apply_config(
         args.tls_max = Some(version);
     }
 
+    if !is_cli(matches, "cacert")
+        && let Some(path) = config.cacert.clone()
+    {
+        args.cacert = Some(path);
+    }
+
+    if !is_cli(matches, "cert")
+        && let Some(path) = config.cert.clone()
+    {
+        args.cert = Some(path);
+    }
+
+    if !is_cli(matches, "key")
+        && let Some(path) = config.key.clone()
+    {
+        args.key = Some(path);
+    }
+
+    if !is_cli(matches, "insecure")
+        && let Some(flag) = config.insecure
+    {
+        args.insecure = flag;
+    }
+
     if !is_cli(matches, "http2")
         && let Some(http2) = config.http2
     {

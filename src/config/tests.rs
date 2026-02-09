@@ -126,6 +126,10 @@ no_color = true
 fps = 24
 stats_success_breakdown = true
 unix_socket = "/tmp/strest.sock"
+insecure = true
+cacert = "ca.pem"
+cert = "client.pem"
+key = "client.key"
 "#;
     std::fs::write(&path, content).map_err(|err| format!("write failed: {}", err))?;
 
@@ -209,6 +213,18 @@ unix_socket = "/tmp/strest.sock"
     }
     if args.unix_socket.as_deref() != Some("/tmp/strest.sock") {
         return Err("Unexpected unix_socket".to_owned());
+    }
+    if !args.insecure {
+        return Err("Expected insecure to be true".to_owned());
+    }
+    if args.cacert.as_deref() != Some("ca.pem") {
+        return Err("Unexpected cacert".to_owned());
+    }
+    if args.cert.as_deref() != Some("client.pem") {
+        return Err("Unexpected cert".to_owned());
+    }
+    if args.key.as_deref() != Some("client.key") {
+        return Err("Unexpected key".to_owned());
     }
 
     Ok(())

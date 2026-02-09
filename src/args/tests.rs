@@ -147,6 +147,18 @@ fn parse_args_defaults() -> Result<(), String> {
     if args.tls_max.is_some() {
         return Err("Expected tls_max to be None".to_owned());
     }
+    if args.cacert.is_some() {
+        return Err("Expected cacert to be None".to_owned());
+    }
+    if args.cert.is_some() {
+        return Err("Expected cert to be None".to_owned());
+    }
+    if args.key.is_some() {
+        return Err("Expected key to be None".to_owned());
+    }
+    if args.insecure {
+        return Err("Expected insecure to be false".to_owned());
+    }
     if args.http2 {
         return Err("Expected http2 to be false".to_owned());
     }
