@@ -63,7 +63,7 @@ fn e2e_wasm_script_runs() -> Result<(), String> {
         path.to_owned(),
         "-t".to_owned(),
         "1".to_owned(),
-        "--no-ui".to_owned(),
+        "--no-tui".to_owned(),
         "--summary".to_owned(),
         "--no-charts".to_owned(),
         "--max-tasks".to_owned(),

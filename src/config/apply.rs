@@ -3,7 +3,7 @@ use clap::parser::ValueSource;
 
 use crate::args::{
     LoadProfile, LoadStage, PositiveU64, PositiveUsize, Scenario, ScenarioStep, TesterArgs,
-    parse_header,
+    parse_connect_to, parse_header,
 };
 use crate::metrics::MetricsRange;
 
@@ -22,6 +22,19 @@ pub fn apply_config(
     matches: &ArgMatches,
     config: &ConfigFile,
 ) -> Result<(), String> {
+    if config.data.is_some() && (config.data_file.is_some() || config.data_lines.is_some()) {
+        return Err("Config cannot set both 'data' and 'data_file'/'data_lines'.".to_owned());
+    }
+    if config.data_file.is_some() && config.data_lines.is_some() {
+        return Err("Config cannot set both 'data_file' and 'data_lines'.".to_owned());
+    }
+    if config.form.is_some()
+        && (config.data.is_some() || config.data_file.is_some() || config.data_lines.is_some())
+    {
+        return Err(
+            "Config cannot set both 'form' and 'data'/'data_file'/'data_lines'.".to_owned(),
+        );
+    }
     if config.load.is_some() && (config.rate.is_some() || config.rpm.is_some()) {
         return Err("Config cannot set both 'load' and top-level 'rate'/'rpm' options.".to_owned());
     }
@@ -37,6 +50,30 @@ pub fn apply_config(
         args.url = Some(url);
     }
 
+    if !is_cli(matches, "urls_from_file")
+        && let Some(value) = config.urls_from_file
+    {
+        args.urls_from_file = value;
+    }
+
+    if !is_cli(matches, "rand_regex_url")
+        && let Some(value) = config.rand_regex_url
+    {
+        args.rand_regex_url = value;
+    }
+
+    if !is_cli(matches, "max_repeat")
+        && let Some(value) = config.max_repeat
+    {
+        args.max_repeat = ensure_positive_usize(value, "max_repeat")?;
+    }
+
+    if !is_cli(matches, "dump_urls")
+        && let Some(value) = config.dump_urls
+    {
+        args.dump_urls = Some(ensure_positive_usize(value, "dump_urls")?);
+    }
+
     if !is_cli(matches, "headers")
         && let Some(headers) = config.headers.as_ref()
     {
@@ -47,10 +84,58 @@ pub fn apply_config(
         args.headers = parsed;
     }
 
+    if !is_cli(matches, "accept_header")
+        && let Some(accept) = config.accept.clone()
+    {
+        args.accept_header = Some(accept);
+    }
+
+    if !is_cli(matches, "content_type")
+        && let Some(content_type) = config.content_type.clone()
+    {
+        args.content_type = Some(content_type);
+    }
+
     if !is_cli(matches, "data")
         && let Some(data) = config.data.clone()
     {
         args.data = data;
+    }
+
+    if !is_cli(matches, "form")
+        && let Some(form) = config.form.clone()
+    {
+        args.form = form;
+    }
+
+    if !is_cli(matches, "basic_auth")
+        && let Some(auth) = config.basic_auth.clone()
+    {
+        args.basic_auth = Some(auth);
+    }
+
+    if !is_cli(matches, "aws_session")
+        && let Some(session) = config.aws_session.clone()
+    {
+        args.aws_session = Some(session);
+    }
+
+    if !is_cli(matches, "aws_sigv4")
+        && let Some(params) = config.aws_sigv4.clone()
+    {
+        args.aws_sigv4 = Some(params);
+    }
+
+    if !is_cli(matches, "data_file")
+        && let Some(path) = config.data_file.clone()
+    {
+        args.data_file = Some(path);
+    }
+
+    if !is_cli(matches, "data_lines")
+        && let Some(path) = config.data_lines.clone()
+    {
+        args.data_lines = Some(path);
     }
 
     if !is_cli(matches, "target_duration")
@@ -59,10 +144,58 @@ pub fn apply_config(
         args.target_duration = ensure_positive_u64(duration, "duration")?;
     }
 
+    if !is_cli(matches, "wait_ongoing_requests_after_deadline")
+        && let Some(value) = config.wait_ongoing_requests_after_deadline
+    {
+        args.wait_ongoing_requests_after_deadline = value;
+    }
+
+    if !is_cli(matches, "requests")
+        && let Some(requests) = config.requests
+    {
+        args.requests = Some(ensure_positive_u64(requests, "requests")?);
+    }
+
     if !is_cli(matches, "request_timeout")
         && let Some(timeout) = config.timeout.as_ref()
     {
         args.request_timeout = timeout.to_duration()?;
+    }
+
+    if !is_cli(matches, "redirect_limit")
+        && let Some(limit) = config.redirect
+    {
+        args.redirect_limit = limit;
+    }
+
+    if !is_cli(matches, "disable_keepalive")
+        && let Some(disable) = config.disable_keepalive
+    {
+        args.disable_keepalive = disable;
+    }
+
+    if !is_cli(matches, "disable_compression")
+        && let Some(disable) = config.disable_compression
+    {
+        args.disable_compression = disable;
+    }
+
+    if !is_cli(matches, "pool_max_idle_per_host")
+        && let Some(value) = config.pool_max_idle_per_host
+    {
+        args.pool_max_idle_per_host = Some(ensure_positive_usize(value, "pool_max_idle_per_host")?);
+    }
+
+    if !is_cli(matches, "pool_idle_timeout_ms")
+        && let Some(value) = config.pool_idle_timeout_ms
+    {
+        args.pool_idle_timeout_ms = Some(ensure_positive_u64(value, "pool_idle_timeout_ms")?);
+    }
+
+    if !is_cli(matches, "connect_timeout")
+        && let Some(timeout) = config.connect_timeout.as_ref()
+    {
+        args.connect_timeout = timeout.to_duration()?;
     }
 
     if !is_cli(matches, "warmup")
@@ -113,6 +246,24 @@ pub fn apply_config(
         args.keep_tmp = keep;
     }
 
+    if !is_cli(matches, "output")
+        && let Some(output) = config.output.clone()
+    {
+        args.output = Some(output);
+    }
+
+    if !is_cli(matches, "output_format")
+        && let Some(format) = config.output_format
+    {
+        args.output_format = Some(format);
+    }
+
+    if !is_cli(matches, "time_unit")
+        && let Some(unit) = config.time_unit
+    {
+        args.time_unit = Some(unit);
+    }
+
     if !is_cli(matches, "export_csv")
         && let Some(path) = config.export_csv.clone()
     {
@@ -129,6 +280,12 @@ pub fn apply_config(
         && let Some(path) = config.export_jsonl.clone()
     {
         args.export_jsonl = Some(path);
+    }
+
+    if !is_cli(matches, "db_url")
+        && let Some(db_url) = config.db_url.clone()
+    {
+        args.db_url = Some(db_url);
     }
 
     if !is_cli(matches, "log_shards")
@@ -167,10 +324,46 @@ pub fn apply_config(
         args.tls_max = Some(version);
     }
 
+    if !is_cli(matches, "cacert")
+        && let Some(path) = config.cacert.clone()
+    {
+        args.cacert = Some(path);
+    }
+
+    if !is_cli(matches, "cert")
+        && let Some(path) = config.cert.clone()
+    {
+        args.cert = Some(path);
+    }
+
+    if !is_cli(matches, "key")
+        && let Some(path) = config.key.clone()
+    {
+        args.key = Some(path);
+    }
+
+    if !is_cli(matches, "insecure")
+        && let Some(flag) = config.insecure
+    {
+        args.insecure = flag;
+    }
+
     if !is_cli(matches, "http2")
         && let Some(http2) = config.http2
     {
         args.http2 = http2;
+    }
+
+    if !is_cli(matches, "http2_parallel")
+        && let Some(value) = config.http2_parallel
+    {
+        args.http2_parallel = ensure_positive_usize(value, "http2_parallel")?;
+    }
+
+    if !is_cli(matches, "http_version")
+        && let Some(version) = config.http_version
+    {
+        args.http_version = Some(version);
     }
 
     if !is_cli(matches, "http3")
@@ -189,6 +382,28 @@ pub fn apply_config(
         && let Some(proxy) = config.proxy_url.clone()
     {
         args.proxy_url = Some(proxy);
+    }
+
+    if !is_cli(matches, "proxy_headers")
+        && let Some(headers) = config.proxy_headers.as_ref()
+    {
+        let mut parsed = Vec::with_capacity(headers.len());
+        for header in headers {
+            parsed.push(parse_header(header)?);
+        }
+        args.proxy_headers = parsed;
+    }
+
+    if !is_cli(matches, "proxy_http_version")
+        && let Some(version) = config.proxy_http_version
+    {
+        args.proxy_http_version = Some(version);
+    }
+
+    if !is_cli(matches, "proxy_http2")
+        && let Some(proxy_http2) = config.proxy_http2
+    {
+        args.proxy_http2 = proxy_http2;
     }
 
     if !is_cli(matches, "max_tasks")
@@ -219,6 +434,86 @@ pub fn apply_config(
         }
     }
 
+    if !is_cli(matches, "burst_delay")
+        && let Some(delay) = config.burst_delay.as_ref()
+    {
+        args.burst_delay = Some(delay.to_duration()?);
+    }
+
+    if !is_cli(matches, "burst_rate")
+        && let Some(rate) = config.burst_rate
+    {
+        args.burst_rate = ensure_positive_usize(rate, "burst_rate")?;
+    }
+
+    if !is_cli(matches, "latency_correction")
+        && let Some(value) = config.latency_correction
+    {
+        args.latency_correction = value;
+    }
+
+    if !is_cli(matches, "connect_to")
+        && let Some(entries) = config.connect_to.as_ref()
+    {
+        let mut parsed = Vec::with_capacity(entries.len());
+        for entry in entries {
+            parsed.push(parse_connect_to(entry)?);
+        }
+        args.connect_to = parsed;
+    }
+
+    if !is_cli(matches, "host_header")
+        && let Some(host) = config.host.clone()
+    {
+        args.host_header = Some(host);
+    }
+
+    if !is_cli(matches, "ipv6_only")
+        && let Some(ipv6) = config.ipv6
+    {
+        args.ipv6_only = ipv6;
+    }
+
+    if !is_cli(matches, "ipv4_only")
+        && let Some(ipv4) = config.ipv4
+    {
+        args.ipv4_only = ipv4;
+    }
+
+    if !is_cli(matches, "no_pre_lookup")
+        && let Some(no_pre_lookup) = config.no_pre_lookup
+    {
+        args.no_pre_lookup = no_pre_lookup;
+    }
+
+    if !is_cli(matches, "no_color")
+        && let Some(no_color) = config.no_color
+    {
+        args.no_color = no_color;
+    }
+
+    if !is_cli(matches, "ui_fps")
+        && let Some(fps) = config.fps
+    {
+        args.ui_fps = fps;
+    }
+
+    if !is_cli(matches, "stats_success_breakdown")
+        && let Some(flag) = config.stats_success_breakdown
+    {
+        args.stats_success_breakdown = flag;
+    }
+
+    if !is_cli(matches, "unix_socket")
+        && let Some(path) = config.unix_socket.clone()
+    {
+        args.unix_socket = Some(path);
+    }
+
+    if args.ipv4_only && args.ipv6_only {
+        return Err("Config cannot set both 'ipv4' and 'ipv6'.".to_owned());
+    }
+
     if !is_cli(matches, "metrics_range")
         && let Some(range) = config.metrics_range.as_ref()
     {
@@ -229,6 +524,30 @@ pub fn apply_config(
         && let Some(max) = config.metrics_max
     {
         args.metrics_max = ensure_positive_usize(max, "metrics_max")?;
+    }
+
+    if !is_cli(matches, "rss_log_ms")
+        && let Some(value) = config.rss_log_ms
+    {
+        args.rss_log_ms = Some(ensure_positive_u64(value, "rss_log_ms")?);
+    }
+
+    if !is_cli(matches, "alloc_profiler_ms")
+        && let Some(value) = config.alloc_profiler_ms
+    {
+        args.alloc_profiler_ms = Some(ensure_positive_u64(value, "alloc_profiler_ms")?);
+    }
+
+    if !is_cli(matches, "alloc_profiler_dump_ms")
+        && let Some(value) = config.alloc_profiler_dump_ms
+    {
+        args.alloc_profiler_dump_ms = Some(ensure_positive_u64(value, "alloc_profiler_dump_ms")?);
+    }
+
+    if !is_cli(matches, "alloc_profiler_dump_path")
+        && let Some(value) = &config.alloc_profiler_dump_path
+    {
+        args.alloc_profiler_dump_path = value.clone();
     }
 
     if !is_cli(matches, "script")

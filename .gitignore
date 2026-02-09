@@ -2,3 +2,4 @@
 /.vscode
 /charts
 /examples/wasm/*.wasm
+/alloc-prof

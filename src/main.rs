@@ -14,9 +14,15 @@ mod shutdown;
 mod sinks;
 mod ui;
 
+#[cfg(feature = "alloc-profiler")]
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 use app::{run_cleanup, run_local, run_replay};
-use args::{Command, TesterArgs};
+use args::{Command, OutputFormat, TesterArgs};
 use clap::{CommandFactory, FromArgMatches};
+use rand::distributions::Distribution;
+use rand::thread_rng;
 use std::error::Error;
 use std::path::Path;
 
@@ -68,6 +74,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         if let Some(config) = loaded_config.as_mut() {
             scenario_registry = config.scenarios.take();
             config::apply_config(&mut args, &matches, config).map_err(std::io::Error::other)?;
+        }
+
+        apply_output_aliases(&mut args).map_err(std::io::Error::other)?;
+        validate_db_logging(&args).map_err(std::io::Error::other)?;
+
+        if args.dump_urls.is_some() {
+            dump_urls(&args).map_err(std::io::Error::other)?;
+            return Ok(());
         }
 
         if args.controller_listen.is_some() && args.agent_join.is_some() {
@@ -135,4 +149,88 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         Ok(())
     })
+}
+
+fn apply_output_aliases(args: &mut TesterArgs) -> Result<(), String> {
+    let output = match args.output.clone() {
+        Some(output) => output,
+        None => {
+            if args.output_format.is_some() {
+                return Err("`--output-format` requires `--output`.".to_owned());
+            }
+            return Ok(());
+        }
+    };
+
+    if args.export_csv.is_some() || args.export_json.is_some() || args.export_jsonl.is_some() {
+        return Err("`--output` cannot be combined with export flags.".to_owned());
+    }
+
+    let format = args
+        .output_format
+        .unwrap_or_else(|| infer_output_format(&output).unwrap_or(OutputFormat::Text));
+
+    match format {
+        OutputFormat::Json => {
+            args.export_json = Some(output);
+        }
+        OutputFormat::Jsonl => {
+            args.export_jsonl = Some(output);
+        }
+        OutputFormat::Csv => {
+            args.export_csv = Some(output);
+        }
+        OutputFormat::Text | OutputFormat::Quiet => {
+            args.output_format = Some(format);
+        }
+    }
+
+    Ok(())
+}
+
+fn infer_output_format(output: &str) -> Option<OutputFormat> {
+    let lower = output.to_ascii_lowercase();
+    if lower.ends_with(".jsonl") {
+        return Some(OutputFormat::Jsonl);
+    }
+    if lower.ends_with(".json") {
+        return Some(OutputFormat::Json);
+    }
+    if lower.ends_with(".csv") {
+        return Some(OutputFormat::Csv);
+    }
+    None
+}
+
+fn validate_db_logging(args: &TesterArgs) -> Result<(), String> {
+    if args.db_url.is_some() && args.log_shards.get() > 1 {
+        return Err("`--db-url` requires `--log-shards 1`.".to_owned());
+    }
+    Ok(())
+}
+
+fn dump_urls(args: &TesterArgs) -> Result<(), String> {
+    if args.scenario.is_some() {
+        return Err("--dump-urls cannot be used with scenarios.".to_owned());
+    }
+    if !args.rand_regex_url {
+        return Err("--dump-urls requires --rand-regex-url.".to_owned());
+    }
+    let count = args
+        .dump_urls
+        .map(|value| value.get())
+        .ok_or_else(|| "--dump-urls requires a count.".to_owned())?;
+    let pattern = args
+        .url
+        .as_deref()
+        .ok_or_else(|| "Missing URL (set --url or provide in config).".to_owned())?;
+    let max_repeat = u32::try_from(args.max_repeat.get()).unwrap_or(u32::MAX);
+    let regex = rand_regex::Regex::compile(pattern, max_repeat)
+        .map_err(|err| format!("Invalid rand-regex pattern '{}': {}", pattern, err))?;
+    let mut rng = thread_rng();
+    for _ in 0..count {
+        let url: String = regex.sample(&mut rng);
+        println!("{}", url);
+    }
+    Ok(())
 }

@@ -76,6 +76,8 @@ impl RateController {
 pub(super) fn build_rate_limiter(
     rate_limit: Option<u64>,
     load_profile: Option<&LoadProfile>,
+    burst_delay: Option<Duration>,
+    burst_rate: usize,
 ) -> Option<Arc<Semaphore>> {
     if let Some(profile) = load_profile {
         let plan = RatePlan::from(profile);
@@ -87,6 +89,12 @@ pub(super) fn build_rate_limiter(
     if let Some(rate) = rate_limit {
         let limiter = Arc::new(Semaphore::new(0));
         spawn_fixed_rate_controller(limiter.clone(), rate);
+        return Some(limiter);
+    }
+
+    if let Some(delay) = burst_delay {
+        let limiter = Arc::new(Semaphore::new(0));
+        spawn_burst_rate_controller(limiter.clone(), delay, burst_rate);
         return Some(limiter);
     }
 
@@ -128,6 +136,21 @@ fn spawn_rate_controller(limiter: Arc<Semaphore>, plan: RatePlan) {
             let target = controller.next_tokens();
             if available < target {
                 limiter.add_permits(target.saturating_sub(available));
+            }
+        }
+    });
+}
+
+fn spawn_burst_rate_controller(limiter: Arc<Semaphore>, delay: Duration, burst_rate: usize) {
+    tokio::spawn(async move {
+        let burst = burst_rate.max(1);
+        limiter.add_permits(burst);
+        let mut burst_tick = interval(delay.max(Duration::from_millis(1)));
+        loop {
+            burst_tick.tick().await;
+            let available = limiter.available_permits();
+            if available < burst {
+                limiter.add_permits(burst.saturating_sub(available));
             }
         }
     });

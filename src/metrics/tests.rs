@@ -28,13 +28,34 @@ fn base_args() -> Result<TesterArgs, String> {
         replay_snapshot_format: "json".to_owned(),
         method: HttpMethod::Get,
         url: Some("http://localhost".to_owned()),
+        urls_from_file: false,
+        rand_regex_url: false,
+        max_repeat: positive_usize(4)?,
+        dump_urls: None,
         headers: vec![],
+        accept_header: None,
+        content_type: None,
         no_ua: false,
         authorized: false,
         data: String::new(),
+        form: vec![],
+        basic_auth: None,
+        aws_session: None,
+        aws_sigv4: None,
+        data_file: None,
+        data_lines: None,
         target_duration: positive_u64(1)?,
+        wait_ongoing_requests_after_deadline: false,
+        requests: None,
         expected_status_code: 200,
         request_timeout: Duration::from_secs(10),
+        redirect_limit: 10,
+        disable_keepalive: false,
+        disable_compression: false,
+        pool_max_idle_per_host: None,
+        pool_idle_timeout_ms: None,
+        http_version: None,
+        connect_timeout: Duration::from_secs(5),
         charts_path: "./charts".to_owned(),
         no_charts: false,
         verbose: false,
@@ -57,25 +78,53 @@ fn base_args() -> Result<TesterArgs, String> {
         agent_heartbeat_timeout_ms: positive_u64(3000)?,
         keep_tmp: false,
         warmup: None,
+        output: None,
+        output_format: None,
+        time_unit: None,
         export_csv: None,
         export_json: None,
         export_jsonl: None,
+        db_url: None,
         log_shards: positive_usize(1)?,
         no_ui: true,
         ui_window_ms: positive_u64(10_000)?,
         summary: false,
         tls_min: None,
         tls_max: None,
+        cacert: None,
+        cert: None,
+        key: None,
+        insecure: false,
         http2: false,
+        http2_parallel: positive_usize(1)?,
         http3: false,
         alpn: vec![],
         proxy_url: None,
+        proxy_headers: vec![],
+        proxy_http_version: None,
+        proxy_http2: false,
         max_tasks: positive_usize(1)?,
         spawn_rate_per_tick: positive_usize(1)?,
         tick_interval: positive_u64(1)?,
         rate_limit: None,
+        burst_delay: None,
+        burst_rate: positive_usize(1)?,
+        latency_correction: false,
+        connect_to: vec![],
+        host_header: None,
+        ipv6_only: false,
+        ipv4_only: false,
+        no_pre_lookup: false,
+        no_color: false,
+        ui_fps: 16,
+        stats_success_breakdown: false,
+        unix_socket: None,
         metrics_range: None,
         metrics_max: positive_usize(1_000_000)?,
+        rss_log_ms: None,
+        alloc_profiler_ms: None,
+        alloc_profiler_dump_ms: None,
+        alloc_profiler_dump_path: "./alloc-prof".to_owned(),
         scenario: None,
         script: None,
         install_service: false,
@@ -311,7 +360,8 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
     run_async_test(async {
         let dir = tempfile::tempdir().map_err(|err| format!("tempdir failed: {}", err))?;
         let log_path = dir.path().join("metrics.log");
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let db_path = dir.path().join("metrics.db");
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
         let run_start = tokio::time::Instant::now();
         let logger_config = MetricsLoggerConfig {
             run_start,
@@ -319,6 +369,7 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
             expected_status_code: 200,
             metrics_range: None,
             metrics_max: 1,
+            db_url: Some(db_path.to_string_lossy().to_string()),
         };
         let handle = setup_metrics_logger(log_path, logger_config, rx);
 
@@ -340,10 +391,10 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
             transport_error: false,
         };
 
-        if tx.send(first).is_err() {
+        if tx.send(first).await.is_err() {
             return Err("Failed to send first metric".to_owned());
         }
-        if tx.send(second).is_err() {
+        if tx.send(second).await.is_err() {
             return Err("Failed to send second metric".to_owned());
         }
         drop(tx);
@@ -376,6 +427,14 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
                 "Expected 1 record due to metrics_max, got {}",
                 result.records.len()
             ));
+        }
+        let conn = rusqlite::Connection::open(&db_path)
+            .map_err(|err| format!("Failed to open db: {}", err))?;
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM metrics", [], |row| row.get(0))
+            .map_err(|err| format!("Failed to query db: {}", err))?;
+        if count != 2 {
+            return Err(format!("Expected 2 db rows, got {}", count));
         }
         Ok(())
     })

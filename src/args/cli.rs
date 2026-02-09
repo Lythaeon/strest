@@ -6,10 +6,12 @@ use crate::sinks::config::SinksConfig;
 
 use super::defaults::{default_charts_path, default_tmp_path};
 use super::parsers::{
-    parse_duration_arg, parse_header, parse_positive_u64, parse_positive_usize, parse_tls_version,
+    parse_connect_to, parse_duration_arg, parse_header, parse_positive_u64, parse_positive_usize,
+    parse_tls_version,
 };
 use super::types::{
-    ControllerMode, HttpMethod, LoadProfile, PositiveU64, PositiveUsize, Scenario, TlsVersion,
+    ConnectToMapping, ControllerMode, HttpMethod, HttpVersion, LoadProfile, OutputFormat,
+    PositiveU64, PositiveUsize, Scenario, TimeUnit, TlsVersion,
 };
 
 #[derive(Debug, Subcommand, Clone)]
@@ -90,9 +92,41 @@ pub struct TesterArgs {
     #[arg(long, short)]
     pub url: Option<String>,
 
+    /// Read URLs from file (newline-delimited)
+    #[arg(
+        long = "urls-from-file",
+        conflicts_with = "rand_regex_url",
+        requires = "url"
+    )]
+    pub urls_from_file: bool,
+
+    /// Generate URLs from a rand_regex pattern (uses --url as the pattern)
+    #[arg(
+        long = "rand-regex-url",
+        conflicts_with = "urls_from_file",
+        requires = "url"
+    )]
+    pub rand_regex_url: bool,
+
+    /// Maximum extra repeat count for rand_regex quantifiers
+    #[arg(long = "max-repeat", default_value = "4", value_parser = parse_positive_usize)]
+    pub max_repeat: PositiveUsize,
+
+    /// Dump generated URLs and exit (requires --rand-regex-url)
+    #[arg(long = "dump-urls", value_parser = parse_positive_usize, requires = "rand_regex_url")]
+    pub dump_urls: Option<PositiveUsize>,
+
     /// HTTP headers in 'Key: Value' format (repeatable)
     #[arg(long, short = 'H', value_parser = parse_header)]
     pub headers: Vec<(String, String)>,
+
+    /// HTTP Accept header (shortcut)
+    #[arg(long = "accept", short = 'A')]
+    pub accept_header: Option<String>,
+
+    /// Content-Type header (shortcut)
+    #[arg(long = "content-type", short = 'T')]
+    pub content_type: Option<String>,
 
     /// Disable the default User-Agent header (strest-loadtest/<version> (+https://github.com/Lythaeon/strest)); requires --authorized
     #[arg(long = "no-ua", alias = "no-default-ua")]
@@ -106,6 +140,30 @@ pub struct TesterArgs {
     #[arg(long, short, default_value = "")]
     pub data: String,
 
+    /// Specify HTTP multipart form data (repeatable, curl-compatible)
+    #[arg(long = "form", short = 'F', conflicts_with_all = ["data", "data_file", "data_lines"])]
+    pub form: Vec<String>,
+
+    /// Basic authentication (username:password), or AWS credentials (access_key:secret_key)
+    #[arg(long = "basic-auth", short = 'a')]
+    pub basic_auth: Option<String>,
+
+    /// AWS session token
+    #[arg(long = "aws-session")]
+    pub aws_session: Option<String>,
+
+    /// AWS SigV4 signing params (format: aws:amz:region:service)
+    #[arg(long = "aws-sigv4")]
+    pub aws_sigv4: Option<String>,
+
+    /// Request body from file
+    #[arg(long = "data-file", short = 'D', conflicts_with_all = ["data", "data_lines"])]
+    pub data_file: Option<String>,
+
+    /// Request body from file line by line
+    #[arg(long = "data-lines", short = 'Z', conflicts_with_all = ["data", "data_file"])]
+    pub data_lines: Option<String>,
+
     /// Duration of test (seconds)
     #[arg(
         long = "duration",
@@ -114,6 +172,14 @@ pub struct TesterArgs {
         value_parser = parse_positive_u64
     )]
     pub target_duration: PositiveU64,
+
+    /// Wait for ongoing requests after the duration is reached
+    #[arg(long = "wait-ongoing-requests-after-deadline")]
+    pub wait_ongoing_requests_after_deadline: bool,
+
+    /// Stop after N total requests
+    #[arg(long = "requests", short = 'n', value_parser = parse_positive_u64)]
+    pub requests: Option<PositiveU64>,
 
     /// Expected HTTP status code
     #[arg(long = "status", short = 's', default_value = "200")]
@@ -127,16 +193,48 @@ pub struct TesterArgs {
     )]
     pub request_timeout: Duration,
 
+    /// Limit the number of redirects to follow (0 disables redirects)
+    #[arg(long = "redirect", default_value = "10")]
+    pub redirect_limit: u32,
+
+    /// Disable keep-alive (prevents re-use of TCP connections)
+    #[arg(long = "disable-keepalive")]
+    pub disable_keepalive: bool,
+
+    /// Disable compression (gzip, brotli, deflate)
+    #[arg(long = "disable-compression")]
+    pub disable_compression: bool,
+
+    /// Max idle connections per host in the HTTP pool (0 disables idle pooling)
+    #[arg(long = "pool-max-idle-per-host", value_parser = parse_positive_usize)]
+    pub pool_max_idle_per_host: Option<PositiveUsize>,
+
+    /// Idle connection timeout for the HTTP pool (ms)
+    #[arg(long = "pool-idle-timeout-ms", value_parser = parse_positive_u64)]
+    pub pool_idle_timeout_ms: Option<PositiveU64>,
+
+    /// Prefer HTTP version (0.9, 1.0, 1.1, 2, 3)
+    #[arg(long = "http-version", value_enum)]
+    pub http_version: Option<HttpVersion>,
+
+    /// Timeout for establishing a new connection (supports ms/s/m/h)
+    #[arg(
+        long = "connect-timeout",
+        default_value = "5s",
+        value_parser = parse_duration_arg
+    )]
+    pub connect_timeout: Duration,
+
     /// Path to save charts to
     #[arg(long, short = 'c', default_value_t = default_charts_path())]
     pub charts_path: String,
 
     /// Disable chart generation
-    #[arg(long, short = 'n')]
+    #[arg(long)]
     pub no_charts: bool,
 
     /// Enable verbose logging (sets log level to debug unless overridden by STREST_LOG/RUST_LOG)
-    #[arg(long, short = 'v')]
+    #[arg(long, short = 'v', alias = "debug")]
     pub verbose: bool,
 
     /// Path to config file (TOML/JSON). Defaults to ./strest.toml or ./strest.json if present.
@@ -155,6 +253,18 @@ pub struct TesterArgs {
     #[arg(long = "warmup", value_parser = parse_duration_arg)]
     pub warmup: Option<Duration>,
 
+    /// Output file to write results to
+    #[arg(long = "output", short = 'o')]
+    pub output: Option<String>,
+
+    /// Output format
+    #[arg(long = "output-format", value_enum)]
+    pub output_format: Option<OutputFormat>,
+
+    /// Time unit for text output (ns, us, ms, s, m, h)
+    #[arg(long = "time-unit", value_enum)]
+    pub time_unit: Option<TimeUnit>,
+
     /// Export metrics to CSV (uses the same bounds as charts)
     #[arg(long = "export-csv")]
     pub export_csv: Option<String>,
@@ -167,12 +277,16 @@ pub struct TesterArgs {
     #[arg(long = "export-jsonl")]
     pub export_jsonl: Option<String>,
 
+    /// Write per-request metrics to a sqlite database
+    #[arg(long = "db-url")]
+    pub db_url: Option<String>,
+
     /// Number of log shards to use for metrics logging (default: 1)
     #[arg(long = "log-shards", default_value = "1", value_parser = parse_positive_usize)]
     pub log_shards: PositiveUsize,
 
     /// Disable UI rendering
-    #[arg(long = "no-ui")]
+    #[arg(long = "no-tui", alias = "no-ui")]
     pub no_ui: bool,
 
     /// UI chart window length in milliseconds (default: 10000)
@@ -183,7 +297,7 @@ pub struct TesterArgs {
     )]
     pub ui_window_ms: PositiveU64,
 
-    /// Print summary at the end of the run (implied by --no-ui)
+    /// Print summary at the end of the run (implied by --no-tui)
     #[arg(long = "summary")]
     pub summary: bool,
 
@@ -195,9 +309,29 @@ pub struct TesterArgs {
     #[arg(long = "tls-max", value_parser = parse_tls_version)]
     pub tls_max: Option<TlsVersion>,
 
+    /// (TLS) Use the specified certificate file to verify the peer
+    #[arg(long = "cacert")]
+    pub cacert: Option<String>,
+
+    /// (TLS) Use the specified client certificate file (requires --key)
+    #[arg(long = "cert")]
+    pub cert: Option<String>,
+
+    /// (TLS) Use the specified client key file (requires --cert)
+    #[arg(long = "key")]
+    pub key: Option<String>,
+
+    /// (TLS) Accept invalid certs
+    #[arg(long = "insecure")]
+    pub insecure: bool,
+
     /// Enable HTTP/2 (adaptive)
     #[arg(long = "http2")]
     pub http2: bool,
+
+    /// Number of parallel HTTP/2 requests per connection
+    #[arg(long = "http2-parallel", default_value = "1", value_parser = parse_positive_usize)]
+    pub http2_parallel: PositiveUsize,
 
     /// ALPN protocols to advertise (repeatable, e.g. --alpn h2 --alpn http/1.1)
     #[arg(long = "alpn")]
@@ -207,11 +341,23 @@ pub struct TesterArgs {
     #[arg(long = "proxy", short = 'p', alias = "proxy-url")]
     pub proxy_url: Option<String>,
 
+    /// Proxy HTTP header (repeatable, 'Key: Value')
+    #[arg(long = "proxy-header", value_parser = parse_header)]
+    pub proxy_headers: Vec<(String, String)>,
+
+    /// Proxy HTTP version (0.9, 1.0, 1.1, 2)
+    #[arg(long = "proxy-http-version", value_enum)]
+    pub proxy_http_version: Option<HttpVersion>,
+
+    /// Use HTTP/2 to connect to proxy (shorthand for --proxy-http-version=2)
+    #[arg(long = "proxy-http2")]
+    pub proxy_http2: bool,
+
     /// Max number of concurrent request tasks (default: 1000)
     #[arg(
         long = "max-tasks",
         short = 'm',
-        alias = "concurrency",
+        aliases = ["concurrency", "connections"],
         default_value = "1000",
         value_parser = parse_positive_usize
     )]
@@ -236,8 +382,56 @@ pub struct TesterArgs {
     pub tick_interval: PositiveU64,
 
     /// Limit requests per second (optional)
-    #[arg(long = "rate", value_parser = parse_positive_u64, required = false)]
+    #[arg(long = "rate", short = 'q', value_parser = parse_positive_u64, required = false)]
     pub rate_limit: Option<PositiveU64>,
+
+    /// Burst delay (ignored if --rate is set)
+    #[arg(long = "burst-delay", value_parser = parse_duration_arg)]
+    pub burst_delay: Option<Duration>,
+
+    /// Burst rate (requests per burst; ignored if --rate is set)
+    #[arg(long = "burst-rate", default_value = "1", value_parser = parse_positive_usize)]
+    pub burst_rate: PositiveUsize,
+
+    /// Correct latency to avoid coordinated omission (ignored if --rate is not set)
+    #[arg(long = "latency-correction")]
+    pub latency_correction: bool,
+
+    /// Override DNS resolution and port for a host (repeatable)
+    #[arg(long = "connect-to", value_parser = parse_connect_to)]
+    pub connect_to: Vec<ConnectToMapping>,
+
+    /// Override the Host header
+    #[arg(long = "host")]
+    pub host_header: Option<String>,
+
+    /// Lookup only ipv6
+    #[arg(long = "ipv6")]
+    pub ipv6_only: bool,
+
+    /// Lookup only ipv4
+    #[arg(long = "ipv4")]
+    pub ipv4_only: bool,
+
+    /// Do not perform a DNS pre-lookup
+    #[arg(long = "no-pre-lookup")]
+    pub no_pre_lookup: bool,
+
+    /// Disable color output
+    #[arg(long = "no-color", env = "NO_COLOR")]
+    pub no_color: bool,
+
+    /// Frame per second for the UI
+    #[arg(long = "fps", default_value = "16")]
+    pub ui_fps: u32,
+
+    /// Include successful vs non-successful status breakdown in stats
+    #[arg(long = "stats-success-breakdown")]
+    pub stats_success_breakdown: bool,
+
+    /// Connect to a unix socket instead of TCP (http only)
+    #[arg(long = "unix-socket")]
+    pub unix_socket: Option<String>,
 
     #[arg(skip)]
     pub load_profile: Option<LoadProfile>,
@@ -330,6 +524,22 @@ pub struct TesterArgs {
         value_parser = parse_positive_usize
     )]
     pub metrics_max: PositiveUsize,
+
+    /// Log RSS periodically when UI is disabled (Linux only, ms)
+    #[arg(long = "rss-log-ms", value_parser = parse_positive_u64)]
+    pub rss_log_ms: Option<PositiveU64>,
+
+    /// Log allocator stats periodically (requires alloc-profiler feature, ms)
+    #[arg(long = "alloc-profiler-ms", value_parser = parse_positive_u64)]
+    pub alloc_profiler_ms: Option<PositiveU64>,
+
+    /// Dump jemalloc heap profiles periodically (requires alloc-profiler feature, ms)
+    #[arg(long = "alloc-profiler-dump-ms", value_parser = parse_positive_u64)]
+    pub alloc_profiler_dump_ms: Option<PositiveU64>,
+
+    /// Directory to write heap profile dumps (requires alloc-profiler feature)
+    #[arg(long = "alloc-profiler-dump-path", default_value = "./alloc-prof")]
+    pub alloc_profiler_dump_path: String,
 
     #[arg(skip)]
     pub scenario: Option<Scenario>,

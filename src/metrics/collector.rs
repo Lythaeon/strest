@@ -93,10 +93,12 @@ pub fn setup_metrics_collector(
     let ui_tx = ui_tx.clone();
 
     let ui_window_ms = args.ui_window_ms.get();
+    let ui_fps = args.ui_fps.max(1);
     let target_duration = Duration::from_secs(args.target_duration.get());
     let expected_status_code = args.expected_status_code;
     let sinks_config = args.sinks.clone();
     let stream_summaries = args.distributed_stream_summaries;
+    let no_color = args.no_color;
     let sink_interval_duration = resolve_sink_interval(&sinks_config);
     let stream_interval_duration =
         resolve_stream_interval(args.distributed_stream_interval_ms.as_ref());
@@ -107,7 +109,8 @@ pub fn setup_metrics_collector(
         let start_time = run_start;
         let mut shutdown_rx_inner = shutdown_tx_main.subscribe();
         let ui_tx_clone = ui_tx.clone();
-        let mut ui_interval = tokio::time::interval(Duration::from_millis(100));
+        let interval_ms = 1000u64.checked_div(u64::from(ui_fps)).unwrap_or(1).max(1);
+        let mut ui_interval = tokio::time::interval(Duration::from_millis(interval_ms));
         ui_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut sink_interval = tokio::time::interval(sink_interval_duration);
         sink_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -126,6 +129,7 @@ pub fn setup_metrics_collector(
                 transport_errors: 0,
                 non_expected_status: 0,
                 ui_window_ms,
+                no_color,
                 latencies: vec![],
                 p50: 0,
                 p90: 0,
@@ -201,6 +205,7 @@ pub fn setup_metrics_collector(
                                 transport_errors: state.transport_errors,
                                 non_expected_status: state.non_expected_status,
                                 ui_window_ms,
+                                no_color,
                                 latencies: recent_latencies,
                                 p50,
                                 p90,

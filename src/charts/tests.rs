@@ -1,11 +1,14 @@
+use std::fmt::Write as _;
 use std::future::Future;
 use std::time::Duration;
 
 use tempfile::tempdir;
+use tokio::io::AsyncWriteExt;
 
-use super::{plot_latency_percentiles, plot_metrics};
+use super::{LatencyPercentilesSeries, plot_streaming_metrics};
+use crate::app::logs;
 use crate::args::{HttpMethod, PositiveU64, PositiveUsize, TesterArgs};
-use crate::metrics::MetricRecord;
+use crate::metrics::{MetricRecord, StreamingChartData};
 
 fn sample_metrics() -> Vec<MetricRecord> {
     vec![
@@ -42,33 +45,44 @@ fn sample_metrics() -> Vec<MetricRecord> {
 
 #[test]
 fn plot_latency_percentiles_single_second() -> Result<(), String> {
-    let metrics = sample_metrics();
-    let dir = tempdir().map_err(|err| format!("Failed to create temp dir: {}", err))?;
+    run_async_test(async {
+        let metrics = sample_metrics();
+        let (dir, data) = build_streaming_data(&metrics, 200).await?;
 
-    let base_path = dir.path().join("latency_percentiles");
-    let base_path_str = match base_path.to_str() {
-        Some(path) => path,
-        None => return Err("Failed to convert path to string".to_owned()),
-    };
+        let base_path = dir.path().join("latency_percentiles");
+        let base_path_str = match base_path.to_str() {
+            Some(path) => path,
+            None => return Err("Failed to convert path to string".to_owned()),
+        };
+        let series = LatencyPercentilesSeries {
+            seconds: &data.latency_seconds,
+            p50: &data.p50,
+            p90: &data.p90,
+            p99: &data.p99,
+            p50_ok: &data.p50_ok,
+            p90_ok: &data.p90_ok,
+            p99_ok: &data.p99_ok,
+        };
 
-    plot_latency_percentiles(&metrics, 200, base_path_str)
-        .map_err(|err| format!("plot_latency_percentiles failed: {}", err))?;
+        super::plot_latency_percentiles_series(&series, base_path_str)
+            .map_err(|err| format!("plot_latency_percentiles_series failed: {}", err))?;
 
-    let p50_path = format!("{}_P50.png", base_path_str);
-    let p90_path = format!("{}_P90.png", base_path_str);
-    let p99_path = format!("{}_P99.png", base_path_str);
+        let p50_path = format!("{}_P50.png", base_path_str);
+        let p90_path = format!("{}_P90.png", base_path_str);
+        let p99_path = format!("{}_P99.png", base_path_str);
 
-    if std::fs::metadata(p50_path).is_err() {
-        return Err("Missing P50 output".to_owned());
-    }
-    if std::fs::metadata(p90_path).is_err() {
-        return Err("Missing P90 output".to_owned());
-    }
-    if std::fs::metadata(p99_path).is_err() {
-        return Err("Missing P99 output".to_owned());
-    }
+        if std::fs::metadata(p50_path).is_err() {
+            return Err("Missing P50 output".to_owned());
+        }
+        if std::fs::metadata(p90_path).is_err() {
+            return Err("Missing P90 output".to_owned());
+        }
+        if std::fs::metadata(p99_path).is_err() {
+            return Err("Missing P99 output".to_owned());
+        }
 
-    Ok(())
+        Ok(())
+    })
 }
 
 fn run_async_test<F>(future: F) -> Result<(), String>
@@ -80,6 +94,38 @@ where
         .build()
         .map_err(|err| format!("Failed to build runtime: {}", err))?;
     runtime.block_on(future)
+}
+
+async fn build_streaming_data(
+    metrics: &[MetricRecord],
+    expected_status_code: u16,
+) -> Result<(tempfile::TempDir, StreamingChartData), String> {
+    let dir = tempdir().map_err(|err| format!("Failed to create temp dir: {}", err))?;
+    let log_path = dir.path().join("metrics.log");
+    let mut file = tokio::fs::File::create(&log_path)
+        .await
+        .map_err(|err| format!("Failed to create log: {}", err))?;
+    let mut content = String::new();
+    for metric in metrics {
+        writeln!(
+            &mut content,
+            "{},{},{},{},{}",
+            metric.elapsed_ms,
+            metric.latency_ms,
+            metric.status_code,
+            u8::from(metric.timed_out),
+            u8::from(metric.transport_error)
+        )
+        .map_err(|err| format!("Failed to format log line: {}", err))?;
+    }
+    file.write_all(content.as_bytes())
+        .await
+        .map_err(|err| format!("Failed to write log: {}", err))?;
+    file.flush()
+        .await
+        .map_err(|err| format!("Failed to flush log: {}", err))?;
+    let data = logs::load_chart_data_streaming(&[log_path], expected_status_code, &None).await?;
+    Ok((dir, data))
 }
 
 #[test]
@@ -106,13 +152,34 @@ fn plot_metrics_creates_files() -> Result<(), String> {
             replay_snapshot_format: "json".to_owned(),
             method: HttpMethod::Get,
             url: Some("http://localhost".to_owned()),
+            urls_from_file: false,
+            rand_regex_url: false,
+            max_repeat: PositiveUsize::try_from(4)?,
+            dump_urls: None,
             headers: vec![],
+            accept_header: None,
+            content_type: None,
             no_ua: false,
             authorized: false,
             data: String::new(),
+            form: vec![],
+            basic_auth: None,
+            aws_session: None,
+            aws_sigv4: None,
+            data_file: None,
+            data_lines: None,
             target_duration: PositiveU64::try_from(1)?,
+            wait_ongoing_requests_after_deadline: false,
+            requests: None,
             expected_status_code: 200,
             request_timeout: Duration::from_secs(10),
+            redirect_limit: 10,
+            disable_keepalive: false,
+            disable_compression: false,
+            pool_max_idle_per_host: None,
+            pool_idle_timeout_ms: None,
+            http_version: None,
+            connect_timeout: Duration::from_secs(5),
             charts_path: charts_path.clone(),
             no_charts: false,
             verbose: false,
@@ -135,25 +202,53 @@ fn plot_metrics_creates_files() -> Result<(), String> {
             agent_heartbeat_timeout_ms: PositiveU64::try_from(3000)?,
             keep_tmp: false,
             warmup: None,
+            output: None,
+            output_format: None,
+            time_unit: None,
             export_csv: None,
             export_json: None,
             export_jsonl: None,
+            db_url: None,
             log_shards: PositiveUsize::try_from(1)?,
             no_ui: true,
             ui_window_ms: PositiveU64::try_from(10_000)?,
             summary: false,
             tls_min: None,
             tls_max: None,
+            cacert: None,
+            cert: None,
+            key: None,
+            insecure: false,
             http2: false,
+            http2_parallel: PositiveUsize::try_from(1)?,
             http3: false,
             alpn: vec![],
             proxy_url: None,
+            proxy_headers: vec![],
+            proxy_http_version: None,
+            proxy_http2: false,
             max_tasks: PositiveUsize::try_from(1)?,
             spawn_rate_per_tick: PositiveUsize::try_from(1)?,
             tick_interval: PositiveU64::try_from(1)?,
             rate_limit: None,
+            burst_delay: None,
+            burst_rate: PositiveUsize::try_from(1)?,
+            latency_correction: false,
+            connect_to: vec![],
+            host_header: None,
+            ipv6_only: false,
+            ipv4_only: false,
+            no_pre_lookup: false,
+            no_color: false,
+            ui_fps: 16,
+            stats_success_breakdown: false,
+            unix_socket: None,
             metrics_range: None,
             metrics_max: PositiveUsize::try_from(1_000_000)?,
+            rss_log_ms: None,
+            alloc_profiler_ms: None,
+            alloc_profiler_dump_ms: None,
+            alloc_profiler_dump_path: "./alloc-prof".to_owned(),
             scenario: None,
             script: None,
             install_service: false,
@@ -165,9 +260,11 @@ fn plot_metrics_creates_files() -> Result<(), String> {
             distributed_stream_interval_ms: None,
         };
 
-        plot_metrics(&metrics, &args)
+        let (_dir, data) = build_streaming_data(&metrics, args.expected_status_code).await?;
+
+        plot_streaming_metrics(&data, &args)
             .await
-            .map_err(|err| format!("plot_metrics failed: {}", err))?;
+            .map_err(|err| format!("plot_streaming_metrics failed: {}", err))?;
 
         let expected = vec![
             "average_response_time.png",
