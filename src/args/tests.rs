@@ -1,6 +1,7 @@
 use super::*;
 use clap::Parser;
 use std::time::Duration;
+use tempfile::tempdir;
 
 #[test]
 fn parse_header_valid() -> Result<(), String> {
@@ -45,11 +46,20 @@ fn parse_args_defaults() -> Result<(), String> {
     if args.url.as_deref() != Some("http://localhost") {
         return Err("Unexpected url".to_owned());
     }
+    if args.accept_header.is_some() {
+        return Err("Expected accept_header to be None".to_owned());
+    }
+    if args.content_type.is_some() {
+        return Err("Expected content_type to be None".to_owned());
+    }
     if args.target_duration.get() != 30 {
         return Err(format!(
             "Unexpected target_duration: {}",
             args.target_duration.get()
         ));
+    }
+    if args.requests.is_some() {
+        return Err("Expected requests to be None".to_owned());
     }
     if args.expected_status_code != 200 {
         return Err(format!(
@@ -61,6 +71,12 @@ fn parse_args_defaults() -> Result<(), String> {
         return Err(format!(
             "Unexpected request_timeout: {:?}",
             args.request_timeout
+        ));
+    }
+    if args.connect_timeout != Duration::from_secs(5) {
+        return Err(format!(
+            "Unexpected connect_timeout: {:?}",
+            args.connect_timeout
         ));
     }
     let expected_charts = default_charts_path();
@@ -75,6 +91,12 @@ fn parse_args_defaults() -> Result<(), String> {
     }
     if args.authorized {
         return Err("Expected authorized to be false".to_owned());
+    }
+    if args.data_file.is_some() {
+        return Err("Expected data_file to be None".to_owned());
+    }
+    if args.data_lines.is_some() {
+        return Err("Expected data_lines to be None".to_owned());
     }
     if args.verbose {
         return Err("Expected verbose to be false".to_owned());
@@ -307,6 +329,106 @@ fn parse_args_concurrency_alias() -> Result<(), String> {
     Ok(())
 }
 
+#[test]
+fn parse_args_connections_alias() -> Result<(), String> {
+    let args_result =
+        TesterArgs::try_parse_from(["strest", "-u", "http://localhost", "--connections", "7"]);
+    let args = match args_result {
+        Ok(args) => args,
+        Err(err) => {
+            return Err(format!("Expected Ok, got Err: {}", err));
+        }
+    };
+    if args.max_tasks.get() != 7 {
+        return Err(format!("Unexpected max_tasks: {}", args.max_tasks.get()));
+    }
+    Ok(())
+}
+
+#[test]
+fn parse_args_accept_and_content_type() -> Result<(), String> {
+    let args_result = TesterArgs::try_parse_from([
+        "strest",
+        "-u",
+        "http://localhost",
+        "--accept",
+        "application/json",
+        "--content-type",
+        "text/plain",
+    ]);
+    let args = match args_result {
+        Ok(args) => args,
+        Err(err) => {
+            return Err(format!("Expected Ok, got Err: {}", err));
+        }
+    };
+    if args.accept_header.as_deref() != Some("application/json") {
+        return Err("Unexpected accept_header".to_owned());
+    }
+    if args.content_type.as_deref() != Some("text/plain") {
+        return Err("Unexpected content_type".to_owned());
+    }
+    Ok(())
+}
+
+#[test]
+fn parse_args_requests_limit() -> Result<(), String> {
+    let args_result =
+        TesterArgs::try_parse_from(["strest", "-u", "http://localhost", "--requests", "15"]);
+    let args = match args_result {
+        Ok(args) => args,
+        Err(err) => {
+            return Err(format!("Expected Ok, got Err: {}", err));
+        }
+    };
+    if args.requests.map(u64::from) != Some(15) {
+        return Err("Unexpected requests".to_owned());
+    }
+    Ok(())
+}
+
+#[test]
+fn parse_args_data_file_and_lines() -> Result<(), String> {
+    let dir = tempdir().map_err(|err| format!("tempdir failed: {}", err))?;
+    let file_path = dir.path().join("payload.txt");
+    std::fs::write(&file_path, "hello\nworld").map_err(|err| format!("write failed: {}", err))?;
+
+    let args_result = TesterArgs::try_parse_from([
+        "strest",
+        "-u",
+        "http://localhost",
+        "--data-file",
+        file_path.to_str().unwrap_or("payload.txt"),
+    ]);
+    let args = match args_result {
+        Ok(args) => args,
+        Err(err) => {
+            return Err(format!("Expected Ok, got Err: {}", err));
+        }
+    };
+    if args.data_file.is_none() {
+        return Err("Expected data_file to be Some".to_owned());
+    }
+
+    let args_result_lines = TesterArgs::try_parse_from([
+        "strest",
+        "-u",
+        "http://localhost",
+        "--data-lines",
+        file_path.to_str().unwrap_or("payload.txt"),
+    ]);
+    let args_lines = match args_result_lines {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            return Err(format!("Expected Ok, got Err: {}", err));
+        }
+    };
+    if args_lines.data_lines.is_none() {
+        return Err("Expected data_lines to be Some".to_owned());
+    }
+
+    Ok(())
+}
 #[test]
 fn parse_args_metrics_range() -> Result<(), String> {
     let args_result = TesterArgs::try_parse_from([

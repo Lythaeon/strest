@@ -65,7 +65,7 @@ fn run_distributed(streaming: bool) -> Result<(), String> {
         url,
         "-t".to_owned(),
         "2".to_owned(),
-        "--no-ui".to_owned(),
+        "--no-tui".to_owned(),
         "--summary".to_owned(),
         "--no-charts".to_owned(),
         "--min-agents".to_owned(),
@@ -98,7 +98,7 @@ fn run_distributed(streaming: bool) -> Result<(), String> {
     let agent_args = vec![
         "--agent-join".to_owned(),
         listen,
-        "--no-ui".to_owned(),
+        "--no-tui".to_owned(),
         "--no-charts".to_owned(),
     ];
 

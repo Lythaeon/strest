@@ -108,6 +108,10 @@ url = "http://localhost:3000"
 proxy = "http://127.0.0.1:8080"
 concurrency = 42
 timeout = "5s"
+connect_timeout = "3s"
+accept = "application/json"
+content_type = "text/plain"
+requests = 12
 "#;
     std::fs::write(&path, content).map_err(|err| format!("write failed: {}", err))?;
 
@@ -131,6 +135,41 @@ timeout = "5s"
             "Unexpected request_timeout: {:?}",
             args.request_timeout
         ));
+    }
+    if args.connect_timeout != Duration::from_secs(3) {
+        return Err(format!(
+            "Unexpected connect_timeout: {:?}",
+            args.connect_timeout
+        ));
+    }
+    if args.accept_header.as_deref() != Some("application/json") {
+        return Err("Unexpected accept_header".to_owned());
+    }
+    if args.content_type.as_deref() != Some("text/plain") {
+        return Err("Unexpected content_type".to_owned());
+    }
+    if args.requests.map(u64::from) != Some(12) {
+        return Err("Unexpected requests".to_owned());
+    }
+
+    Ok(())
+}
+
+#[test]
+fn apply_config_rejects_conflicting_body_sources() -> Result<(), String> {
+    let config = ConfigFile {
+        data: Some("inline".to_owned()),
+        data_file: Some("payload.txt".to_owned()),
+        ..ConfigFile::default()
+    };
+
+    let cmd = TesterArgs::command();
+    let matches = cmd.get_matches_from(["strest"]);
+    let mut args = TesterArgs::from_arg_matches(&matches)
+        .map_err(|err| format!("parse args failed: {}", err))?;
+
+    if apply_config(&mut args, &matches, &config).is_ok() {
+        return Err("Expected conflict error".to_owned());
     }
 
     Ok(())

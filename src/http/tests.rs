@@ -1,4 +1,4 @@
-use super::workload::render_template;
+use super::workload::{RequestLimiter, render_template};
 use super::*;
 use crate::args::{HttpMethod, PositiveU64, PositiveUsize, TesterArgs};
 use crate::metrics::Metrics;
@@ -28,12 +28,18 @@ fn base_args(url: String) -> Result<TesterArgs, String> {
         method: HttpMethod::Get,
         url: Some(url),
         headers: vec![],
+        accept_header: None,
+        content_type: None,
         no_ua: false,
         authorized: false,
         data: String::new(),
+        data_file: None,
+        data_lines: None,
         target_duration: positive_u64(1)?,
+        requests: None,
         expected_status_code: 200,
         request_timeout: Duration::from_secs(10),
+        connect_timeout: Duration::from_secs(5),
         charts_path: "./charts".to_owned(),
         no_charts: true,
         verbose: false,
@@ -186,5 +192,27 @@ fn resolve_alpn_detects_http2_only() -> Result<(), String> {
     if selection.has_h3 {
         return Err("Expected has_h3 to be false".to_owned());
     }
+    Ok(())
+}
+
+#[test]
+fn request_limiter_stops_at_limit() -> Result<(), String> {
+    let limiter = RequestLimiter::new(Some(2)).ok_or_else(|| "Missing limiter".to_owned())?;
+    let (shutdown_tx, _) = tokio::sync::broadcast::channel::<u16>(1);
+    let mut shutdown_rx = shutdown_tx.subscribe();
+
+    if !limiter.try_reserve(&shutdown_tx) {
+        return Err("Expected first reserve to succeed".to_owned());
+    }
+    if !limiter.try_reserve(&shutdown_tx) {
+        return Err("Expected second reserve to succeed".to_owned());
+    }
+    if limiter.try_reserve(&shutdown_tx) {
+        return Err("Expected third reserve to fail".to_owned());
+    }
+    if shutdown_rx.try_recv().is_err() {
+        return Err("Expected shutdown signal".to_owned());
+    }
+
     Ok(())
 }

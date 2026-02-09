@@ -30,6 +30,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "cli_args_usability"
+path = "fuzz_targets/cli_args_usability.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "config_json"
 path = "fuzz_targets/config_json.rs"
 test = false
