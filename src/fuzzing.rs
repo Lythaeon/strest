@@ -152,6 +152,15 @@ pub fn build_scenario_request_input(
     Ok(())
 }
 
+/// Loads a config file from disk to exercise extension handling.
+///
+/// # Errors
+///
+/// Returns an error when the config file cannot be read or parsed.
+pub fn load_config_file_input(path: &std::path::Path) -> Result<(), String> {
+    crate::config::load_config_file(path).map(|_| ())
+}
+
 fn apply_config_to_defaults(config: &ConfigFile) -> Result<(), String> {
     BASE_MATCHES.with(|matches| {
         let mut args = TesterArgs::from_arg_matches(matches)

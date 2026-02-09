@@ -122,6 +122,9 @@ fn parse_args_defaults() -> Result<(), String> {
     if args.export_json.is_some() {
         return Err("Expected export_json to be None".to_owned());
     }
+    if args.export_jsonl.is_some() {
+        return Err("Expected export_jsonl to be None".to_owned());
+    }
     if args.log_shards.get() != 1 {
         return Err(format!("Unexpected log_shards: {}", args.log_shards.get()));
     }
@@ -202,6 +205,36 @@ fn parse_args_defaults() -> Result<(), String> {
     }
     if args.distributed_stream_interval_ms.is_some() {
         return Err("Expected distributed_stream_interval_ms to be None".to_owned());
+    }
+    if args.replay {
+        return Err("Expected replay to be false".to_owned());
+    }
+    if args.replay_start.is_some() {
+        return Err("Expected replay_start to be None".to_owned());
+    }
+    if args.replay_end.is_some() {
+        return Err("Expected replay_end to be None".to_owned());
+    }
+    if args.replay_step.is_some() {
+        return Err("Expected replay_step to be None".to_owned());
+    }
+    if args.replay_snapshot_interval.is_some() {
+        return Err("Expected replay_snapshot_interval to be None".to_owned());
+    }
+    if args.replay_snapshot_start.is_some() {
+        return Err("Expected replay_snapshot_start to be None".to_owned());
+    }
+    if args.replay_snapshot_end.is_some() {
+        return Err("Expected replay_snapshot_end to be None".to_owned());
+    }
+    if args.replay_snapshot_out.is_some() {
+        return Err("Expected replay_snapshot_out to be None".to_owned());
+    }
+    if args.replay_snapshot_format != "json" {
+        return Err(format!(
+            "Unexpected replay_snapshot_format: {}",
+            args.replay_snapshot_format
+        ));
     }
     if args.scenario.is_some() {
         return Err("Expected scenario to be None".to_owned());

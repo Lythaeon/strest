@@ -12,11 +12,14 @@ else
   TARGETS=(
     cli_args
     config_json
+    config_loader
     config_toml
     histogram_base64
+    histogram_record
     load_profile
     metrics_log
     metrics_range
+    controller_mode
     parse_duration_arg
     parse_duration_value
     parse_header

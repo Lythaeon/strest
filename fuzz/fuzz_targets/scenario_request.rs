@@ -105,11 +105,16 @@ fuzz_target!(|data: &[u8]| {
     };
 
     if let Some(step_ref) = scenario.steps.first() {
-        let _result = strest::fuzzing::build_scenario_request_input(
+        let result = strest::fuzzing::build_scenario_request_input(
             &scenario,
             step_ref,
             seq,
             step_index,
         );
+        if result.is_ok() {
+            debug_assert!(
+                step_ref.url.is_some() || step_ref.path.is_some() || scenario.base_url.is_some()
+            );
+        }
     }
 });

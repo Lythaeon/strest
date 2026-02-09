@@ -1,6 +1,16 @@
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
+pub struct ReplayUi {
+    pub playing: bool,
+    pub window_start_ms: u64,
+    pub window_end_ms: u64,
+    pub cursor_ms: u64,
+    pub snapshot_start_ms: Option<u64>,
+    pub snapshot_end_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
 pub struct UiData {
     pub elapsed_time: Duration,
     pub target_duration: Duration,
@@ -19,6 +29,7 @@ pub struct UiData {
     pub p99_ok: u64,
     pub rps: u64,
     pub rpm: u64,
+    pub replay: Option<ReplayUi>,
 }
 
 #[derive(Clone)]
@@ -40,6 +51,7 @@ pub struct UiRenderData {
     pub p99_ok: u64,
     pub rps: u64,
     pub rpm: u64,
+    pub replay: Option<ReplayUi>,
 }
 
 impl Default for UiData {
@@ -62,6 +74,7 @@ impl Default for UiData {
             p99_ok: 0,
             rps: 0,
             rpm: 0,
+            replay: None,
         }
     }
 }
@@ -86,6 +99,7 @@ impl From<&UiData> for UiRenderData {
             p99_ok: data.p99_ok,
             rps: data.rps,
             rpm: data.rpm,
+            replay: data.replay.clone(),
         }
     }
 }

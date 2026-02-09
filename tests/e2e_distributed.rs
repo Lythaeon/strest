@@ -6,8 +6,8 @@ use std::time::Duration;
 use tempfile::tempdir;
 
 use support_distributed::{
-    pick_port, read_child_output, spawn_http_server, spawn_strest, spawn_strest_with_output,
-    wait_for_exit,
+    pick_port, read_child_output, spawn_http_server_or_skip, spawn_strest,
+    spawn_strest_with_output, wait_for_exit,
 };
 
 fn prep_paths() -> Result<(tempfile::TempDir, String, String), String> {
@@ -38,7 +38,9 @@ fn parse_summary_metric(output: &str, label: &str) -> Result<u64, String> {
 }
 
 fn run_distributed(streaming: bool) -> Result<(), String> {
-    let (url, _server) = spawn_http_server()?;
+    let Some((url, _server)) = spawn_http_server_or_skip()? else {
+        return Ok(());
+    };
     let (dir, charts_path, tmp_path) = prep_paths()?;
 
     let sink_path = dir.path().join("controller.prom");

@@ -94,6 +94,16 @@ fn plot_metrics_creates_files() -> Result<(), String> {
         };
 
         let args = TesterArgs {
+            command: None,
+            replay: false,
+            replay_start: None,
+            replay_end: None,
+            replay_step: None,
+            replay_snapshot_interval: None,
+            replay_snapshot_start: None,
+            replay_snapshot_end: None,
+            replay_snapshot_out: None,
+            replay_snapshot_format: "json".to_owned(),
             method: HttpMethod::Get,
             url: Some("http://localhost".to_owned()),
             headers: vec![],
@@ -127,6 +137,7 @@ fn plot_metrics_creates_files() -> Result<(), String> {
             warmup: None,
             export_csv: None,
             export_json: None,
+            export_jsonl: None,
             log_shards: PositiveUsize::try_from(1)?,
             no_ui: true,
             ui_window_ms: PositiveU64::try_from(10_000)?,

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use tempfile::tempdir;
 
 use support_single::run_strest;
-use support_single::spawn_http_server;
+use support_single::spawn_http_server_or_skip;
 
 fn prep_paths() -> Result<(tempfile::TempDir, String, String), String> {
     let dir = tempdir().map_err(|err| format!("tempdir failed: {}", err))?;
@@ -23,7 +23,9 @@ fn prep_paths() -> Result<(tempfile::TempDir, String, String), String> {
 
 #[test]
 fn e2e_single_cli_basic() -> Result<(), String> {
-    let (url, _server) = spawn_http_server()?;
+    let Some((url, _server)) = spawn_http_server_or_skip()? else {
+        return Ok(());
+    };
     let (_dir, charts_path, tmp_path) = prep_paths()?;
 
     let args = vec![
@@ -61,11 +63,14 @@ fn e2e_single_cli_basic() -> Result<(), String> {
 
 #[test]
 fn e2e_single_exports() -> Result<(), String> {
-    let (url, _server) = spawn_http_server()?;
+    let Some((url, _server)) = spawn_http_server_or_skip()? else {
+        return Ok(());
+    };
     let (dir, charts_path, tmp_path) = prep_paths()?;
 
     let export_csv = dir.path().join("metrics.csv");
     let export_json = dir.path().join("metrics.json");
+    let export_jsonl = dir.path().join("metrics.jsonl");
 
     let args = vec![
         "-u".to_owned(),
@@ -83,6 +88,8 @@ fn e2e_single_exports() -> Result<(), String> {
         export_csv.to_string_lossy().into_owned(),
         "--export-json".to_owned(),
         export_json.to_string_lossy().into_owned(),
+        "--export-jsonl".to_owned(),
+        export_jsonl.to_string_lossy().into_owned(),
         "--tmp-path".to_owned(),
         tmp_path,
         "--charts-path".to_owned(),
@@ -103,22 +110,32 @@ fn e2e_single_exports() -> Result<(), String> {
     if !export_json.exists() {
         return Err("Expected JSON export to exist.".to_owned());
     }
+    if !export_jsonl.exists() {
+        return Err("Expected JSONL export to exist.".to_owned());
+    }
     let csv_meta =
         fs::metadata(&export_csv).map_err(|err| format!("csv metadata failed: {}", err))?;
     let json_meta =
         fs::metadata(&export_json).map_err(|err| format!("json metadata failed: {}", err))?;
+    let jsonl_meta =
+        fs::metadata(&export_jsonl).map_err(|err| format!("jsonl metadata failed: {}", err))?;
     if csv_meta.len() == 0 {
         return Err("CSV export was empty.".to_owned());
     }
     if json_meta.len() == 0 {
         return Err("JSON export was empty.".to_owned());
     }
+    if jsonl_meta.len() == 0 {
+        return Err("JSONL export was empty.".to_owned());
+    }
     Ok(())
 }
 
 #[test]
 fn e2e_single_config_toml_load_and_sinks() -> Result<(), String> {
-    let (url, _server) = spawn_http_server()?;
+    let Some((url, _server)) = spawn_http_server_or_skip()? else {
+        return Ok(());
+    };
     let (dir, charts_path, tmp_path) = prep_paths()?;
 
     let sink_path = dir.path().join("sink.prom");
@@ -179,7 +196,9 @@ path = "{sink}"
 
 #[test]
 fn e2e_single_config_json_scenario() -> Result<(), String> {
-    let (url, _server) = spawn_http_server()?;
+    let Some((url, _server)) = spawn_http_server_or_skip()? else {
+        return Ok(());
+    };
     let (_dir, charts_path, tmp_path) = prep_paths()?;
 
     let config_path = PathBuf::from(tmp_path.clone()).join("strest.json");

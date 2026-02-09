@@ -10,6 +10,6 @@ mod tests;
 pub use apply::apply_config;
 pub use loader::load_config;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "fuzzing"))]
 pub(crate) use loader::load_config_file;
 pub(crate) use parse::parse_duration_value;

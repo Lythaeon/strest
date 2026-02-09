@@ -5,6 +5,16 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+## 0.1.3
+
+Released: 2026-02-09
+
+- Added `strest cleanup` to prune temporary run logs (supports `--older-than`, `--dry-run`, and `--force`).
+- Added `--replay` mode for post-mortem analysis from tmp logs or exported CSV/JSON/JSONL, with interactive controls and windowing flags (`--replay-start`, `--replay-end`, `--replay-step`).
+- Added replay snapshotting with interval + range controls (`--replay-snapshot-*`) and default snapshot storage under `~/.strest/snapshots`.
+- Added JSONL exports (`--export-jsonl`) and replay support for JSONL logs.
+- Replay now renders using the default TUI (including the latency chart) and shows snapshot markers plus hotkeys.
+
 ## 0.1.2
 
 Released: 2026-02-09

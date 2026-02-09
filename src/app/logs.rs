@@ -32,7 +32,8 @@ pub(crate) async fn setup_log_sinks(
     let log_enabled = charts_enabled
         || summary_enabled
         || args.export_csv.is_some()
-        || args.export_json.is_some();
+        || args.export_json.is_some()
+        || args.export_jsonl.is_some();
 
     if !log_enabled {
         return Ok(LogSetup {
@@ -52,7 +53,8 @@ pub(crate) async fn setup_log_sinks(
     let collect_records = charts_enabled
         || summary_enabled
         || args.export_csv.is_some()
-        || args.export_json.is_some();
+        || args.export_json.is_some()
+        || args.export_jsonl.is_some();
     let metrics_max = if collect_records {
         args.metrics_max.get()
     } else {

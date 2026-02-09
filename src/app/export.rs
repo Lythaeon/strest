@@ -71,3 +71,49 @@ pub(crate) async fn export_json(
     writer.flush().await?;
     Ok(())
 }
+
+pub(crate) async fn export_jsonl(
+    path: &str,
+    summary: &metrics::MetricsSummary,
+    records: &[metrics::MetricRecord],
+) -> Result<(), std::io::Error> {
+    let file = tokio::fs::File::create(path).await?;
+    let mut writer = BufWriter::new(file);
+
+    let summary_json = serde_json::json!({
+        "type": "summary",
+        "duration_ms": summary.duration.as_millis(),
+        "total_requests": summary.total_requests,
+        "successful_requests": summary.successful_requests,
+        "error_requests": summary.error_requests,
+        "timeout_requests": summary.timeout_requests,
+        "transport_errors": summary.transport_errors,
+        "non_expected_status": summary.non_expected_status,
+        "success_min_latency_ms": summary.success_min_latency_ms,
+        "success_max_latency_ms": summary.success_max_latency_ms,
+        "success_avg_latency_ms": summary.success_avg_latency_ms,
+        "min_latency_ms": summary.min_latency_ms,
+        "max_latency_ms": summary.max_latency_ms,
+        "avg_latency_ms": summary.avg_latency_ms
+    });
+    let summary_line = serde_json::to_vec(&summary_json).map_err(std::io::Error::other)?;
+    writer.write_all(&summary_line).await?;
+    writer.write_all(b"\n").await?;
+
+    for record in records {
+        let line = serde_json::json!({
+            "type": "record",
+            "elapsed_ms": record.elapsed_ms,
+            "latency_ms": record.latency_ms,
+            "status_code": record.status_code,
+            "timed_out": record.timed_out,
+            "transport_error": record.transport_error
+        });
+        let line_bytes = serde_json::to_vec(&line).map_err(std::io::Error::other)?;
+        writer.write_all(&line_bytes).await?;
+        writer.write_all(b"\n").await?;
+    }
+
+    writer.flush().await?;
+    Ok(())
+}

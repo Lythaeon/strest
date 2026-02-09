@@ -15,6 +15,16 @@ fn positive_usize(value: usize) -> Result<PositiveUsize, String> {
 
 fn base_args(url: String) -> Result<TesterArgs, String> {
     Ok(TesterArgs {
+        command: None,
+        replay: false,
+        replay_start: None,
+        replay_end: None,
+        replay_step: None,
+        replay_snapshot_interval: None,
+        replay_snapshot_start: None,
+        replay_snapshot_end: None,
+        replay_snapshot_out: None,
+        replay_snapshot_format: "json".to_owned(),
         method: HttpMethod::Get,
         url: Some(url),
         headers: vec![],
@@ -48,6 +58,7 @@ fn base_args(url: String) -> Result<TesterArgs, String> {
         warmup: None,
         export_csv: None,
         export_json: None,
+        export_jsonl: None,
         log_shards: positive_usize(1)?,
         no_ui: true,
         ui_window_ms: positive_u64(10_000)?,
