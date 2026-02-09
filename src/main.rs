@@ -14,6 +14,10 @@ mod shutdown;
 mod sinks;
 mod ui;
 
+#[cfg(feature = "alloc-profiler")]
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 use app::{run_cleanup, run_local, run_replay};
 use args::{Command, OutputFormat, TesterArgs};
 use clap::{CommandFactory, FromArgMatches};

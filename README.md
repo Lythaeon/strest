@@ -5,6 +5,8 @@
 
 strest is a command-line tool for stress testing web servers by sending a large number of HTTP requests. It provides insights into server performance by measuring average response times, reporting observed requests per minute (RPM), and other relevant metrics.
 
+strest also ships with built-in memory debugging tools so you can investigate growth during long runs. Use RSS logging and optional heap profiling to confirm whether growth correlates with request shape/volume, connection pool behavior (idle limits/timeouts), or payload patterns, and then dial those knobs with data instead of guesswork.
+
 # Screenshot Overview  
 These screenshots showcase key metrics and real-time statistics from strest’s stress testing, including response time, error rate, request count, latency percentiles (all vs ok), timeouts, status distribution, and throughput.
 
@@ -402,6 +404,8 @@ Snapshots default to `~/.strest/snapshots` (or `%USERPROFILE%\\.strest\\snapshot
 - `--redirect` limits redirects (0 disables).
 - `--disable-keepalive` disables connection reuse (HTTP/1 only).
 - `--disable-compression` disables gzip/brotli/deflate.
+- `--pool-max-idle-per-host` sets the max idle connections per host (0 disables idle pooling).
+- `--pool-idle-timeout-ms` sets the idle connection timeout for the HTTP pool (ms).
 - `--http-version` prefers an HTTP version (`0.9`, `1.0`, `1.1`, `2`, `3`).
 - `--controller-listen` starts a distributed controller (e.g., `0.0.0.0:9009`).
 - `--controller-mode` selects controller mode (`auto` or `manual`).
@@ -452,6 +456,10 @@ Snapshots default to `~/.strest/snapshots` (or `%USERPROFILE%\\.strest\\snapshot
 - `--install-service` installs a Linux systemd service for controller/agent.
 - `--uninstall-service` removes a Linux systemd service for controller/agent.
 - `--service-name` overrides the systemd service name.
+- `--rss-log-ms` logs RSS periodically when `--no-tui` is enabled (Linux only).
+- `--alloc-profiler-ms` logs jemalloc allocator stats periodically (requires `--features alloc-profiler`).
+- `--alloc-profiler-dump-ms` writes jemalloc heap profile dumps periodically (requires `--features alloc-profiler`).
+- `--alloc-profiler-dump-path` sets the output directory for heap dumps (default `./alloc-prof`).
 
 HTTP/3 is experimental and requires building with `--features http3` plus
 `RUSTFLAGS="--cfg reqwest_unstable"` (reqwest requirement):
@@ -460,10 +468,39 @@ HTTP/3 is experimental and requires building with `--features http3` plus
 RUSTFLAGS="--cfg reqwest_unstable" cargo build --release --features http3
 ```
 
+### Debug + Profiling Features
+
+Strest exposes a few debug/profiling features behind build-time flags:
+
+- `alloc-profiler`: enables jemalloc stats + heap dumps (used by `--alloc-profiler-*` flags).
+- `legacy-charts`: keeps the pre-streaming chart pipeline available (primarily for tests).
+
+Build example (profiling enabled):
+
+```bash
+JEMALLOC_SYS_WITH_MALLOC_CONF=prof:true,lg_prof_sample:19,prof_prefix:strest \
+CARGO_PROFILE_RELEASE_DEBUG=2 CARGO_PROFILE_RELEASE_STRIP=none \
+cargo build --release --features alloc-profiler
+```
+
+Run with profiling active:
+
+```bash
+MALLOC_CONF=prof_active:true \
+./target/release/strest -u http://localhost:8887 -t 120 --no-tui --no-charts --summary \
+  --rss-log-ms 5000 \
+  --alloc-profiler-ms 5000 \
+  --alloc-profiler-dump-ms 5000 --alloc-profiler-dump-path ./alloc-prof
+```
+
 ### Configuration File
 
 You can provide a config file with `--config path`. If no config is specified, `strest` will look for `./strest.toml` or `./strest.json` (TOML is preferred if both exist). CLI flags override config values.
 By default, strest sends `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)`. To disable, set `no_ua = true` and `authorized = true`.
+
+Additional config keys:
+- `pool_max_idle_per_host` (integer) and `pool_idle_timeout_ms` (integer) tune the HTTP connection pool.
+- `rss_log_ms`, `alloc_profiler_ms`, `alloc_profiler_dump_ms`, and `alloc_profiler_dump_path` map to their CLI equivalents.
 
 Example `strest.toml`:
 

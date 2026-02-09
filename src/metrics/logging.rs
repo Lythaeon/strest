@@ -20,13 +20,13 @@ use super::{LatencyHistogram, MetricRecord, Metrics, MetricsRange, MetricsSummar
 
 #[derive(Debug)]
 pub struct LogSink {
-    senders: Vec<mpsc::UnboundedSender<Metrics>>,
+    senders: Vec<mpsc::Sender<Metrics>>,
     next: AtomicUsize,
 }
 
 impl LogSink {
     #[must_use]
-    pub const fn new(senders: Vec<mpsc::UnboundedSender<Metrics>>) -> Self {
+    pub const fn new(senders: Vec<mpsc::Sender<Metrics>>) -> Self {
         Self {
             senders,
             next: AtomicUsize::new(0),
@@ -45,7 +45,11 @@ impl LogSink {
             .unwrap_or(0);
         self.senders
             .get(idx)
-            .is_some_and(|sender: &mpsc::UnboundedSender<Metrics>| sender.send(metric).is_ok())
+            .is_some_and(|sender| match sender.try_send(metric) {
+                Ok(()) => true,
+                Err(mpsc::error::TrySendError::Full(_)) => true,
+                Err(mpsc::error::TrySendError::Closed(_)) => false,
+            })
     }
 }
 
@@ -85,7 +89,7 @@ const DB_FLUSH_SIZE: usize = 500;
 pub fn setup_metrics_logger(
     log_path: PathBuf,
     config: MetricsLoggerConfig,
-    mut log_rx: mpsc::UnboundedReceiver<Metrics>,
+    mut log_rx: mpsc::Receiver<Metrics>,
 ) -> JoinHandle<Result<LogResult, String>> {
     tokio::spawn(async move {
         let warmup_ms = config
@@ -95,8 +99,9 @@ pub fn setup_metrics_logger(
         let file = File::create(&log_path)
             .await
             .map_err(|err| format!("Failed to create metrics log: {}", err))?;
-        let mut writer = BufWriter::new(file);
-        let mut buffer = String::with_capacity(64 * 1024);
+        const LOG_BUFFER_SIZE: usize = 256 * 1024;
+        let mut writer = BufWriter::with_capacity(LOG_BUFFER_SIZE, file);
+        let mut buffer = String::with_capacity(LOG_BUFFER_SIZE);
         let mut records = Vec::new();
         let mut metrics_truncated = false;
         let collect_records = config.metrics_max > 0;
@@ -168,7 +173,7 @@ pub fn setup_metrics_logger(
                 return Err("Failed to format metrics log line".to_owned());
             }
 
-            if buffer.len() >= 64 * 1024 {
+            if buffer.len() >= LOG_BUFFER_SIZE {
                 writer
                     .write_all(buffer.as_bytes())
                     .await

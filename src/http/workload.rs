@@ -5,6 +5,7 @@ use std::sync::{
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use futures_util::StreamExt;
 use rand::distributions::Distribution;
 use rand::thread_rng;
 use rand_regex::Regex as RandRegex;
@@ -481,14 +482,14 @@ async fn execute_request_with_asserts(
             let expected = assert_status.unwrap_or(expected_status_code);
             let status_ok = status == expected;
 
-            let body_result = response.bytes().await;
+            let body_result = match assert_body_contains {
+                Some(fragment) => drain_body_contains(response, fragment).await,
+                None => drain_response_body(response).await.map(|()| false),
+            };
             let mut timed_out = false;
             let mut transport_error = false;
             let body_ok = match (assert_body_contains, body_result) {
-                (Some(fragment), Ok(bytes)) => {
-                    let body = String::from_utf8_lossy(&bytes);
-                    body.contains(fragment)
-                }
+                (Some(_), Ok(found)) => found,
                 (Some(_), Err(err)) => {
                     timed_out = err.is_timeout();
                     transport_error = !timed_out;
@@ -918,7 +919,7 @@ async fn execute_request(
     let response = client.execute(request).await?;
     let status = response.status().as_u16();
     if drain_body {
-        response.bytes().await?;
+        drain_response_body(response).await?;
     }
     Ok(status)
 }
@@ -927,8 +928,8 @@ async fn execute_request_status(client: &Client, request: Request) -> (u16, bool
     match client.execute(request).await {
         Ok(response) => {
             let status = response.status().as_u16();
-            match response.bytes().await {
-                Ok(_) => (status, false, false),
+            match drain_response_body(response).await {
+                Ok(()) => (status, false, false),
                 Err(err) => {
                     let timed_out = err.is_timeout();
                     (500, timed_out, !timed_out)
@@ -940,4 +941,49 @@ async fn execute_request_status(client: &Client, request: Request) -> (u16, bool
             (500, timed_out, !timed_out)
         }
     }
+}
+
+async fn drain_response_body(response: reqwest::Response) -> Result<(), reqwest::Error> {
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        chunk?;
+    }
+    Ok(())
+}
+
+async fn drain_body_contains(
+    response: reqwest::Response,
+    fragment: &str,
+) -> Result<bool, reqwest::Error> {
+    let needle = fragment.as_bytes();
+    if needle.is_empty() {
+        drain_response_body(response).await?;
+        return Ok(true);
+    }
+    let mut found = false;
+    let mut carry: Vec<u8> = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk?;
+        if !found {
+            let mut window = std::mem::take(&mut carry);
+            window.extend_from_slice(&bytes);
+            if window.windows(needle.len()).any(|slice| slice == needle) {
+                found = true;
+            }
+            let keep = needle.len().saturating_sub(1);
+            if keep > 0 {
+                let len = window.len();
+                let start = len.saturating_sub(keep);
+                if let Some(tail) = window.get(start..) {
+                    carry = tail.to_vec();
+                } else {
+                    carry.clear();
+                }
+            } else {
+                carry.clear();
+            }
+        }
+    }
+    Ok(found)
 }

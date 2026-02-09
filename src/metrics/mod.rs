@@ -12,7 +12,7 @@ pub use histogram::LatencyHistogram;
 pub use logging::{LogResult, LogSink, MetricsLoggerConfig, setup_metrics_logger};
 pub use types::{
     AggregatedMetricSample, MetricRecord, Metrics, MetricsRange, MetricsReport, MetricsSummary,
-    StreamSnapshot,
+    StreamSnapshot, StreamingChartData,
 };
 
 #[cfg(any(test, feature = "fuzzing"))]

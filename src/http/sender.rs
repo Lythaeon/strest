@@ -101,6 +101,15 @@ pub fn setup_request_sender(
             .pool_idle_timeout(Some(std::time::Duration::from_secs(0)));
     }
 
+    if let Some(max_idle) = args.pool_max_idle_per_host.as_ref() {
+        client_builder = client_builder.pool_max_idle_per_host(max_idle.get());
+    }
+
+    if let Some(idle_timeout_ms) = args.pool_idle_timeout_ms.as_ref() {
+        client_builder =
+            client_builder.pool_idle_timeout(Some(Duration::from_millis(idle_timeout_ms.get())));
+    }
+
     if args.disable_compression {
         client_builder = client_builder.no_gzip().no_brotli().no_deflate();
     }

@@ -52,6 +52,8 @@ fn base_args() -> Result<TesterArgs, String> {
         redirect_limit: 10,
         disable_keepalive: false,
         disable_compression: false,
+        pool_max_idle_per_host: None,
+        pool_idle_timeout_ms: None,
         http_version: None,
         connect_timeout: Duration::from_secs(5),
         charts_path: "./charts".to_owned(),
@@ -119,6 +121,10 @@ fn base_args() -> Result<TesterArgs, String> {
         unix_socket: None,
         metrics_range: None,
         metrics_max: positive_usize(1_000_000)?,
+        rss_log_ms: None,
+        alloc_profiler_ms: None,
+        alloc_profiler_dump_ms: None,
+        alloc_profiler_dump_path: "./alloc-prof".to_owned(),
         scenario: None,
         script: None,
         install_service: false,
@@ -355,7 +361,7 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
         let dir = tempfile::tempdir().map_err(|err| format!("tempdir failed: {}", err))?;
         let log_path = dir.path().join("metrics.log");
         let db_path = dir.path().join("metrics.db");
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
         let run_start = tokio::time::Instant::now();
         let logger_config = MetricsLoggerConfig {
             run_start,
@@ -385,10 +391,10 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
             transport_error: false,
         };
 
-        if tx.send(first).is_err() {
+        if tx.send(first).await.is_err() {
             return Err("Failed to send first metric".to_owned());
         }
-        if tx.send(second).is_err() {
+        if tx.send(second).await.is_err() {
             return Err("Failed to send second metric".to_owned());
         }
         drop(tx);

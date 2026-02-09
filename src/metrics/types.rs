@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::ops::RangeInclusive;
 use std::time::Duration;
 
@@ -88,6 +89,31 @@ pub struct MetricRecord {
 
 #[derive(Debug, Clone)]
 pub struct MetricsRange(pub RangeInclusive<u64>);
+
+#[derive(Debug)]
+pub struct StreamingChartData {
+    pub avg_buckets: BTreeMap<u64, (u128, u64)>,
+    pub total_buckets: BTreeMap<u64, u64>,
+    pub success_buckets: BTreeMap<u64, u64>,
+    pub error_buckets: BTreeMap<u64, u64>,
+    pub rps_counts: Vec<u32>,
+    pub timeouts: Vec<u32>,
+    pub transports: Vec<u32>,
+    pub non_expected: Vec<u32>,
+    pub status_2xx: Vec<u32>,
+    pub status_3xx: Vec<u32>,
+    pub status_4xx: Vec<u32>,
+    pub status_5xx: Vec<u32>,
+    pub status_other: Vec<u32>,
+    pub inflight: Vec<u32>,
+    pub latency_seconds: Vec<u64>,
+    pub p50: Vec<u64>,
+    pub p90: Vec<u64>,
+    pub p99: Vec<u64>,
+    pub p50_ok: Vec<u64>,
+    pub p90_ok: Vec<u64>,
+    pub p99_ok: Vec<u64>,
+}
 
 impl std::str::FromStr for MetricsRange {
     type Err = String;

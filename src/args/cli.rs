@@ -205,6 +205,14 @@ pub struct TesterArgs {
     #[arg(long = "disable-compression")]
     pub disable_compression: bool,
 
+    /// Max idle connections per host in the HTTP pool (0 disables idle pooling)
+    #[arg(long = "pool-max-idle-per-host", value_parser = parse_positive_usize)]
+    pub pool_max_idle_per_host: Option<PositiveUsize>,
+
+    /// Idle connection timeout for the HTTP pool (ms)
+    #[arg(long = "pool-idle-timeout-ms", value_parser = parse_positive_u64)]
+    pub pool_idle_timeout_ms: Option<PositiveU64>,
+
     /// Prefer HTTP version (0.9, 1.0, 1.1, 2, 3)
     #[arg(long = "http-version", value_enum)]
     pub http_version: Option<HttpVersion>,
@@ -516,6 +524,22 @@ pub struct TesterArgs {
         value_parser = parse_positive_usize
     )]
     pub metrics_max: PositiveUsize,
+
+    /// Log RSS periodically when UI is disabled (Linux only, ms)
+    #[arg(long = "rss-log-ms", value_parser = parse_positive_u64)]
+    pub rss_log_ms: Option<PositiveU64>,
+
+    /// Log allocator stats periodically (requires alloc-profiler feature, ms)
+    #[arg(long = "alloc-profiler-ms", value_parser = parse_positive_u64)]
+    pub alloc_profiler_ms: Option<PositiveU64>,
+
+    /// Dump jemalloc heap profiles periodically (requires alloc-profiler feature, ms)
+    #[arg(long = "alloc-profiler-dump-ms", value_parser = parse_positive_u64)]
+    pub alloc_profiler_dump_ms: Option<PositiveU64>,
+
+    /// Directory to write heap profile dumps (requires alloc-profiler feature)
+    #[arg(long = "alloc-profiler-dump-path", default_value = "./alloc-prof")]
+    pub alloc_profiler_dump_path: String,
 
     #[arg(skip)]
     pub scenario: Option<Scenario>,

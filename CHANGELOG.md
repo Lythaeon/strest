@@ -5,6 +5,12 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+- Added streaming chart aggregation to avoid unbounded in-memory metric growth.
+- Added `--rss-log-ms` to periodically log RSS when the UI is disabled (Linux).
+- Added `--alloc-profiler-ms`, `--alloc-profiler-dump-ms`, and `--alloc-profiler-dump-path` behind the `alloc-profiler` build feature.
+- Added `--pool-max-idle-per-host` and `--pool-idle-timeout-ms` to tune the HTTP connection pool.
+- Added `legacy-charts` build feature to keep the pre-streaming chart pipeline available.
+- Switched response body handling to streaming drain to avoid buffering full bodies per request.
 - Added `--requests` to stop after N total requests.
 - Added `--connect-timeout` to control connection establishment timeout.
 - Added `--accept` (`-A`) and `--content-type` (`-T`) header shortcuts.

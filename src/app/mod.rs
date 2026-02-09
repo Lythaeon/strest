@@ -1,6 +1,6 @@
 mod cleanup;
 mod export;
-mod logs;
+pub(crate) mod logs;
 mod progress;
 mod replay;
 mod runner;
