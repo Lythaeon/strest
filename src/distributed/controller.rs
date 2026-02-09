@@ -1,15 +1,14 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::io::IsTerminal;
-use std::sync::Arc;
 use std::time::Duration;
 
+use arcshift::ArcShift;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::time::{Instant, MissedTickBehavior, timeout};
 
-use crate::arcshift::ArcShift;
 use crate::args::{ControllerMode, LoadProfile, Scenario, TesterArgs};
 use crate::charts;
 use crate::config::apply::parse_scenario;
@@ -596,8 +595,7 @@ async fn run_controller_manual(
         listen, control_listen
     );
 
-    let agent_pool: Arc<ArcShift<HashMap<String, ManualAgent>>> =
-        Arc::new(ArcShift::new(HashMap::new()));
+    let mut agent_pool: ArcShift<HashMap<String, ManualAgent>> = ArcShift::new(HashMap::new());
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<AgentEvent>();
     let (control_tx, mut control_rx) = mpsc::unbounded_channel::<ControlCommand>();
 
@@ -605,8 +603,7 @@ async fn run_controller_manual(
     let mut heartbeat_interval =
         tokio::time::interval(resolve_heartbeat_check_interval(heartbeat_timeout));
     heartbeat_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    let last_seen: Arc<ArcShift<HashMap<String, Instant>>> =
-        Arc::new(ArcShift::new(HashMap::new()));
+    let mut last_seen: ArcShift<HashMap<String, Instant>> = ArcShift::new(HashMap::new());
 
     let auth_token = args.auth_token.clone();
     let pool_clone = agent_pool.clone();
@@ -663,7 +660,7 @@ async fn run_controller_manual(
                                 }
                             }
                             ControlCommand::Stop { respond_to } => {
-                                request_stop(state, &agent_pool).await;
+                                request_stop(state, &mut agent_pool).await;
                                 let response = ControlResponse {
                                     status: "stopping".to_owned(),
                                     run_id: Some(state.run_id.clone()),
@@ -682,7 +679,7 @@ async fn run_controller_manual(
                         if disconnected_agents.contains(agent_id.as_str()) {
                             continue;
                         }
-                        last_seen.update(|current| {
+                        last_seen.rcu(|current| {
                             let mut next = current.clone();
                             next.insert(agent_id.clone(), Instant::now());
                             next
@@ -702,12 +699,12 @@ async fn run_controller_manual(
                         );
                         if is_disconnected {
                             disconnected_agents.insert(agent_id.clone());
-                            agent_pool.update(|current| {
+                            agent_pool.rcu(|current| {
                                 let mut next = current.clone();
                                 next.remove(agent_id.as_str());
                                 next
                             });
-                            last_seen.update(|current| {
+                            last_seen.rcu(|current| {
                                 let mut next = current.clone();
                                 next.remove(agent_id.as_str());
                                 next
@@ -738,16 +735,18 @@ async fn run_controller_manual(
                     }
                     _ = heartbeat_interval.tick() => {
                         let now = Instant::now();
-                        let seen = last_seen.load();
-                        let timed_out: Vec<String> = seen
-                            .iter()
-                            .filter(|(_, last)| now.duration_since(**last) > heartbeat_timeout)
-                            .map(|(agent_id, _)| agent_id.clone())
-                            .collect();
+                        let timed_out: Vec<String> = {
+                            let seen = last_seen.shared_get();
+                            seen
+                                .iter()
+                                .filter(|(_, last)| now.duration_since(**last) > heartbeat_timeout)
+                                .map(|(agent_id, _)| agent_id.clone())
+                                .collect()
+                        };
                         if !timed_out.is_empty() {
                             for agent_id in timed_out {
                                 if disconnected_agents.insert(agent_id.clone()) {
-                                    agent_pool.update(|current| {
+                                    agent_pool.rcu(|current| {
                                         let mut next = current.clone();
                                         next.remove(&agent_id);
                                         next
@@ -764,7 +763,7 @@ async fn run_controller_manual(
                                         &mut state.runtime_errors,
                                         &mut state.sink_dirty,
                                     );
-                                    last_seen.update(|current| {
+                                    last_seen.rcu(|current| {
                                         let mut next = current.clone();
                                         next.remove(&agent_id);
                                         next
@@ -819,9 +818,9 @@ async fn run_controller_manual(
                             if let Err(err) = wait_for_min_agents(
                                 min_agents,
                                 timeout,
-                                &agent_pool,
+                                &mut agent_pool,
                                 &mut event_rx,
-                                &last_seen,
+                                &mut last_seen,
                                 &mut disconnected_agents,
                             )
                             .await
@@ -832,7 +831,7 @@ async fn run_controller_manual(
                                 continue;
                             }
                         } else {
-                            let available = agent_pool.load().len();
+                            let available = agent_pool.shared_get().len();
                             if available < min_agents {
                                 let err = ControlError::new(
                                     409,
@@ -851,7 +850,7 @@ async fn run_controller_manual(
                             args,
                             &request,
                             &mut scenario_state,
-                            &agent_pool,
+                            &mut agent_pool,
                         )
                         .await;
                         match result {
@@ -891,7 +890,7 @@ async fn run_controller_manual(
                 if disconnected_agents.contains(agent_id.as_str()) {
                     continue;
                 }
-                last_seen.update(|current| {
+                last_seen.rcu(|current| {
                     let mut next = current.clone();
                     next.insert(agent_id.clone(), Instant::now());
                     next
@@ -901,12 +900,12 @@ async fn run_controller_manual(
                 }
                 if matches!(event, AgentEvent::Disconnected { .. }) {
                     disconnected_agents.insert(agent_id.clone());
-                    agent_pool.update(|current| {
+                    agent_pool.rcu(|current| {
                         let mut next = current.clone();
                         next.remove(agent_id.as_str());
                         next
                     });
-                    last_seen.update(|current| {
+                    last_seen.rcu(|current| {
                         let mut next = current.clone();
                         next.remove(agent_id.as_str());
                         next
@@ -915,21 +914,23 @@ async fn run_controller_manual(
             }
             _ = heartbeat_interval.tick() => {
                 let now = Instant::now();
-                let seen = last_seen.load();
-                let timed_out: Vec<String> = seen
-                    .iter()
-                    .filter(|(_, last)| now.duration_since(**last) > heartbeat_timeout)
-                    .map(|(agent_id, _)| agent_id.clone())
-                    .collect();
+                let timed_out: Vec<String> = {
+                    let seen = last_seen.shared_get();
+                    seen
+                        .iter()
+                        .filter(|(_, last)| now.duration_since(**last) > heartbeat_timeout)
+                        .map(|(agent_id, _)| agent_id.clone())
+                        .collect()
+                };
                 if !timed_out.is_empty() {
                     for agent_id in timed_out {
                         if disconnected_agents.insert(agent_id.clone()) {
-                            agent_pool.update(|current| {
+                            agent_pool.rcu(|current| {
                                 let mut next = current.clone();
                                 next.remove(&agent_id);
                                 next
                             });
-                            last_seen.update(|current| {
+                            last_seen.rcu(|current| {
                                 let mut next = current.clone();
                                 next.remove(&agent_id);
                                 next
@@ -950,9 +951,9 @@ async fn run_controller_manual(
 async fn accept_manual_agents(
     listener: TcpListener,
     auth_token: Option<String>,
-    agent_pool: Arc<ArcShift<HashMap<String, ManualAgent>>>,
+    agent_pool: ArcShift<HashMap<String, ManualAgent>>,
     event_tx: mpsc::UnboundedSender<AgentEvent>,
-    last_seen: Arc<ArcShift<HashMap<String, Instant>>>,
+    last_seen: ArcShift<HashMap<String, Instant>>,
 ) {
     info!("Controller listening for agents (manual mode)");
     loop {
@@ -976,9 +977,9 @@ async fn accept_manual_agents(
 async fn register_manual_agent(
     stream: TcpStream,
     auth_token: Option<&str>,
-    agent_pool: Arc<ArcShift<HashMap<String, ManualAgent>>>,
+    mut agent_pool: ArcShift<HashMap<String, ManualAgent>>,
     event_tx: mpsc::UnboundedSender<AgentEvent>,
-    last_seen: Arc<ArcShift<HashMap<String, Instant>>>,
+    mut last_seen: ArcShift<HashMap<String, Instant>>,
 ) {
     if let Ok(peer) = stream.peer_addr() {
         info!("Manual agent connection from {}", peer);
@@ -995,7 +996,7 @@ async fn register_manual_agent(
         agent.agent_id, agent.weight
     );
 
-    last_seen.update(|current| {
+    last_seen.rcu(|current| {
         let mut next = current.clone();
         next.insert(agent.agent_id.clone(), Instant::now());
         next
@@ -1081,7 +1082,7 @@ async fn register_manual_agent(
         weight: agent.weight,
         sender: out_tx,
     };
-    agent_pool.update(|current| {
+    agent_pool.rcu(|current| {
         let mut next = current.clone();
         next.insert(agent_id.clone(), handle.clone());
         next
@@ -1408,7 +1409,7 @@ async fn start_manual_run(
     args: &TesterArgs,
     request: &ControlStartRequest,
     scenario_state: &mut ScenarioState,
-    agent_pool: &Arc<ArcShift<HashMap<String, ManualAgent>>>,
+    agent_pool: &mut ArcShift<HashMap<String, ManualAgent>>,
 ) -> Result<ManualRunState, ControlError> {
     let scenario = resolve_scenario_for_run(args, request, scenario_state)?;
     let mut run_args = args.clone();
@@ -1423,7 +1424,11 @@ async fn start_manual_run(
     let run_id = build_run_id();
     let base_args = build_wire_args(&run_args);
 
-    let agents = agent_pool.load().values().cloned().collect::<Vec<_>>();
+    let agents = agent_pool
+        .shared_get()
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
     if agents.len() < args.min_agents.get() {
         return Err(ControlError::new(
             409,
@@ -1467,7 +1472,7 @@ async fn start_manual_run(
     }
 
     if !failed_agents.is_empty() {
-        agent_pool.update(|current| {
+        agent_pool.rcu(|current| {
             let mut next = current.clone();
             for agent_id in &failed_agents {
                 next.remove(agent_id);
@@ -1567,10 +1572,14 @@ fn resolve_scenario_for_run(
 
 async fn request_stop(
     state: &mut ManualRunState,
-    agent_pool: &Arc<ArcShift<HashMap<String, ManualAgent>>>,
+    agent_pool: &mut ArcShift<HashMap<String, ManualAgent>>,
 ) {
     let run_id = state.run_id.clone();
-    let agents = agent_pool.load().values().cloned().collect::<Vec<_>>();
+    let agents = agent_pool
+        .shared_get()
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
     let mut failed_agents = Vec::new();
     for agent in agents {
         if agent
@@ -1584,7 +1593,7 @@ async fn request_stop(
         }
     }
     if !failed_agents.is_empty() {
-        agent_pool.update(|current| {
+        agent_pool.rcu(|current| {
             let mut next = current.clone();
             for agent_id in &failed_agents {
                 next.remove(agent_id);
@@ -2019,16 +2028,16 @@ fn resolve_manual_wait_timeout(
 async fn wait_for_min_agents(
     min_agents: usize,
     timeout: Duration,
-    agent_pool: &Arc<ArcShift<HashMap<String, ManualAgent>>>,
+    agent_pool: &mut ArcShift<HashMap<String, ManualAgent>>,
     event_rx: &mut mpsc::UnboundedReceiver<AgentEvent>,
-    last_seen: &Arc<ArcShift<HashMap<String, Instant>>>,
+    last_seen: &mut ArcShift<HashMap<String, Instant>>,
     disconnected_agents: &mut HashSet<String>,
 ) -> Result<(), ControlError> {
     let deadline = Instant::now()
         .checked_add(timeout)
         .unwrap_or_else(Instant::now);
     loop {
-        let available = agent_pool.load().len();
+        let available = agent_pool.shared_get().len();
         if available >= min_agents {
             return Ok(());
         }
@@ -2054,7 +2063,7 @@ async fn wait_for_min_agents(
                 if disconnected_agents.contains(agent_id.as_str()) {
                     continue;
                 }
-                last_seen.update(|current| {
+                last_seen.rcu(|current| {
                     let mut next = current.clone();
                     next.insert(agent_id.clone(), Instant::now());
                     next
@@ -2064,12 +2073,12 @@ async fn wait_for_min_agents(
                 }
                 if let AgentEvent::Disconnected { .. } = event {
                     disconnected_agents.insert(agent_id.clone());
-                    agent_pool.update(|current| {
+                    agent_pool.rcu(|current| {
                         let mut next = current.clone();
                         next.remove(agent_id.as_str());
                         next
                     });
-                    last_seen.update(|current| {
+                    last_seen.rcu(|current| {
                         let mut next = current.clone();
                         next.remove(agent_id.as_str());
                         next
