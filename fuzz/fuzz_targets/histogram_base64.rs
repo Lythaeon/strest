@@ -23,6 +23,8 @@ fuzz_target!(|data: &[u8]| {
     };
 
     if let Ok(histogram) = strest::metrics::LatencyHistogram::decode_base64(&input) {
-        let _encoded = histogram.encode_base64();
+        if let Ok(encoded) = histogram.encode_base64() {
+            debug_assert!(!encoded.is_empty());
+        }
     }
 });

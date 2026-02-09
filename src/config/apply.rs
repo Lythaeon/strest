@@ -125,6 +125,12 @@ pub fn apply_config(
         args.export_json = Some(path);
     }
 
+    if !is_cli(matches, "export_jsonl")
+        && let Some(path) = config.export_jsonl.clone()
+    {
+        args.export_jsonl = Some(path);
+    }
+
     if !is_cli(matches, "log_shards")
         && let Some(log_shards) = config.log_shards
     {

@@ -14,8 +14,8 @@ mod shutdown;
 mod sinks;
 mod ui;
 
-use app::run_local;
-use args::TesterArgs;
+use app::{run_cleanup, run_local, run_replay};
+use args::{Command, TesterArgs};
 use clap::{CommandFactory, FromArgMatches};
 use std::error::Error;
 use std::path::Path;
@@ -46,6 +46,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build()?;
 
     runtime.block_on(async move {
+        if let Some(command) = args.command.clone() {
+            match command {
+                Command::Cleanup(cleanup_args) => {
+                    run_cleanup(&cleanup_args)
+                        .await
+                        .map_err(std::io::Error::other)?;
+                    return Ok(());
+                }
+            }
+        }
+
+        if args.replay {
+            run_replay(&args).await?;
+            return Ok(());
+        }
+
         let mut scenario_registry = None;
         let mut loaded_config =
             config::load_config(args.config.as_deref()).map_err(std::io::Error::other)?;

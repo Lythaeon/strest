@@ -83,5 +83,7 @@ fuzz_target!(|data: &[u8]| {
         stages: if stages.is_empty() { None } else { Some(stages) },
     };
 
-    let _result = strest::fuzzing::apply_load_config_input(load);
+    if strest::fuzzing::apply_load_config_input(load).is_ok() {
+        debug_assert!(!(rate.is_some() && rpm.is_some()));
+    }
 });

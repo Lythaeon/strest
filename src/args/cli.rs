@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Args, Parser, Subcommand};
 use std::time::Duration;
 
 use crate::metrics::MetricsRange;
@@ -12,12 +12,76 @@ use super::types::{
     ControllerMode, HttpMethod, LoadProfile, PositiveU64, PositiveUsize, Scenario, TlsVersion,
 };
 
+#[derive(Debug, Subcommand, Clone)]
+pub enum Command {
+    /// Clean up temporary run data
+    Cleanup(CleanupArgs),
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct CleanupArgs {
+    /// Path to temporary run data (directory)
+    #[arg(long = "tmp-path", default_value_t = default_tmp_path())]
+    pub tmp_path: String,
+
+    /// Only remove entries older than this duration (supports ms/s/m/h)
+    #[arg(long = "older-than", value_parser = parse_duration_arg)]
+    pub older_than: Option<Duration>,
+
+    /// Show what would be removed without deleting anything
+    #[arg(long = "dry-run")]
+    pub dry_run: bool,
+
+    /// Actually delete files
+    #[arg(long = "force")]
+    pub force: bool,
+}
+
 #[derive(Debug, Parser, Clone)]
 #[clap(
     version,
     about = "Blazing-fast async HTTP load tester in Rust - lock-free design, real-time stats, distributed runs, and optional chart exports for high-load API testing."
 )]
 pub struct TesterArgs {
+    #[command(subcommand)]
+    pub command: Option<Command>,
+
+    /// Replay a previous run from tmp logs or exported CSV/JSON
+    #[arg(long = "replay")]
+    pub replay: bool,
+
+    /// Replay window start (e.g., 10s, 2m, min)
+    #[arg(long = "replay-start")]
+    pub replay_start: Option<String>,
+
+    /// Replay window end (e.g., 30s, max)
+    #[arg(long = "replay-end")]
+    pub replay_end: Option<String>,
+
+    /// Step size for rewind/forward during replay (supports ms/s/m/h)
+    #[arg(long = "replay-step", value_parser = parse_duration_arg)]
+    pub replay_step: Option<Duration>,
+
+    /// Snapshot interval during replay (supports ms/s/m/h)
+    #[arg(long = "replay-snapshot-interval", value_parser = parse_duration_arg)]
+    pub replay_snapshot_interval: Option<Duration>,
+
+    /// Snapshot window start during replay (e.g., 10s, min)
+    #[arg(long = "replay-snapshot-start")]
+    pub replay_snapshot_start: Option<String>,
+
+    /// Snapshot window end during replay (e.g., 2m, max)
+    #[arg(long = "replay-snapshot-end")]
+    pub replay_snapshot_end: Option<String>,
+
+    /// Snapshot output path (defaults to ~/.strest/snapshots)
+    #[arg(long = "replay-snapshot-out")]
+    pub replay_snapshot_out: Option<String>,
+
+    /// Snapshot format (json, jsonl, csv)
+    #[arg(long = "replay-snapshot-format", default_value = "json")]
+    pub replay_snapshot_format: String,
+
     /// HTTP method to use
     #[arg(long, short = 'X', default_value = "get", ignore_case = true)]
     pub method: HttpMethod,
@@ -98,6 +162,10 @@ pub struct TesterArgs {
     /// Export metrics to JSON (uses the same bounds as charts)
     #[arg(long = "export-json")]
     pub export_json: Option<String>,
+
+    /// Export metrics to JSONL (newline-delimited JSON)
+    #[arg(long = "export-jsonl")]
+    pub export_jsonl: Option<String>,
 
     /// Number of log shards to use for metrics logging (default: 1)
     #[arg(long = "log-shards", default_value = "1", value_parser = parse_positive_usize)]

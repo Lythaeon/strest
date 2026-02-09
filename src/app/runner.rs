@@ -234,6 +234,12 @@ pub(crate) async fn run_local(
         runtime_errors.push(format!("Failed to export JSON: {}", err));
     }
 
+    if let Some(path) = args.export_jsonl.as_deref()
+        && let Err(err) = export::export_jsonl(path, &summary, &chart_records).await
+    {
+        runtime_errors.push(format!("Failed to export JSONL: {}", err));
+    }
+
     if let Some(sinks_config) = args.sinks.as_ref() {
         let sink_stats = SinkStats {
             duration: summary.duration,

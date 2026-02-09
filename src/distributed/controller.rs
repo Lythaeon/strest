@@ -1874,6 +1874,7 @@ fn update_ui(
         p99_ok,
         rps: stats.avg_rps_x100 / 100,
         rpm: stats.avg_rpm_x100 / 100,
+        replay: None,
     }));
 }
 
@@ -2260,6 +2261,16 @@ mod tests {
 
     fn base_args() -> Result<TesterArgs, String> {
         Ok(TesterArgs {
+            command: None,
+            replay: false,
+            replay_start: None,
+            replay_end: None,
+            replay_step: None,
+            replay_snapshot_interval: None,
+            replay_snapshot_start: None,
+            replay_snapshot_end: None,
+            replay_snapshot_out: None,
+            replay_snapshot_format: "json".to_owned(),
             method: crate::args::HttpMethod::Get,
             url: Some("http://localhost".to_owned()),
             headers: vec![],
@@ -2293,6 +2304,7 @@ mod tests {
             warmup: None,
             export_csv: None,
             export_json: None,
+            export_jsonl: None,
             log_shards: crate::args::PositiveUsize::try_from(1)?,
             no_ui: true,
             ui_window_ms: crate::args::PositiveU64::try_from(10_000)?,

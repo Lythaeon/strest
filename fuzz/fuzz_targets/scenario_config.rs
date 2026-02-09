@@ -3,7 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 use std::collections::BTreeMap;
 use strest::args::HttpMethod;
-use strest::config::types::{DurationValue, ScenarioConfig, ScenarioStepConfig};
+use strest::config::types::{DurationValue, ScenarioConfig, ScenarioStepConfig, SCENARIO_SCHEMA_VERSION};
 
 fn take_u64(data: &[u8], cursor: &mut usize) -> u64 {
     let mut value = 0u64;
@@ -194,5 +194,16 @@ fuzz_target!(|data: &[u8]| {
         steps,
     };
 
-    let _result = strest::fuzzing::parse_scenario_config_input(&config);
+    let result = strest::fuzzing::parse_scenario_config_input(&config);
+    if result.is_ok() {
+        if let Some(schema_version) = config.schema_version {
+            debug_assert_eq!(schema_version, SCENARIO_SCHEMA_VERSION);
+        }
+        debug_assert!(!config.steps.is_empty());
+        if config.base_url.is_none() {
+            for step in &config.steps {
+                debug_assert!(step.url.is_some() || step.path.is_some());
+            }
+        }
+    }
 });

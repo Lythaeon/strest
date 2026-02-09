@@ -60,7 +60,22 @@ fuzz_target!(|data: &[u8]| {
 
     with_runtime(|runtime| {
         let _ = runtime.block_on(async {
-            strest::metrics::read_metrics_log(&path, 200, &None, 10_000, None).await
+            let result =
+                strest::metrics::read_metrics_log(&path, 200, &None, 10_000, None).await;
+            if let Ok(log) = result {
+                let summary = &log.summary;
+                debug_assert_eq!(
+                    summary.error_requests,
+                    summary.total_requests.saturating_sub(summary.successful_requests)
+                );
+                if summary.total_requests > 0 {
+                    debug_assert!(summary.min_latency_ms <= summary.max_latency_ms);
+                }
+                if summary.successful_requests > 0 {
+                    debug_assert!(summary.success_min_latency_ms <= summary.success_max_latency_ms);
+                }
+            }
+            result
         });
     });
 });

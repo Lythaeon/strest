@@ -100,7 +100,7 @@ impl UiActions for Ui {
                 0
             };
 
-            let run_text = Paragraph::new(vec![
+            let mut run_lines = vec![
                 text::Line::from(vec![
                     Span::from("Elapsed Time: "),
                     Span::styled(
@@ -124,9 +124,54 @@ impl UiActions for Ui {
                         Style::default().fg(Color::Cyan),
                     ),
                 ]),
-            ])
-            .block(Block::default().title("Run").borders(Borders::ALL))
-            .wrap(Wrap { trim: true });
+            ];
+
+            if let Some(replay) = data.replay.as_ref() {
+                let fmt_ms = |value: u64| {
+                    let secs = value / 1000;
+                    let centis = (value % 1000) / 10;
+                    format!("{}.{:02}s", secs, centis)
+                };
+                let status = if replay.playing { "playing" } else { "paused" };
+                run_lines.push(text::Line::from(vec![
+                    Span::from("Replay: "),
+                    Span::styled(status, Style::default().fg(Color::Magenta)),
+                    Span::from(" "),
+                    Span::styled(
+                        format!(
+                            "{} -> {} | cursor {}",
+                            fmt_ms(replay.window_start_ms),
+                            fmt_ms(replay.window_end_ms),
+                            fmt_ms(replay.cursor_ms)
+                        ),
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]));
+
+                let snapshot_start = replay
+                    .snapshot_start_ms
+                    .map(fmt_ms)
+                    .unwrap_or_else(|| "-".to_owned());
+                let snapshot_end = replay
+                    .snapshot_end_ms
+                    .map(fmt_ms)
+                    .unwrap_or_else(|| "-".to_owned());
+                run_lines.push(text::Line::from(vec![
+                    Span::from("Snapshot: "),
+                    Span::styled(
+                        format!("start {} end {}", snapshot_start, snapshot_end),
+                        Style::default().fg(Color::LightBlue),
+                    ),
+                ]));
+                run_lines.push(text::Line::from(Span::styled(
+                    "Keys: space play/pause, ←/→ seek, r restart, q quit, s start, e end, w write",
+                    Style::default().fg(Color::Gray),
+                )));
+            }
+
+            let run_text = Paragraph::new(run_lines)
+                .block(Block::default().title("Run").borders(Borders::ALL))
+                .wrap(Wrap { trim: true });
 
             let results_text = Paragraph::new(vec![
                 text::Line::from(vec![

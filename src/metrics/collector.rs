@@ -135,6 +135,7 @@ pub fn setup_metrics_collector(
                 p99_ok: 0,
                 rps: 0,
                 rpm: 0,
+                replay: None,
             })
             .is_ok();
 
@@ -209,6 +210,7 @@ pub fn setup_metrics_collector(
                                 p99_ok,
                                 rps,
                                 rpm,
+                                replay: None,
                             })
                             .is_err()
                     {

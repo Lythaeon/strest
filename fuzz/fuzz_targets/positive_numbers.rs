@@ -33,6 +33,10 @@ fuzz_target!(|data: &[u8]| {
     let first = take_numeric_string(data, &mut cursor, 24);
     let second = take_numeric_string(data, &mut cursor, 24);
 
-    let _result = strest::fuzzing::parse_positive_u64_input(&first);
-    let _result = strest::fuzzing::parse_positive_usize_input(&second);
+    if let Ok(value) = strest::fuzzing::parse_positive_u64_input(&first) {
+        debug_assert!(value >= 1);
+    }
+    if let Ok(value) = strest::fuzzing::parse_positive_usize_input(&second) {
+        debug_assert!(value >= 1);
+    }
 });

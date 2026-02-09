@@ -7,7 +7,7 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use cli::TesterArgs;
+pub use cli::{CleanupArgs, Command, TesterArgs};
 pub use types::{
     ControllerMode, HttpMethod, LoadProfile, LoadStage, PositiveU64, PositiveUsize, Scenario,
     ScenarioStep, TlsVersion,

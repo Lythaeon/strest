@@ -24,6 +24,7 @@ pub struct ConfigFile {
     pub keep_tmp: Option<bool>,
     pub export_csv: Option<String>,
     pub export_json: Option<String>,
+    pub export_jsonl: Option<String>,
     pub log_shards: Option<usize>,
     pub no_ui: Option<bool>,
     pub ui_window_ms: Option<u64>,

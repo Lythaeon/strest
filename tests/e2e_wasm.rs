@@ -5,7 +5,7 @@ mod support_single;
 use std::fmt::Write as _;
 use std::io::Write;
 
-use support_single::{run_strest, spawn_http_server};
+use support_single::{run_strest, spawn_http_server_or_skip};
 use tempfile::NamedTempFile;
 
 fn escape_wat_string(input: &str) -> String {
@@ -44,7 +44,9 @@ fn build_wasm_with_json(json: &str) -> Result<Vec<u8>, String> {
 
 #[test]
 fn e2e_wasm_script_runs() -> Result<(), String> {
-    let (url, _server) = spawn_http_server()?;
+    let Some((url, _server)) = spawn_http_server_or_skip()? else {
+        return Ok(());
+    };
     let json = format!(r#"{{"schema_version":1,"base_url":"{url}","steps":[{{"path":"/"}}]}}"#);
     let wasm_bytes = build_wasm_with_json(&json)?;
 

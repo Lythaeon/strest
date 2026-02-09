@@ -104,8 +104,10 @@ These screenshots showcase key metrics and real-time statistics from strest’s 
 - UI chart window length is configurable via `--ui-window-ms` (default: 10000).
 - Optional non-interactive summary output for long-running tests.
 - Streams run metrics to disk while aggregating summary and chart data during the run.
+- Replay mode with the default TUI chart for post-mortem analysis.
+- Snapshotting during replay (interval + range) for focused exports.
 - Optional rate limiting for controlled load generation.
-- Optional CSV/JSON exports for pipeline integration.
+- Optional CSV/JSON/JSONL exports for pipeline integration and streaming-friendly parsing.
 - Scenario scripts with multi-step flows, dynamic templates, and per-step asserts.
 - Experimental WASM scripting to generate scenarios programmatically.
 - Warm-up period support to exclude early metrics from summaries and charts.
@@ -118,6 +120,7 @@ These screenshots showcase key metrics and real-time statistics from strest’s 
 - Agent standby mode with automatic reconnects between runs.
 - Experimental HTTP/3 support (build flag required).
 - Linux systemd install/uninstall helpers for controller/agent services.
+- Cleanup command to prune temporary run data.
 
 ## Who It's For
 
@@ -307,6 +310,52 @@ Charts collection can be bounded for long runs:
 - `--metrics-range` limits chart collection to a time window (e.g., `10-30` seconds).
 - `--metrics-max` caps the total number of metrics kept for charts (default: `1000000`).
 
+You can also clean up old tmp logs:
+
+```bash
+strest cleanup --tmp-path ~/.strest/tmp --older-than 24h --dry-run
+strest cleanup --tmp-path ~/.strest/tmp --older-than 24h --force
+```
+
+Replay snapshots are written to `~/.strest/snapshots` (or `%USERPROFILE%\\.strest\\snapshots` on Windows) by default. Override the destination with `--replay-snapshot-out`.
+
+### Replay (Post-Mortem)
+
+Replay lets you re-run summaries from tmp logs or exported CSV/JSON/JSONL without hitting the target again.
+In TTY mode, replay uses the same TUI as live runs (including the latency chart), and it shows snapshot markers plus the hotkeys.
+
+From tmp logs:
+
+```bash
+strest --replay --tmp-path ~/.strest/tmp
+```
+
+From exports:
+
+```bash
+strest --replay --export-csv ./metrics.csv
+strest --replay --export-json ./metrics.json
+strest --replay --export-jsonl ./metrics.jsonl
+```
+
+JSONL is recommended for large runs and streaming scenarios because it can be parsed incrementally.
+
+Windowing and controls:
+
+```bash
+strest --replay --tmp-path ~/.strest/tmp --replay-start 10s --replay-end 2m --replay-step 5s
+```
+
+Replay snapshots:
+
+```bash
+strest --replay --export-jsonl ./metrics.jsonl --replay-snapshot-interval 30s --replay-snapshot-format jsonl
+strest --replay --tmp-path ~/.strest/tmp --replay-snapshot-start 10s --replay-snapshot-end 2m --replay-snapshot-format json
+```
+
+Controls: `space` play/pause, `←/→` seek, `r` restart, `q` quit, `s` mark snapshot start, `e` mark snapshot end, `w` write snapshot.
+Snapshots default to `~/.strest/snapshots` (or `%USERPROFILE%\\.strest\\snapshots` on Windows) unless `--replay-snapshot-out` is set.
+
 ### Common Options
 
 - `--method` (`-X`) sets the HTTP method.
@@ -342,6 +391,13 @@ Charts collection can be bounded for long runs:
 - `--agent-heartbeat-timeout-ms` sets the controller heartbeat timeout.
 - `--stream-interval-ms` sets the stream snapshot interval for distributed mode.
 - `--script` runs a WASM script that produces a scenario (requires `--features wasm` build).
+- `--replay` replays a run from tmp logs or exported CSV/JSON/JSONL.
+- `--replay-start` and `--replay-end` set the replay window (supports `min`/`max` or durations like `10s`).
+- `--replay-step` sets the seek step for replay.
+- `--replay-snapshot-interval` writes snapshots every N seconds during replay.
+- `--replay-snapshot-start` and `--replay-snapshot-end` set the snapshot window for replay.
+- `--replay-snapshot-out` sets where snapshots are written (dir or file).
+- `--replay-snapshot-format` sets snapshot format (`json`, `jsonl`, `csv`).
 - `--tls-min` and `--tls-max` set the TLS version floor/ceiling.
 - `--http2` enables HTTP/2 (adaptive).
 - `--http3` enables HTTP/3 (requires `--features http3` and `RUSTFLAGS=--cfg reqwest_unstable`).
@@ -351,6 +407,7 @@ Charts collection can be bounded for long runs:
 - `--log-shards` controls the number of log writers (default `1`).
 - `--export-csv` writes metrics to a CSV file (bounded by `--metrics-range` and `--metrics-max`).
 - `--export-json` writes summary and metrics to a JSON file (bounded by `--metrics-range` and `--metrics-max`).
+- `--export-jsonl` writes summary and metrics as newline-delimited JSON (JSONL).
 - `--install-service` installs a Linux systemd service for controller/agent.
 - `--uninstall-service` removes a Linux systemd service for controller/agent.
 - `--service-name` overrides the systemd service name.
@@ -616,6 +673,10 @@ Aggregated charts are available in distributed mode when `--stream-summaries` is
 `--no-charts` is not set (charts are written by the controller). Per-agent exports are still
 disabled during distributed runs.
 CLI equivalents: `--stream-summaries` and `--stream-interval-ms 1000`.
+
+When using `--script` in distributed mode, only the controller needs the WASM-enabled build.
+The controller loads the script, generates the scenario, and coordinates the agents with the
+resulting scenario; agents do not execute WASM.
 
 ### Kubernetes (Basic Manifests)
 

@@ -64,6 +64,23 @@ pub fn spawn_http_server() -> Result<(String, ServerHandle), String> {
     ))
 }
 
+/// Spawn a test server or skip when socket permissions are unavailable.
+///
+/// # Errors
+///
+/// Returns an error if the server fails for reasons other than insufficient
+/// socket permissions.
+pub fn spawn_http_server_or_skip() -> Result<Option<(String, ServerHandle)>, String> {
+    match spawn_http_server() {
+        Ok(result) => Ok(Some(result)),
+        Err(err) if err.contains("Operation not permitted") => {
+            eprintln!("Skipping e2e test: {}", err);
+            Ok(None)
+        }
+        Err(err) => Err(err),
+    }
+}
+
 fn handle_client(mut stream: TcpStream) {
     let mut buffer = [0u8; 1024];
     if stream.read(&mut buffer).is_err() {

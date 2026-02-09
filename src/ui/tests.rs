@@ -32,6 +32,7 @@ fn ui_render_does_not_panic() -> Result<(), String> {
         p99_ok: 20,
         rps: 2,
         rpm: 120,
+        replay: None,
     };
 
     Ui::render(&mut terminal, &data);
@@ -58,6 +59,7 @@ fn ui_render_data_from_ui_data() -> Result<(), String> {
         p99_ok: 7,
         rps: 4,
         rpm: 240,
+        replay: None,
     };
 
     let render_data = UiRenderData::from(&ui_data);
@@ -111,6 +113,9 @@ fn ui_render_data_from_ui_data() -> Result<(), String> {
     }
     if render_data.p99_ok != ui_data.p99_ok {
         return Err("p99_ok mismatch".to_owned());
+    }
+    if render_data.replay.is_some() {
+        return Err("replay mismatch".to_owned());
     }
 
     Ok(())
