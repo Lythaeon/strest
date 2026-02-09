@@ -5,7 +5,7 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
-- Added a default `User-Agent: strest-loadtest/<version>` header with `--no-ua`/`no_ua` to disable.
+- Added a default `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)` header with `--no-ua`/`no_ua` to disable.
 
 ## 0.1.1
 
