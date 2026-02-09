@@ -19,6 +19,7 @@ fn base_args() -> Result<TesterArgs, String> {
         method: HttpMethod::Get,
         url: Some("http://localhost".to_owned()),
         headers: vec![],
+        no_ua: false,
         data: String::new(),
         target_duration: positive_u64(1)?,
         expected_status_code: 200,

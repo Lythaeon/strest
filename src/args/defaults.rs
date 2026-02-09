@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+pub(crate) const DEFAULT_USER_AGENT: &str = concat!("strest-loadtest/", env!("CARGO_PKG_VERSION"));
+
 pub(crate) fn default_charts_path() -> String {
     default_base_dir()
         .join("charts")

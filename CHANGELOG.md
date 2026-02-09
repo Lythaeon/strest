@@ -5,6 +5,8 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+- Added a default `User-Agent: strest-loadtest/<version>` header with `--no-ua`/`no_ua` to disable.
+
 ## 0.1.1
 
 Released: 2026-02-09

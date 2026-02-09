@@ -13,6 +13,7 @@ pub use types::{
     ScenarioStep, TlsVersion,
 };
 
+pub(crate) use defaults::DEFAULT_USER_AGENT;
 #[cfg(test)]
 pub(crate) use defaults::{default_charts_path, default_tmp_path};
 pub(crate) use parsers::parse_header;

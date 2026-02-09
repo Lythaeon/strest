@@ -70,6 +70,9 @@ fn parse_args_defaults() -> Result<(), String> {
     if args.no_charts {
         return Err("Expected no_charts to be false".to_owned());
     }
+    if args.no_ua {
+        return Err("Expected no_ua to be false".to_owned());
+    }
     if args.verbose {
         return Err("Expected verbose to be false".to_owned());
     }

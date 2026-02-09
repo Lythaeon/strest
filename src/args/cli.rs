@@ -30,6 +30,10 @@ pub struct TesterArgs {
     #[arg(long, short = 'H', value_parser = parse_header)]
     pub headers: Vec<(String, String)>,
 
+    /// Disable the default User-Agent header (strest-loadtest/<version>)
+    #[arg(long = "no-ua", alias = "no-default-ua")]
+    pub no_ua: bool,
+
     /// Request body data (for POST/PUT)
     #[arg(long, short, default_value = "")]
     pub data: String,
