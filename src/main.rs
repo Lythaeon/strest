@@ -1,5 +1,4 @@
 mod app;
-mod arcshift;
 mod args;
 mod charts;
 mod config;

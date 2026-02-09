@@ -77,6 +77,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcshift"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "809ce7e2c99d17c161c0ca1673665bab3a3e1aa277b0f793abffc66b57c32d9f"
+
+[[package]]
 name = "async-trait"
 version = "0.1.89"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1975,6 +1981,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 name = "strest"
 version = "0.1.2"
 dependencies = [
+ "arcshift",
  "async-trait",
  "base64 0.22.1",
  "clap",
