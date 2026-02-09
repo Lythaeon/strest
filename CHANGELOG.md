@@ -5,6 +5,10 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+## 0.1.4
+
+Released: 2026-02-09
+
 - Added streaming chart aggregation to avoid unbounded in-memory metric growth.
 - Added `--rss-log-ms` to periodically log RSS when the UI is disabled (Linux).
 - Added `--alloc-profiler-ms`, `--alloc-profiler-dump-ms`, and `--alloc-profiler-dump-path` behind the `alloc-profiler` build feature.

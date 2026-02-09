@@ -498,9 +498,169 @@ MALLOC_CONF=prof_active:true \
 You can provide a config file with `--config path`. If no config is specified, `strest` will look for `./strest.toml` or `./strest.json` (TOML is preferred if both exist). CLI flags override config values.
 By default, strest sends `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)`. To disable, set `no_ua = true` and `authorized = true`.
 
-Additional config keys:
-- `pool_max_idle_per_host` (integer) and `pool_idle_timeout_ms` (integer) tune the HTTP connection pool.
-- `rss_log_ms`, `alloc_profiler_ms`, `alloc_profiler_dump_ms`, and `alloc_profiler_dump_path` map to their CLI equivalents.
+Config keys (top-level):
+
+| Key | Type | CLI / Notes |
+| --- | --- | --- |
+| `method` | string | `--method` (`-X`) |
+| `url` | string | `--url` (`-u`) |
+| `urls_from_file` | bool | `--urls-from-file` (requires `url`) |
+| `rand_regex_url` | bool | `--rand-regex-url` (requires `url`) |
+| `max_repeat` | integer | `--max-repeat` |
+| `dump_urls` | integer | `--dump-urls` (requires `rand_regex_url`) |
+| `headers` | array[string] | `--headers` (`-H`) |
+| `accept` | string | `--accept` (`-A`) |
+| `content_type` | string | `--content-type` (`-T`) |
+| `data` | string | `--data` (`-d`) |
+| `form` | array[string] | `--form` (`-F`) |
+| `data_file` | string | `--data-file` (`-D`) |
+| `data_lines` | string | `--data-lines` (`-Z`) |
+| `basic_auth` | string | `--basic-auth` (`-a`) |
+| `aws_session` | string | `--aws-session` |
+| `aws_sigv4` | string | `--aws-sigv4` |
+| `duration` | integer | `--duration` (`-t`) |
+| `wait_ongoing_requests_after_deadline` | bool | `--wait-ongoing-requests-after-deadline` |
+| `requests` | integer | `--requests` (`-n`) |
+| `timeout` | duration | `--timeout` |
+| `connect_timeout` | duration | `--connect-timeout` |
+| `warmup` | duration | `--warmup` |
+| `status` | integer | `--status` (`-s`) |
+| `redirect` | integer | `--redirect` |
+| `disable_keepalive` | bool | `--disable-keepalive` |
+| `disable_compression` | bool | `--disable-compression` |
+| `pool_max_idle_per_host` | integer | `--pool-max-idle-per-host` |
+| `pool_idle_timeout_ms` | integer | `--pool-idle-timeout-ms` |
+| `charts_path` | string | `--charts-path` (`-c`) |
+| `no_charts` | bool | `--no-charts` |
+| `no_ua` | bool | `--no-ua` (requires `authorized = true`) |
+| `authorized` | bool | `--authorized` |
+| `tmp_path` | string | `--tmp-path` |
+| `keep_tmp` | bool | `--keep-tmp` |
+| `output` | string | `--output` (`-o`) |
+| `output_format` | string | `--output-format` |
+| `time_unit` | string | `--time-unit` |
+| `export_csv` | string | `--export-csv` |
+| `export_json` | string | `--export-json` |
+| `export_jsonl` | string | `--export-jsonl` |
+| `db_url` | string | `--db-url` |
+| `log_shards` | integer | `--log-shards` |
+| `no_ui` | bool | `--no-tui` / `--no-ui` |
+| `ui_window_ms` | integer | `--ui-window-ms` |
+| `summary` | bool | `--summary` |
+| `tls_min` | string | `--tls-min` |
+| `tls_max` | string | `--tls-max` |
+| `cacert` | string | `--cacert` |
+| `cert` | string | `--cert` |
+| `key` | string | `--key` |
+| `insecure` | bool | `--insecure` |
+| `http2` | bool | `--http2` |
+| `http2_parallel` | integer | `--http2-parallel` |
+| `http3` | bool | `--http3` |
+| `http_version` | string | `--http-version` |
+| `alpn` | array[string] | `--alpn` (repeatable) |
+| `proxy_url` | string | `--proxy` (`-p`), `proxy` is accepted as an alias in config |
+| `proxy_headers` | array[string] | `--proxy-header` (repeatable) |
+| `proxy_http_version` | string | `--proxy-http-version` |
+| `proxy_http2` | bool | `--proxy-http2` |
+| `max_tasks` | integer | `--max-tasks` (`--concurrency`/`--connections` aliases) |
+| `spawn_rate` | integer | `--spawn-rate` |
+| `spawn_interval` | integer | `--spawn-interval` |
+| `rate` | integer | `--rate` (`-q`) |
+| `rpm` | integer | `--rpm` |
+| `burst_delay` | duration | `--burst-delay` |
+| `burst_rate` | integer | `--burst-rate` |
+| `latency_correction` | bool | `--latency-correction` |
+| `connect_to` | array[string] | `--connect-to` (repeatable) |
+| `host` | string | `--host` |
+| `ipv6` | bool | `--ipv6` |
+| `ipv4` | bool | `--ipv4` |
+| `no_pre_lookup` | bool | `--no-pre-lookup` |
+| `no_color` | bool | `--no-color` |
+| `fps` | integer | `--fps` |
+| `stats_success_breakdown` | bool | `--stats-success-breakdown` |
+| `unix_socket` | string | `--unix-socket` |
+| `load` | object | See load profile keys below |
+| `metrics_range` | string | `--metrics-range` |
+| `metrics_max` | integer | `--metrics-max` |
+| `rss_log_ms` | integer | `--rss-log-ms` |
+| `alloc_profiler_ms` | integer | `--alloc-profiler-ms` |
+| `alloc_profiler_dump_ms` | integer | `--alloc-profiler-dump-ms` |
+| `alloc_profiler_dump_path` | string | `--alloc-profiler-dump-path` |
+| `scenario` | object | See scenario keys below |
+| `scenarios` | object | Map of name -> scenario config |
+| `script` | string | `--script` (WASM scenario generator) |
+| `sinks` | object | See sinks keys below |
+| `distributed` | object | See distributed keys below |
+
+Load profile keys:
+
+| Key | Type | Notes |
+| --- | --- | --- |
+| `load.rate` | integer | Initial RPS |
+| `load.rpm` | integer | Initial RPM |
+| `load.stages[].duration` | string | Duration per stage (e.g., `10s`) |
+| `load.stages[].target` | integer | Target RPS for stage |
+| `load.stages[].rate` | integer | Stage RPS (mutually exclusive with `target`/`rpm`) |
+| `load.stages[].rpm` | integer | Stage RPM (mutually exclusive with `target`/`rate`) |
+
+Scenario keys:
+
+| Key | Type | Notes |
+| --- | --- | --- |
+| `scenario.schema_version` | integer | Must be `1` for WASM scenarios |
+| `scenario.base_url` | string | Default URL when `url` is unset |
+| `scenario.method` | string | Default method for steps |
+| `scenario.headers` | array[string] | Default headers for steps |
+| `scenario.data` | string | Default body for steps |
+| `scenario.vars` | object | Global template vars |
+| `scenario.steps[]` | object | See step keys below |
+| `scenarios` | object | Map of name -> scenario config |
+
+Scenario step keys:
+
+| Key | Type | Notes |
+| --- | --- | --- |
+| `scenario.steps[].name` | string | Optional label |
+| `scenario.steps[].method` | string | Per-step method |
+| `scenario.steps[].url` | string | Full URL (overrides base + path) |
+| `scenario.steps[].path` | string | Path appended to base URL |
+| `scenario.steps[].headers` | array[string] | Per-step headers |
+| `scenario.steps[].data` | string | Per-step body |
+| `scenario.steps[].assert_status` | integer | Expected HTTP status |
+| `scenario.steps[].assert_body_contains` | string | Substring assertion |
+| `scenario.steps[].think_time` | duration | Delay after step |
+| `scenario.steps[].vars` | object | Per-step template vars |
+
+Sinks keys:
+
+| Key | Type | Notes |
+| --- | --- | --- |
+| `sinks.update_interval_ms` | integer | Default `1000` |
+| `sinks.prometheus.path` | string | Textfile output path |
+| `sinks.otel.path` | string | OTel JSON output path |
+| `sinks.influx.path` | string | Influx line protocol output path |
+
+Distributed keys:
+
+| Key | Type | Notes |
+| --- | --- | --- |
+| `distributed.role` | string | `controller` or `agent` |
+| `distributed.controller_mode` | string | `auto` or `manual` |
+| `distributed.listen` | string | Controller listen address |
+| `distributed.control_listen` | string | Manual control-plane listen |
+| `distributed.control_auth_token` | string | Control-plane bearer token |
+| `distributed.join` | string | Controller address to join |
+| `distributed.auth_token` | string | Shared controller/agent token |
+| `distributed.agent_id` | string | Explicit agent id |
+| `distributed.weight` | integer | Agent weight |
+| `distributed.min_agents` | integer | Minimum agents to start |
+| `distributed.agent_wait_timeout_ms` | integer | Max wait for min agents |
+| `distributed.agent_standby` | bool | Keep agent connected |
+| `distributed.agent_reconnect_ms` | integer | Standby reconnect interval |
+| `distributed.agent_heartbeat_interval_ms` | integer | Agent heartbeat interval |
+| `distributed.agent_heartbeat_timeout_ms` | integer | Controller heartbeat timeout |
+| `distributed.stream_summaries` | bool | Stream summaries to controller |
+| `distributed.stream_interval_ms` | integer | Stream cadence |
 
 Example `strest.toml`:
 
