@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, AtomicUsize, Ordering},
+};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use reqwest::{Client, Request, Url};
@@ -20,7 +23,70 @@ const ASSERT_FAILED_STATUS: u16 = 0;
 #[derive(Clone)]
 pub(super) enum Workload {
     Single(Arc<Request>),
+    SingleDynamic(Arc<SingleRequestSpec>),
     Scenario(Arc<Scenario>),
+}
+
+#[derive(Debug)]
+pub(super) struct RequestLimiter {
+    limit: Option<u64>,
+    counter: Arc<AtomicU64>,
+}
+
+impl RequestLimiter {
+    pub(super) fn new(limit: Option<u64>) -> Option<Self> {
+        limit.map(|limit| RequestLimiter {
+            limit: Some(limit),
+            counter: Arc::new(AtomicU64::new(0)),
+        })
+    }
+
+    pub(super) fn try_reserve(&self, shutdown_tx: &broadcast::Sender<u16>) -> bool {
+        let Some(limit) = self.limit else {
+            return true;
+        };
+        loop {
+            let current = self.counter.load(Ordering::Relaxed);
+            if current >= limit {
+                drop(shutdown_tx.send(1));
+                return false;
+            }
+            let Some(next) = current.checked_add(1) else {
+                drop(shutdown_tx.send(1));
+                return false;
+            };
+            if self
+                .counter
+                .compare_exchange(current, next, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                return true;
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(super) enum BodySource {
+    Static(String),
+    Lines(Arc<Vec<String>>, Arc<AtomicUsize>),
+}
+
+#[derive(Clone)]
+pub(super) struct SingleRequestSpec {
+    pub(super) method: HttpMethod,
+    pub(super) url: String,
+    pub(super) headers: Vec<(String, String)>,
+    pub(super) body: BodySource,
+}
+
+pub(super) struct WorkerContext<'ctx> {
+    pub(super) shutdown_tx: &'ctx broadcast::Sender<u16>,
+    pub(super) rate_limiter: Option<&'ctx Arc<Semaphore>>,
+    pub(super) request_limiter: Option<&'ctx Arc<RequestLimiter>>,
+    pub(super) client: &'ctx Client,
+    pub(super) log_sink: &'ctx Option<Arc<LogSink>>,
+    pub(super) metrics_tx: &'ctx mpsc::Sender<Metrics>,
 }
 
 pub(super) async fn preflight_request(client: &Client, workload: &Workload) -> Result<(), String> {
@@ -29,6 +95,13 @@ pub(super) async fn preflight_request(client: &Client, workload: &Workload) -> R
             let request = request_template
                 .try_clone()
                 .ok_or_else(|| "Failed to clone request for initial test.".to_owned())?;
+            execute_request(client, request, true)
+                .await
+                .map_err(|err| format!("Test request failed: {}", err))?;
+            Ok(())
+        }
+        Workload::SingleDynamic(spec) => {
+            let request = build_request_from_spec(client, spec)?;
             execute_request(client, request, true)
                 .await
                 .map_err(|err| format!("Test request failed: {}", err))?;
@@ -51,13 +124,15 @@ pub(super) async fn preflight_request(client: &Client, workload: &Workload) -> R
 
 pub(super) async fn run_single_iteration(
     shutdown_rx: &mut broadcast::Receiver<u16>,
-    rate_limiter: Option<&Arc<Semaphore>>,
-    client: &Client,
+    context: &WorkerContext<'_>,
     request_template: &Arc<Request>,
-    log_sink: &Option<Arc<LogSink>>,
-    metrics_tx: &mpsc::Sender<Metrics>,
 ) -> bool {
-    if let Some(rate_limiter) = rate_limiter {
+    if let Some(request_limiter) = context.request_limiter
+        && !request_limiter.try_reserve(context.shutdown_tx)
+    {
+        return true;
+    }
+    if let Some(rate_limiter) = context.rate_limiter {
         let rate_permit_result = tokio::select! {
             _ = shutdown_rx.recv() => return true,
             permit = rate_limiter.acquire() => permit,
@@ -72,17 +147,68 @@ pub(super) async fn run_single_iteration(
         result = async {
             let start = Instant::now();
             let (status, timed_out, transport_error) = match request_template.try_clone() {
-                Some(req_clone) => execute_request_status(client, req_clone).await,
+                Some(req_clone) => execute_request_status(context.client, req_clone).await,
                 None => {
                     error!("Failed to clone request template.");
                     (500, false, true)
                 }
             };
             let metric = Metrics::new(start, status, timed_out, transport_error);
-            if let Some(log_sink) = log_sink && !log_sink.send(metric) {
+            if let Some(log_sink) = context.log_sink
+                && !log_sink.send(metric)
+            {
                 return true;
             }
-            if metrics_tx.try_send(metric).is_err() {
+            if context.metrics_tx.try_send(metric).is_err() {
+                // Ignore UI backpressure; summary and charts use log pipeline.
+            }
+            false
+        } => result,
+    };
+
+    should_stop
+}
+
+pub(super) async fn run_single_dynamic_iteration(
+    shutdown_rx: &mut broadcast::Receiver<u16>,
+    context: &WorkerContext<'_>,
+    spec: &Arc<SingleRequestSpec>,
+) -> bool {
+    if let Some(request_limiter) = context.request_limiter
+        && !request_limiter.try_reserve(context.shutdown_tx)
+    {
+        return true;
+    }
+    if let Some(rate_limiter) = context.rate_limiter {
+        let rate_permit_result = tokio::select! {
+            _ = shutdown_rx.recv() => return true,
+            permit = rate_limiter.acquire() => permit,
+        };
+        if rate_permit_result.is_err() {
+            return true;
+        }
+    }
+
+    let should_stop = tokio::select! {
+        _ = shutdown_rx.recv() => true,
+        result = async {
+            let request = match build_request_from_spec(context.client, spec) {
+                Ok(request) => request,
+                Err(err) => {
+                    error!("Failed to build request: {}", err);
+                    return true;
+                }
+            };
+            let start = Instant::now();
+            let (status, timed_out, transport_error) =
+                execute_request_status(context.client, request).await;
+            let metric = Metrics::new(start, status, timed_out, transport_error);
+            if let Some(log_sink) = context.log_sink
+                && !log_sink.send(metric)
+            {
+                return true;
+            }
+            if context.metrics_tx.try_send(metric).is_err() {
                 // Ignore UI backpressure; summary and charts use log pipeline.
             }
             false
@@ -103,11 +229,16 @@ pub(super) struct ScenarioRunContext<'ctx> {
 
 pub(super) async fn run_scenario_iteration(
     shutdown_rx: &mut broadcast::Receiver<u16>,
-    rate_limiter: Option<&Arc<Semaphore>>,
+    worker: &WorkerContext<'_>,
     context: &mut ScenarioRunContext<'_>,
 ) -> bool {
     for (step_index, step) in context.scenario.steps.iter().enumerate() {
-        if let Some(rate_limiter) = rate_limiter {
+        if let Some(request_limiter) = worker.request_limiter
+            && !request_limiter.try_reserve(worker.shutdown_tx)
+        {
+            return true;
+        }
+        if let Some(rate_limiter) = worker.rate_limiter {
             let rate_permit_result = tokio::select! {
                 _ = shutdown_rx.recv() => return true,
                 permit = rate_limiter.acquire() => permit,
@@ -249,6 +380,41 @@ async fn execute_request_with_asserts(
             }
         }
     }
+}
+
+fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> Result<Request, String> {
+    let mut request_builder = match spec.method {
+        HttpMethod::Get => client.get(&spec.url),
+        HttpMethod::Post => client.post(&spec.url),
+        HttpMethod::Patch => client.patch(&spec.url),
+        HttpMethod::Put => client.put(&spec.url),
+        HttpMethod::Delete => client.delete(&spec.url),
+    };
+
+    for (key, value) in &spec.headers {
+        request_builder = request_builder.header(key, value);
+    }
+
+    let body = match &spec.body {
+        BodySource::Static(body) => body.clone(),
+        BodySource::Lines(lines, cursor) => {
+            if lines.is_empty() {
+                return Err("Body lines file was empty.".to_owned());
+            }
+            let idx = cursor.fetch_add(1, Ordering::Relaxed);
+            let len = lines.len();
+            let selected = idx.rem_euclid(len);
+            lines
+                .get(selected)
+                .cloned()
+                .ok_or_else(|| "Body lines file was empty.".to_owned())?
+        }
+    };
+
+    request_builder
+        .body(body)
+        .build()
+        .map_err(|err| format!("Failed to build request: {}", err))
 }
 
 pub(crate) fn build_step_request(

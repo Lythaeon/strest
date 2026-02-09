@@ -11,9 +11,15 @@ pub struct ConfigFile {
     pub method: Option<HttpMethod>,
     pub url: Option<String>,
     pub headers: Option<Vec<String>>,
+    pub accept: Option<String>,
+    pub content_type: Option<String>,
     pub data: Option<String>,
+    pub data_file: Option<String>,
+    pub data_lines: Option<String>,
     pub duration: Option<u64>,
+    pub requests: Option<u64>,
     pub timeout: Option<DurationValue>,
+    pub connect_timeout: Option<DurationValue>,
     pub warmup: Option<DurationValue>,
     pub status: Option<u16>,
     pub charts_path: Option<String>,
@@ -36,7 +42,7 @@ pub struct ConfigFile {
     pub alpn: Option<Vec<String>>,
     #[serde(alias = "proxy")]
     pub proxy_url: Option<String>,
-    #[serde(alias = "concurrency")]
+    #[serde(alias = "concurrency", alias = "connections")]
     pub max_tasks: Option<usize>,
     pub spawn_rate: Option<usize>,
     pub spawn_interval: Option<u64>,

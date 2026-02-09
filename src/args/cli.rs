@@ -94,6 +94,14 @@ pub struct TesterArgs {
     #[arg(long, short = 'H', value_parser = parse_header)]
     pub headers: Vec<(String, String)>,
 
+    /// HTTP Accept header (shortcut)
+    #[arg(long = "accept", short = 'A')]
+    pub accept_header: Option<String>,
+
+    /// Content-Type header (shortcut)
+    #[arg(long = "content-type", short = 'T')]
+    pub content_type: Option<String>,
+
     /// Disable the default User-Agent header (strest-loadtest/<version> (+https://github.com/Lythaeon/strest)); requires --authorized
     #[arg(long = "no-ua", alias = "no-default-ua")]
     pub no_ua: bool,
@@ -106,6 +114,14 @@ pub struct TesterArgs {
     #[arg(long, short, default_value = "")]
     pub data: String,
 
+    /// Request body from file
+    #[arg(long = "data-file", short = 'D', conflicts_with_all = ["data", "data_lines"])]
+    pub data_file: Option<String>,
+
+    /// Request body from file line by line
+    #[arg(long = "data-lines", short = 'Z', conflicts_with_all = ["data", "data_file"])]
+    pub data_lines: Option<String>,
+
     /// Duration of test (seconds)
     #[arg(
         long = "duration",
@@ -114,6 +130,10 @@ pub struct TesterArgs {
         value_parser = parse_positive_u64
     )]
     pub target_duration: PositiveU64,
+
+    /// Stop after N total requests
+    #[arg(long = "requests", value_parser = parse_positive_u64)]
+    pub requests: Option<PositiveU64>,
 
     /// Expected HTTP status code
     #[arg(long = "status", short = 's', default_value = "200")]
@@ -126,6 +146,14 @@ pub struct TesterArgs {
         value_parser = parse_duration_arg
     )]
     pub request_timeout: Duration,
+
+    /// Timeout for establishing a new connection (supports ms/s/m/h)
+    #[arg(
+        long = "connect-timeout",
+        default_value = "5s",
+        value_parser = parse_duration_arg
+    )]
+    pub connect_timeout: Duration,
 
     /// Path to save charts to
     #[arg(long, short = 'c', default_value_t = default_charts_path())]
@@ -172,7 +200,7 @@ pub struct TesterArgs {
     pub log_shards: PositiveUsize,
 
     /// Disable UI rendering
-    #[arg(long = "no-ui")]
+    #[arg(long = "no-tui", alias = "no-ui")]
     pub no_ui: bool,
 
     /// UI chart window length in milliseconds (default: 10000)
@@ -183,7 +211,7 @@ pub struct TesterArgs {
     )]
     pub ui_window_ms: PositiveU64,
 
-    /// Print summary at the end of the run (implied by --no-ui)
+    /// Print summary at the end of the run (implied by --no-tui)
     #[arg(long = "summary")]
     pub summary: bool,
 
@@ -211,7 +239,7 @@ pub struct TesterArgs {
     #[arg(
         long = "max-tasks",
         short = 'm',
-        alias = "concurrency",
+        aliases = ["concurrency", "connections"],
         default_value = "1000",
         value_parser = parse_positive_usize
     )]

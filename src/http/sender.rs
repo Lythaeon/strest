@@ -15,7 +15,8 @@ use crate::{
 use super::rate::build_rate_limiter;
 use super::tls::apply_tls_settings;
 use super::workload::{
-    ScenarioRunContext, Workload, preflight_request, run_scenario_iteration, run_single_iteration,
+    BodySource, RequestLimiter, ScenarioRunContext, SingleRequestSpec, Workload, WorkerContext,
+    preflight_request, run_scenario_iteration, run_single_dynamic_iteration, run_single_iteration,
 };
 
 /// Creates the request sender task and validates the HTTP client/config.
@@ -32,7 +33,9 @@ pub fn setup_request_sender(
     let shutdown_tx = shutdown_tx.clone();
     let metrics_tx = metrics_tx.clone();
 
-    let mut client_builder = Client::builder().timeout(args.request_timeout);
+    let mut client_builder = Client::builder()
+        .timeout(args.request_timeout)
+        .connect_timeout(args.connect_timeout);
 
     if !args.no_ua {
         client_builder = client_builder.user_agent(DEFAULT_USER_AGENT);
@@ -68,27 +71,40 @@ pub fn setup_request_sender(
             .as_deref()
             .ok_or_else(|| "Missing URL (set --url or provide in config).".to_owned())?;
 
-        let mut request_builder = match args.method {
-            HttpMethod::Get => client.get(url),
-            HttpMethod::Post => client.post(url),
-            HttpMethod::Patch => client.patch(url),
-            HttpMethod::Put => client.put(url),
-            HttpMethod::Delete => client.delete(url),
-        };
+        let body_source = resolve_body_source(args)?;
+        let headers = build_headers(args);
 
-        for (key, value) in &args.headers {
-            request_builder = request_builder.header(key, value);
-        }
+        match body_source {
+            BodySource::Lines(_, _) => Workload::SingleDynamic(Arc::new(SingleRequestSpec {
+                method: args.method,
+                url: url.to_owned(),
+                headers,
+                body: body_source,
+            })),
+            BodySource::Static(body) => {
+                let mut request_builder = match args.method {
+                    HttpMethod::Get => client.get(url),
+                    HttpMethod::Post => client.post(url),
+                    HttpMethod::Patch => client.patch(url),
+                    HttpMethod::Put => client.put(url),
+                    HttpMethod::Delete => client.delete(url),
+                };
 
-        let request = match request_builder.body(args.data.clone()).build() {
-            Ok(req) => req,
-            Err(e) => {
-                error!("Failed to build request: {}", e);
-                return Err(format!("Failed to build request: {}", e));
+                for (key, value) in &headers {
+                    request_builder = request_builder.header(key, value);
+                }
+
+                let request = match request_builder.body(body).build() {
+                    Ok(req) => req,
+                    Err(e) => {
+                        error!("Failed to build request: {}", e);
+                        return Err(format!("Failed to build request: {}", e));
+                    }
+                };
+
+                Workload::Single(Arc::new(request))
             }
-        };
-
-        Workload::Single(Arc::new(request))
+        }
     };
 
     Ok(create_sender_task(
@@ -119,6 +135,7 @@ fn create_sender_task(
     let rate_limit = args.rate_limit.map(u64::from);
     let load_profile = args.load_profile.clone();
     let expected_status_code = args.expected_status_code;
+    let request_limiter = RequestLimiter::new(args.requests.map(u64::from)).map(Arc::new);
 
     tokio::spawn(async move {
         if let Err(err) = preflight_request(&client, &workload).await {
@@ -142,6 +159,7 @@ fn create_sender_task(
             let client = client.clone();
             let workload = workload.clone();
             let rate_limiter = rate_limiter.clone();
+            let request_limiter = request_limiter.clone();
 
             let handle = tokio::spawn(async move {
                 let mut shutdown_rx_worker = shutdown_tx.subscribe();
@@ -156,15 +174,28 @@ fn create_sender_task(
 
                 let mut request_seq: u64 = 0;
                 loop {
+                    let worker = WorkerContext {
+                        shutdown_tx: &shutdown_tx,
+                        rate_limiter: rate_limiter.as_ref(),
+                        request_limiter: request_limiter.as_ref(),
+                        client: &client,
+                        log_sink: &log_sink,
+                        metrics_tx: &metrics_tx,
+                    };
                     let should_break = match &workload {
                         Workload::Single(request_template) => {
                             run_single_iteration(
                                 &mut shutdown_rx_worker,
-                                rate_limiter.as_ref(),
-                                &client,
+                                &worker,
                                 request_template,
-                                &log_sink,
-                                &metrics_tx,
+                            )
+                            .await
+                        }
+                        Workload::SingleDynamic(spec) => {
+                            run_single_dynamic_iteration(
+                                &mut shutdown_rx_worker,
+                                &worker,
+                                spec,
                             )
                             .await
                         }
@@ -179,7 +210,7 @@ fn create_sender_task(
                             };
                             run_scenario_iteration(
                                 &mut shutdown_rx_worker,
-                                rate_limiter.as_ref(),
+                                &worker,
                                 &mut context,
                             )
                             .await
@@ -223,4 +254,39 @@ fn create_sender_task(
             }
         }
     })
+}
+
+fn build_headers(args: &TesterArgs) -> Vec<(String, String)> {
+    let mut headers = Vec::new();
+    if let Some(accept) = args.accept_header.as_ref() {
+        headers.push(("Accept".to_owned(), accept.clone()));
+    }
+    if let Some(content_type) = args.content_type.as_ref() {
+        headers.push(("Content-Type".to_owned(), content_type.clone()));
+    }
+    headers.extend(args.headers.clone());
+    headers
+}
+
+fn resolve_body_source(args: &TesterArgs) -> Result<BodySource, String> {
+    if let Some(path) = args.data_lines.as_ref() {
+        let content = std::fs::read_to_string(path)
+            .map_err(|err| format!("Failed to read {}: {}", path, err))?;
+        let lines: Vec<String> = content.lines().map(|line| line.to_owned()).collect();
+        if lines.is_empty() {
+            return Err(format!("Body lines file '{}' was empty.", path));
+        }
+        return Ok(BodySource::Lines(
+            Arc::new(lines),
+            Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        ));
+    }
+
+    if let Some(path) = args.data_file.as_ref() {
+        let content = std::fs::read_to_string(path)
+            .map_err(|err| format!("Failed to read {}: {}", path, err))?;
+        return Ok(BodySource::Static(content));
+    }
+
+    Ok(BodySource::Static(args.data.clone()))
 }

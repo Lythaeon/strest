@@ -22,6 +22,12 @@ pub fn apply_config(
     matches: &ArgMatches,
     config: &ConfigFile,
 ) -> Result<(), String> {
+    if config.data.is_some() && (config.data_file.is_some() || config.data_lines.is_some()) {
+        return Err("Config cannot set both 'data' and 'data_file'/'data_lines'.".to_owned());
+    }
+    if config.data_file.is_some() && config.data_lines.is_some() {
+        return Err("Config cannot set both 'data_file' and 'data_lines'.".to_owned());
+    }
     if config.load.is_some() && (config.rate.is_some() || config.rpm.is_some()) {
         return Err("Config cannot set both 'load' and top-level 'rate'/'rpm' options.".to_owned());
     }
@@ -47,10 +53,34 @@ pub fn apply_config(
         args.headers = parsed;
     }
 
+    if !is_cli(matches, "accept_header")
+        && let Some(accept) = config.accept.clone()
+    {
+        args.accept_header = Some(accept);
+    }
+
+    if !is_cli(matches, "content_type")
+        && let Some(content_type) = config.content_type.clone()
+    {
+        args.content_type = Some(content_type);
+    }
+
     if !is_cli(matches, "data")
         && let Some(data) = config.data.clone()
     {
         args.data = data;
+    }
+
+    if !is_cli(matches, "data_file")
+        && let Some(path) = config.data_file.clone()
+    {
+        args.data_file = Some(path);
+    }
+
+    if !is_cli(matches, "data_lines")
+        && let Some(path) = config.data_lines.clone()
+    {
+        args.data_lines = Some(path);
     }
 
     if !is_cli(matches, "target_duration")
@@ -59,10 +89,22 @@ pub fn apply_config(
         args.target_duration = ensure_positive_u64(duration, "duration")?;
     }
 
+    if !is_cli(matches, "requests")
+        && let Some(requests) = config.requests
+    {
+        args.requests = Some(ensure_positive_u64(requests, "requests")?);
+    }
+
     if !is_cli(matches, "request_timeout")
         && let Some(timeout) = config.timeout.as_ref()
     {
         args.request_timeout = timeout.to_duration()?;
+    }
+
+    if !is_cli(matches, "connect_timeout")
+        && let Some(timeout) = config.connect_timeout.as_ref()
+    {
+        args.connect_timeout = timeout.to_duration()?;
     }
 
     if !is_cli(matches, "warmup")
