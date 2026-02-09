@@ -414,6 +414,9 @@ Snapshots default to `~/.strest/snapshots` (or `%USERPROFILE%\\.strest\\snapshot
 - `--export-csv` writes metrics to a CSV file (bounded by `--metrics-range` and `--metrics-max`).
 - `--export-json` writes summary and metrics to a JSON file (bounded by `--metrics-range` and `--metrics-max`).
 - `--export-jsonl` writes summary and metrics as newline-delimited JSON (JSONL).
+- `--output` (`-o`) writes results to a file (aliases the export formats).
+- `--output-format` selects `json`, `jsonl`, or `csv` (or infer from extension for `--output`).
+- `--db-url` writes per-request metrics to a sqlite database (table `metrics`).
 - `--install-service` installs a Linux systemd service for controller/agent.
 - `--uninstall-service` removes a Linux systemd service for controller/agent.
 - `--service-name` overrides the systemd service name.

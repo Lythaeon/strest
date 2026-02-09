@@ -34,6 +34,9 @@ fn base_args() -> Result<TesterArgs, String> {
         no_ua: false,
         authorized: false,
         data: String::new(),
+        basic_auth: None,
+        aws_session: None,
+        aws_sigv4: None,
         data_file: None,
         data_lines: None,
         target_duration: positive_u64(1)?,
@@ -67,9 +70,12 @@ fn base_args() -> Result<TesterArgs, String> {
         agent_heartbeat_timeout_ms: positive_u64(3000)?,
         keep_tmp: false,
         warmup: None,
+        output: None,
+        output_format: None,
         export_csv: None,
         export_json: None,
         export_jsonl: None,
+        db_url: None,
         log_shards: positive_usize(1)?,
         no_ui: true,
         ui_window_ms: positive_u64(10_000)?,
@@ -337,6 +343,7 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
     run_async_test(async {
         let dir = tempfile::tempdir().map_err(|err| format!("tempdir failed: {}", err))?;
         let log_path = dir.path().join("metrics.log");
+        let db_path = dir.path().join("metrics.db");
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let run_start = tokio::time::Instant::now();
         let logger_config = MetricsLoggerConfig {
@@ -345,6 +352,7 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
             expected_status_code: 200,
             metrics_range: None,
             metrics_max: 1,
+            db_url: Some(db_path.to_string_lossy().to_string()),
         };
         let handle = setup_metrics_logger(log_path, logger_config, rx);
 
@@ -402,6 +410,14 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
                 "Expected 1 record due to metrics_max, got {}",
                 result.records.len()
             ));
+        }
+        let conn = rusqlite::Connection::open(&db_path)
+            .map_err(|err| format!("Failed to open db: {}", err))?;
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM metrics", [], |row| row.get(0))
+            .map_err(|err| format!("Failed to query db: {}", err))?;
+        if count != 2 {
+            return Err(format!("Expected 2 db rows, got {}", count));
         }
         Ok(())
     })

@@ -71,6 +71,24 @@ pub fn apply_config(
         args.data = data;
     }
 
+    if !is_cli(matches, "basic_auth")
+        && let Some(auth) = config.basic_auth.clone()
+    {
+        args.basic_auth = Some(auth);
+    }
+
+    if !is_cli(matches, "aws_session")
+        && let Some(session) = config.aws_session.clone()
+    {
+        args.aws_session = Some(session);
+    }
+
+    if !is_cli(matches, "aws_sigv4")
+        && let Some(params) = config.aws_sigv4.clone()
+    {
+        args.aws_sigv4 = Some(params);
+    }
+
     if !is_cli(matches, "data_file")
         && let Some(path) = config.data_file.clone()
     {
@@ -173,6 +191,18 @@ pub fn apply_config(
         args.keep_tmp = keep;
     }
 
+    if !is_cli(matches, "output")
+        && let Some(output) = config.output.clone()
+    {
+        args.output = Some(output);
+    }
+
+    if !is_cli(matches, "output_format")
+        && let Some(format) = config.output_format
+    {
+        args.output_format = Some(format);
+    }
+
     if !is_cli(matches, "export_csv")
         && let Some(path) = config.export_csv.clone()
     {
@@ -189,6 +219,12 @@ pub fn apply_config(
         && let Some(path) = config.export_jsonl.clone()
     {
         args.export_jsonl = Some(path);
+    }
+
+    if !is_cli(matches, "db_url")
+        && let Some(db_url) = config.db_url.clone()
+    {
+        args.db_url = Some(db_url);
     }
 
     if !is_cli(matches, "log_shards")

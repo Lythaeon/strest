@@ -10,8 +10,8 @@ use super::parsers::{
     parse_tls_version,
 };
 use super::types::{
-    ConnectToMapping, ControllerMode, HttpMethod, HttpVersion, LoadProfile, PositiveU64,
-    PositiveUsize, Scenario, TlsVersion,
+    ConnectToMapping, ControllerMode, HttpMethod, HttpVersion, LoadProfile, OutputFormat,
+    PositiveU64, PositiveUsize, Scenario, TlsVersion,
 };
 
 #[derive(Debug, Subcommand, Clone)]
@@ -116,6 +116,18 @@ pub struct TesterArgs {
     #[arg(long, short, default_value = "")]
     pub data: String,
 
+    /// Basic authentication (username:password), or AWS credentials (access_key:secret_key)
+    #[arg(long = "basic-auth", short = 'a')]
+    pub basic_auth: Option<String>,
+
+    /// AWS session token
+    #[arg(long = "aws-session")]
+    pub aws_session: Option<String>,
+
+    /// AWS SigV4 signing params (format: aws:amz:region:service)
+    #[arg(long = "aws-sigv4")]
+    pub aws_sigv4: Option<String>,
+
     /// Request body from file
     #[arg(long = "data-file", short = 'D', conflicts_with_all = ["data", "data_lines"])]
     pub data_file: Option<String>,
@@ -201,6 +213,14 @@ pub struct TesterArgs {
     #[arg(long = "warmup", value_parser = parse_duration_arg)]
     pub warmup: Option<Duration>,
 
+    /// Output file to write results to
+    #[arg(long = "output", short = 'o')]
+    pub output: Option<String>,
+
+    /// Output format
+    #[arg(long = "output-format", value_enum)]
+    pub output_format: Option<OutputFormat>,
+
     /// Export metrics to CSV (uses the same bounds as charts)
     #[arg(long = "export-csv")]
     pub export_csv: Option<String>,
@@ -212,6 +232,10 @@ pub struct TesterArgs {
     /// Export metrics to JSONL (newline-delimited JSON)
     #[arg(long = "export-jsonl")]
     pub export_jsonl: Option<String>,
+
+    /// Write per-request metrics to a sqlite database
+    #[arg(long = "db-url")]
+    pub db_url: Option<String>,
 
     /// Number of log shards to use for metrics logging (default: 1)
     #[arg(long = "log-shards", default_value = "1", value_parser = parse_positive_usize)]

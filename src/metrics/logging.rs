@@ -9,6 +9,7 @@ use tokio::{
     sync::mpsc,
     task::JoinHandle,
 };
+use tokio_rusqlite::Connection;
 
 #[cfg(any(test, feature = "fuzzing"))]
 use std::path::Path;
@@ -66,7 +67,19 @@ pub struct MetricsLoggerConfig {
     pub expected_status_code: u16,
     pub metrics_range: Option<MetricsRange>,
     pub metrics_max: usize,
+    pub db_url: Option<String>,
 }
+
+#[derive(Debug, Clone, Copy)]
+struct DbRecord {
+    elapsed_ms: u64,
+    latency_ms: u64,
+    status_code: u16,
+    timed_out: bool,
+    transport_error: bool,
+}
+
+const DB_FLUSH_SIZE: usize = 500;
 
 #[must_use]
 pub fn setup_metrics_logger(
@@ -89,6 +102,31 @@ pub fn setup_metrics_logger(
         let collect_records = config.metrics_max > 0;
         let mut histogram = LatencyHistogram::new()?;
         let mut success_histogram = LatencyHistogram::new()?;
+        let db_conn = if let Some(db_url) = config.db_url.as_deref() {
+            let conn = Connection::open(db_url)
+                .await
+                .map_err(|err| format!("Failed to open sqlite db {}: {}", db_url, err))?;
+            conn.call(|conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS metrics (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        elapsed_ms INTEGER NOT NULL,
+                        latency_ms INTEGER NOT NULL,
+                        status_code INTEGER NOT NULL,
+                        timed_out INTEGER NOT NULL,
+                        transport_error INTEGER NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_metrics_elapsed_ms ON metrics(elapsed_ms);",
+                )?;
+                Ok(())
+            })
+            .await
+            .map_err(|err| format!("Failed to initialize sqlite db: {}", err))?;
+            Some(conn)
+        } else {
+            None
+        };
+        let mut db_buffer: Vec<DbRecord> = Vec::new();
 
         let mut total_requests: u64 = 0;
         let mut successful_requests: u64 = 0;
@@ -173,6 +211,19 @@ pub fn setup_metrics_logger(
             }
             histogram.record(latency_ms)?;
 
+            if let Some(conn) = db_conn.as_ref() {
+                db_buffer.push(DbRecord {
+                    elapsed_ms,
+                    latency_ms,
+                    status_code: msg.status_code,
+                    timed_out: msg.timed_out,
+                    transport_error: msg.transport_error,
+                });
+                if db_buffer.len() >= DB_FLUSH_SIZE {
+                    flush_db_records(conn, &mut db_buffer).await?;
+                }
+            }
+
             if collect_records {
                 let seconds_elapsed = elapsed_ms / 1000;
                 let in_range = match &config.metrics_range {
@@ -205,6 +256,9 @@ pub fn setup_metrics_logger(
             .flush()
             .await
             .map_err(|err| format!("Failed to flush metrics log: {}", err))?;
+        if let Some(conn) = db_conn.as_ref() {
+            flush_db_records(conn, &mut db_buffer).await?;
+        }
         let duration = Duration::from_millis(max_elapsed_ms);
         let avg_latency_ms = if total_requests > 0 {
             let avg = latency_sum_ms
@@ -263,6 +317,42 @@ pub fn setup_metrics_logger(
             success_histogram,
         })
     })
+}
+
+async fn flush_db_records(conn: &Connection, buffer: &mut Vec<DbRecord>) -> Result<(), String> {
+    if buffer.is_empty() {
+        return Ok(());
+    }
+
+    let records = std::mem::take(buffer);
+    conn.call(move |conn| {
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO metrics (elapsed_ms, latency_ms, status_code, timed_out, transport_error)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?;
+            for record in records {
+                stmt.execute(rusqlite::params![
+                    clamp_i64(record.elapsed_ms),
+                    clamp_i64(record.latency_ms),
+                    i64::from(record.status_code),
+                    i64::from(u8::from(record.timed_out)),
+                    i64::from(u8::from(record.transport_error))
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    })
+    .await
+    .map_err(|err| format!("Failed to write sqlite metrics: {}", err))?;
+
+    Ok(())
+}
+
+fn clamp_i64(value: u64) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
 }
 
 #[cfg(any(test, feature = "fuzzing"))]

@@ -54,6 +54,16 @@ impl std::str::FromStr for HttpVersion {
 
 #[derive(Debug, Clone, Copy, ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+pub enum OutputFormat {
+    Text,
+    Json,
+    Jsonl,
+    Csv,
+    Quiet,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum ControllerMode {
     Auto,
     Manual,

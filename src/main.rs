@@ -15,7 +15,7 @@ mod sinks;
 mod ui;
 
 use app::{run_cleanup, run_local, run_replay};
-use args::{Command, TesterArgs};
+use args::{Command, OutputFormat, TesterArgs};
 use clap::{CommandFactory, FromArgMatches};
 use std::error::Error;
 use std::path::Path;
@@ -69,6 +69,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             scenario_registry = config.scenarios.take();
             config::apply_config(&mut args, &matches, config).map_err(std::io::Error::other)?;
         }
+
+        apply_output_aliases(&mut args).map_err(std::io::Error::other)?;
+        validate_db_logging(&args).map_err(std::io::Error::other)?;
 
         if args.controller_listen.is_some() && args.agent_join.is_some() {
             return Err(std::io::Error::other(
@@ -135,4 +138,68 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         Ok(())
     })
+}
+
+fn apply_output_aliases(args: &mut TesterArgs) -> Result<(), String> {
+    let output = match args.output.clone() {
+        Some(output) => output,
+        None => {
+            if args.output_format.is_some() {
+                return Err("`--output-format` requires `--output`.".to_owned());
+            }
+            return Ok(());
+        }
+    };
+
+    if args.export_csv.is_some() || args.export_json.is_some() || args.export_jsonl.is_some() {
+        return Err("`--output` cannot be combined with export flags.".to_owned());
+    }
+
+    let format = match args.output_format {
+        Some(format) => format,
+        None => infer_output_format(&output).ok_or_else(|| {
+            "Unable to infer output format; use `--output-format json|jsonl|csv`.".to_owned()
+        })?,
+    };
+
+    match format {
+        OutputFormat::Json => {
+            args.export_json = Some(output);
+        }
+        OutputFormat::Jsonl => {
+            args.export_jsonl = Some(output);
+        }
+        OutputFormat::Csv => {
+            args.export_csv = Some(output);
+        }
+        OutputFormat::Text | OutputFormat::Quiet => {
+            return Err(
+                "`--output` only aliases export formats (json/jsonl/csv). Use `--summary` for text output."
+                    .to_owned(),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn infer_output_format(output: &str) -> Option<OutputFormat> {
+    let lower = output.to_ascii_lowercase();
+    if lower.ends_with(".jsonl") {
+        return Some(OutputFormat::Jsonl);
+    }
+    if lower.ends_with(".json") {
+        return Some(OutputFormat::Json);
+    }
+    if lower.ends_with(".csv") {
+        return Some(OutputFormat::Csv);
+    }
+    None
+}
+
+fn validate_db_logging(args: &TesterArgs) -> Result<(), String> {
+    if args.db_url.is_some() && args.log_shards.get() > 1 {
+        return Err("`--db-url` requires `--log-shards 1`.".to_owned());
+    }
+    Ok(())
 }

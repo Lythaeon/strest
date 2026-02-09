@@ -33,7 +33,8 @@ pub(crate) async fn setup_log_sinks(
         || summary_enabled
         || args.export_csv.is_some()
         || args.export_json.is_some()
-        || args.export_jsonl.is_some();
+        || args.export_jsonl.is_some()
+        || args.db_url.is_some();
 
     if !log_enabled {
         return Ok(LogSetup {
@@ -73,6 +74,7 @@ pub(crate) async fn setup_log_sinks(
     let mut senders = Vec::with_capacity(shards);
     let mut handles = Vec::with_capacity(shards);
     let mut paths = Vec::with_capacity(shards);
+    let db_url = args.db_url.clone();
 
     for shard in 0..shards {
         let file_name = format!("metrics-{}-{}-{}.log", std::process::id(), stamp, shard);
@@ -86,6 +88,7 @@ pub(crate) async fn setup_log_sinks(
             expected_status_code: args.expected_status_code,
             metrics_range: args.metrics_range.clone(),
             metrics_max: metrics_max_per_shard,
+            db_url: if shard == 0 { db_url.clone() } else { None },
         };
         let handle = metrics::setup_metrics_logger(log_path, logger_config, log_rx);
         handles.push(handle);

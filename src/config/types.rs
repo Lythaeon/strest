@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::args::HttpMethod;
+use crate::args::{HttpMethod, OutputFormat};
 use crate::sinks::config::SinksConfig;
 
 #[derive(Debug, Default, Deserialize)]
@@ -16,6 +16,9 @@ pub struct ConfigFile {
     pub data: Option<String>,
     pub data_file: Option<String>,
     pub data_lines: Option<String>,
+    pub basic_auth: Option<String>,
+    pub aws_session: Option<String>,
+    pub aws_sigv4: Option<String>,
     pub duration: Option<u64>,
     pub requests: Option<u64>,
     pub timeout: Option<DurationValue>,
@@ -31,9 +34,12 @@ pub struct ConfigFile {
     pub authorized: Option<bool>,
     pub tmp_path: Option<String>,
     pub keep_tmp: Option<bool>,
+    pub output: Option<String>,
+    pub output_format: Option<OutputFormat>,
     pub export_csv: Option<String>,
     pub export_json: Option<String>,
     pub export_jsonl: Option<String>,
+    pub db_url: Option<String>,
     pub log_shards: Option<usize>,
     pub no_ui: Option<bool>,
     pub ui_window_ms: Option<u64>,

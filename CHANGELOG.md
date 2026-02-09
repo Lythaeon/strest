@@ -12,6 +12,8 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 - Added `--connections` alias for `--max-tasks`.
 - Added `--no-tui` as the preferred UI disable flag (`--no-ui` remains as an alias).
 - Added fuzz coverage for usability-oriented CLI flags.
+- Added `--db-url` to persist per-request metrics into sqlite.
+- Added `--output`/`--output-format` as aliases for JSON/JSONL/CSV exports.
 
 ## 0.1.3
 

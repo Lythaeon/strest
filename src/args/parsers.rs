@@ -24,7 +24,7 @@ pub(super) fn parse_tls_version(s: &str) -> Result<TlsVersion, String> {
     s.parse::<TlsVersion>()
 }
 
-pub(super) fn parse_connect_to(s: &str) -> Result<ConnectToMapping, String> {
+pub(crate) fn parse_connect_to(s: &str) -> Result<ConnectToMapping, String> {
     let parts: Vec<&str> = s.split(':').collect();
     if parts.len() != 4 {
         return Err(format!(
@@ -43,7 +43,10 @@ pub(super) fn parse_connect_to(s: &str) -> Result<ConnectToMapping, String> {
         .parse()
         .map_err(|_| format!("Invalid target port in '{}'.", s))?;
     if source_host.is_empty() || target_host.is_empty() {
-        return Err(format!("Invalid connect-to '{}'. Host must not be empty.", s));
+        return Err(format!(
+            "Invalid connect-to '{}'. Host must not be empty.",
+            s
+        ));
     }
     Ok(ConnectToMapping {
         source_host: source_host.to_owned(),
