@@ -113,6 +113,15 @@ fn parse_args_defaults() -> Result<(), String> {
     if args.data_lines.is_some() {
         return Err("Expected data_lines to be None".to_owned());
     }
+    if args.basic_auth.is_some() {
+        return Err("Expected basic_auth to be None".to_owned());
+    }
+    if args.aws_session.is_some() {
+        return Err("Expected aws_session to be None".to_owned());
+    }
+    if args.aws_sigv4.is_some() {
+        return Err("Expected aws_sigv4 to be None".to_owned());
+    }
     if args.verbose {
         return Err("Expected verbose to be false".to_owned());
     }

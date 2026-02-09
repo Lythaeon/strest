@@ -98,6 +98,7 @@ pub fn setup_metrics_collector(
     let expected_status_code = args.expected_status_code;
     let sinks_config = args.sinks.clone();
     let stream_summaries = args.distributed_stream_summaries;
+    let no_color = args.no_color;
     let sink_interval_duration = resolve_sink_interval(&sinks_config);
     let stream_interval_duration =
         resolve_stream_interval(args.distributed_stream_interval_ms.as_ref());
@@ -128,7 +129,7 @@ pub fn setup_metrics_collector(
                 transport_errors: 0,
                 non_expected_status: 0,
                 ui_window_ms,
-                no_color: args.no_color,
+                no_color,
                 latencies: vec![],
                 p50: 0,
                 p90: 0,
@@ -204,7 +205,7 @@ pub fn setup_metrics_collector(
                                 transport_errors: state.transport_errors,
                                 non_expected_status: state.non_expected_status,
                                 ui_window_ms,
-                                no_color: args.no_color,
+                                no_color,
                                 latencies: recent_latencies,
                                 p50,
                                 p90,

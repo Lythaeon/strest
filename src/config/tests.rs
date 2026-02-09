@@ -130,6 +130,9 @@ insecure = true
 cacert = "ca.pem"
 cert = "client.pem"
 key = "client.key"
+basic_auth = "user:pass"
+aws_session = "token"
+aws_sigv4 = "aws:amz:us-east-1:service"
 "#;
     std::fs::write(&path, content).map_err(|err| format!("write failed: {}", err))?;
 
@@ -213,6 +216,15 @@ key = "client.key"
     }
     if args.unix_socket.as_deref() != Some("/tmp/strest.sock") {
         return Err("Unexpected unix_socket".to_owned());
+    }
+    if args.basic_auth.as_deref() != Some("user:pass") {
+        return Err("Unexpected basic_auth".to_owned());
+    }
+    if args.aws_session.as_deref() != Some("token") {
+        return Err("Unexpected aws_session".to_owned());
+    }
+    if args.aws_sigv4.as_deref() != Some("aws:amz:us-east-1:service") {
+        return Err("Unexpected aws_sigv4".to_owned());
     }
     if !args.insecure {
         return Err("Expected insecure to be true".to_owned());

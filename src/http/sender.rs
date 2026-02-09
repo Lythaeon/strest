@@ -13,15 +13,16 @@ use tokio::time::{interval, sleep};
 use tracing::error;
 
 use crate::{
-    args::{ConnectToMapping, DEFAULT_USER_AGENT, HttpMethod, HttpVersion, TesterArgs},
+    args::{DEFAULT_USER_AGENT, HttpMethod, HttpVersion, TesterArgs},
     metrics::{LogSink, Metrics},
 };
 
 use super::rate::build_rate_limiter;
 use super::tls::apply_tls_settings;
 use super::workload::{
-    BodySource, RequestLimiter, ScenarioRunContext, SingleRequestSpec, WorkerContext, Workload,
-    preflight_request, run_scenario_iteration, run_single_dynamic_iteration, run_single_iteration,
+    AuthConfig, BodySource, RequestLimiter, ScenarioRunContext, SingleRequestSpec, WorkerContext,
+    Workload, preflight_request, run_scenario_iteration, run_single_dynamic_iteration,
+    run_single_iteration,
 };
 
 /// Creates the request sender task and validates the HTTP client/config.
@@ -47,6 +48,8 @@ pub fn setup_request_sender(
     {
         return Err("proxy-http2 conflicts with proxy-http-version.".to_owned());
     }
+
+    let auth_config = resolve_auth(args)?;
 
     let mut client_builder = Client::builder()
         .timeout(args.request_timeout)
@@ -83,7 +86,7 @@ pub fn setup_request_sender(
     }
 
     if args.disable_compression {
-        client_builder = client_builder.gzip(false).brotli(false).deflate(false);
+        client_builder = client_builder.no_gzip().no_brotli().no_deflate();
     }
 
     client_builder = apply_tls_settings(client_builder, args)?;
@@ -105,17 +108,11 @@ pub fn setup_request_sender(
             .key
             .as_ref()
             .ok_or_else(|| "--key requires --cert.".to_owned())?;
-        let mut pem = Vec::new();
-        pem.extend(
-            std::fs::read(cert_path)
-                .map_err(|err| format!("Failed to read cert '{}': {}", cert_path, err))?,
-        );
-        pem.extend(b"\n");
-        pem.extend(
-            std::fs::read(key_path)
-                .map_err(|err| format!("Failed to read key '{}': {}", key_path, err))?,
-        );
-        let identity = reqwest::Identity::from_pem(&pem)
+        let cert_bytes = std::fs::read(cert_path)
+            .map_err(|err| format!("Failed to read cert '{}': {}", cert_path, err))?;
+        let key_bytes = std::fs::read(key_path)
+            .map_err(|err| format!("Failed to read key '{}': {}", key_path, err))?;
+        let identity = reqwest::Identity::from_pkcs8_pem(&cert_bytes, &key_bytes)
             .map_err(|err| format!("Invalid cert/key: {}", err))?;
         client_builder = client_builder.identity(identity);
     }
@@ -132,12 +129,10 @@ pub fn setup_request_sender(
                 if !args.proxy_headers.is_empty() {
                     let mut headers = HeaderMap::new();
                     for (key, value) in &args.proxy_headers {
-                        let name = HeaderName::from_bytes(key.as_bytes()).map_err(|_| {
-                            format!("Invalid proxy header name '{}'.", key)
-                        })?;
-                        let val = HeaderValue::from_str(value).map_err(|_| {
-                            format!("Invalid proxy header value for '{}'.", key)
-                        })?;
+                        let name = HeaderName::from_bytes(key.as_bytes())
+                            .map_err(|_| format!("Invalid proxy header name '{}'.", key))?;
+                        let val = HeaderValue::from_str(value)
+                            .map_err(|_| format!("Invalid proxy header value for '{}'.", key))?;
                         headers.insert(name, val);
                     }
                     proxy = proxy.headers(headers);
@@ -159,7 +154,7 @@ pub fn setup_request_sender(
     }
 
     if let Some(path) = args.unix_socket.as_ref() {
-        client_builder = client_builder.unix_socket(path);
+        client_builder = client_builder.unix_socket(path.clone());
     }
 
     let client = match client_builder.build() {
@@ -175,6 +170,7 @@ pub fn setup_request_sender(
             Arc::new(scenario),
             Arc::new(args.connect_to.clone()),
             args.host_header.clone(),
+            auth_config.clone(),
         )
     } else {
         let url = args
@@ -192,6 +188,7 @@ pub fn setup_request_sender(
                 headers,
                 body: body_source,
                 connect_to: Arc::new(args.connect_to.clone()),
+                auth: auth_config.clone(),
             })),
             BodySource::Static(body) => {
                 if !args.connect_to.is_empty() {
@@ -201,6 +198,7 @@ pub fn setup_request_sender(
                         headers,
                         body: BodySource::Static(body),
                         connect_to: Arc::new(args.connect_to.clone()),
+                        auth: auth_config.clone(),
                     }))
                 } else {
                     let mut request_builder = match args.method {
@@ -313,12 +311,13 @@ fn create_sender_task(
                             run_single_dynamic_iteration(&mut shutdown_rx_worker, &worker, spec)
                                 .await
                         }
-                        Workload::Scenario(scenario, connect_to, host_header) => {
+                        Workload::Scenario(scenario, connect_to, host_header, auth) => {
                             let mut context = ScenarioRunContext {
                                 client: &client,
                                 scenario,
                                 connect_to,
                                 host_header: host_header.as_deref(),
+                                auth: auth.as_ref(),
                                 expected_status_code,
                                 log_sink: &log_sink,
                                 metrics_tx: &metrics_tx,
@@ -483,4 +482,53 @@ fn resolve_addrs(
         addrs.retain(|addr| addr.is_ipv6());
     }
     Ok(addrs)
+}
+
+fn resolve_auth(args: &TesterArgs) -> Result<Option<AuthConfig>, String> {
+    if let Some(sigv4) = args.aws_sigv4.as_ref() {
+        let basic = args
+            .basic_auth
+            .as_ref()
+            .ok_or_else(|| "--aws-sigv4 requires --basic-auth.".to_owned())?;
+        let (access_key, secret_key) = parse_auth_pair(basic)?;
+        let (region, service) = parse_aws_sigv4(sigv4)?;
+        return Ok(Some(AuthConfig::SigV4 {
+            access_key,
+            secret_key,
+            session_token: args.aws_session.clone(),
+            region,
+            service,
+        }));
+    }
+    if args.aws_session.is_some() {
+        return Err("--aws-session requires --aws-sigv4.".to_owned());
+    }
+    if let Some(basic) = args.basic_auth.as_ref() {
+        let (username, password) = parse_auth_pair(basic)?;
+        return Ok(Some(AuthConfig::Basic { username, password }));
+    }
+    Ok(None)
+}
+
+fn parse_auth_pair(value: &str) -> Result<(String, String), String> {
+    let (left, right) = value
+        .split_once(':')
+        .ok_or_else(|| "Expected format username:password.".to_owned())?;
+    if left.is_empty() {
+        return Err("Auth username must not be empty.".to_owned());
+    }
+    Ok((left.to_owned(), right.to_owned()))
+}
+
+fn parse_aws_sigv4(value: &str) -> Result<(String, String), String> {
+    let parts: Vec<&str> = value.split(':').collect();
+    if parts.len() != 4 {
+        return Err("Invalid aws-sigv4 format. Expected aws:amz:region:service.".to_owned());
+    }
+    let region = parts[2].trim();
+    let service = parts[3].trim();
+    if region.is_empty() || service.is_empty() {
+        return Err("aws-sigv4 region/service must not be empty.".to_owned());
+    }
+    Ok((region.to_owned(), service.to_owned()))
 }

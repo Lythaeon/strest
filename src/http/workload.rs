@@ -5,13 +5,19 @@ use std::sync::{
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use reqwest::{Client, Request, Url};
+use reqwest::{Client, Request, RequestBuilder, Url};
 use tokio::sync::Semaphore;
 use tokio::{
     sync::{broadcast, mpsc},
     time::{Instant, sleep},
 };
 use tracing::error;
+
+use aws_credential_types::Credentials;
+use aws_sigv4::http_request::{SignableBody, SignableRequest, SigningSettings, sign};
+use aws_sigv4::sign::v4;
+use aws_smithy_runtime_api::client::identity::Identity;
+use base64::Engine as _;
 
 use crate::{
     args::{ConnectToMapping, HttpMethod, Scenario, ScenarioStep},
@@ -24,7 +30,27 @@ const ASSERT_FAILED_STATUS: u16 = 0;
 pub(super) enum Workload {
     Single(Arc<Request>),
     SingleDynamic(Arc<SingleRequestSpec>),
-    Scenario(Arc<Scenario>, Arc<Vec<ConnectToMapping>>, Option<String>),
+    Scenario(
+        Arc<Scenario>,
+        Arc<Vec<ConnectToMapping>>,
+        Option<String>,
+        Option<AuthConfig>,
+    ),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum AuthConfig {
+    Basic {
+        username: String,
+        password: String,
+    },
+    SigV4 {
+        access_key: String,
+        secret_key: String,
+        session_token: Option<String>,
+        region: String,
+        service: String,
+    },
 }
 
 #[derive(Debug)]
@@ -79,6 +105,7 @@ pub(super) struct SingleRequestSpec {
     pub(super) headers: Vec<(String, String)>,
     pub(super) body: BodySource,
     pub(super) connect_to: Arc<Vec<ConnectToMapping>>,
+    pub(super) auth: Option<AuthConfig>,
 }
 
 pub(super) struct WorkerContext<'ctx> {
@@ -108,7 +135,7 @@ pub(super) async fn preflight_request(client: &Client, workload: &Workload) -> R
                 .map_err(|err| format!("Test request failed: {}", err))?;
             Ok(())
         }
-        Workload::Scenario(scenario, connect_to, host_header) => {
+        Workload::Scenario(scenario, connect_to, host_header, auth) => {
             let step = scenario
                 .steps
                 .first()
@@ -121,6 +148,7 @@ pub(super) async fn preflight_request(client: &Client, workload: &Workload) -> R
                 &vars,
                 connect_to,
                 host_header.as_deref(),
+                auth.as_ref(),
             )?;
             execute_request(client, request, true)
                 .await
@@ -231,6 +259,7 @@ pub(super) struct ScenarioRunContext<'ctx> {
     pub(super) scenario: &'ctx Scenario,
     pub(super) connect_to: &'ctx [ConnectToMapping],
     pub(super) host_header: Option<&'ctx str>,
+    pub(super) auth: Option<&'ctx AuthConfig>,
     pub(super) expected_status_code: u16,
     pub(super) log_sink: &'ctx Option<Arc<LogSink>>,
     pub(super) metrics_tx: &'ctx mpsc::Sender<Metrics>,
@@ -266,6 +295,7 @@ pub(super) async fn run_scenario_iteration(
             &vars,
             context.connect_to,
             context.host_header,
+            context.auth,
         ) {
             Ok(request) => request,
             Err(err) => {
@@ -400,8 +430,8 @@ async fn execute_request_with_asserts(
 }
 
 fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> Result<Request, String> {
-    let url = Url::parse(&spec.url)
-        .map_err(|err| format!("Invalid URL '{}': {}", spec.url, err))?;
+    let url =
+        Url::parse(&spec.url).map_err(|err| format!("Invalid URL '{}': {}", spec.url, err))?;
     let (url, host_override) = apply_connect_to(&url, &spec.connect_to)?;
 
     let mut request_builder = match spec.method {
@@ -415,7 +445,7 @@ fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> Result<
     for (key, value) in &spec.headers {
         request_builder = request_builder.header(key, value);
     }
-    if let Some(host) = host_override {
+    if let Some(host) = host_override.as_ref() {
         if !has_host_header(&spec.headers) {
             request_builder = request_builder.header("Host", host);
         }
@@ -437,7 +467,26 @@ fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> Result<
         }
     };
 
-    request_builder.body(body).build()
+    if let Some(auth) = spec.auth.as_ref() {
+        let mut headers_for_sign = spec.headers.clone();
+        if let Some(host) = host_override.as_ref() {
+            if !has_host_header(&headers_for_sign) {
+                headers_for_sign.push(("Host".to_owned(), host.clone()));
+            }
+        }
+        request_builder = apply_auth_headers(
+            request_builder,
+            &spec.method,
+            &url,
+            &headers_for_sign,
+            &body,
+            auth,
+        )?;
+    }
+
+    request_builder
+        .body(body)
+        .build()
         .map_err(|err| format!("Failed to build request: {}", err))
 }
 
@@ -448,6 +497,7 @@ pub(crate) fn build_step_request(
     vars: &BTreeMap<String, String>,
     connect_to: &[ConnectToMapping],
     host_header: Option<&str>,
+    auth: Option<&AuthConfig>,
 ) -> Result<Request, String> {
     let url = resolve_step_url(scenario, step, vars)?;
     let (url, host_override) = apply_connect_to(&url, connect_to)?;
@@ -459,17 +509,43 @@ pub(crate) fn build_step_request(
         HttpMethod::Delete => client.delete(url.clone()),
     };
 
+    let mut rendered_headers = Vec::with_capacity(step.headers.len());
     for (key, value) in &step.headers {
         let key_rendered = render_template(key, vars);
         let value_rendered = render_template(value, vars);
-        request_builder = request_builder.header(key_rendered, value_rendered);
+        request_builder = request_builder.header(&key_rendered, &value_rendered);
+        rendered_headers.push((key_rendered, value_rendered));
     }
-    if !has_host_header(&step.headers) {
+    if !has_host_header(&rendered_headers) {
         if let Some(host) = host_header {
             request_builder = request_builder.header("Host", host);
-        } else if let Some(host) = host_override {
+        } else if let Some(host) = host_override.as_ref() {
             request_builder = request_builder.header("Host", host);
         }
+    }
+
+    let body_rendered = step
+        .body
+        .as_ref()
+        .map(|body| render_template(body, vars))
+        .unwrap_or_default();
+    if let Some(auth) = auth {
+        let mut headers_for_sign = rendered_headers.clone();
+        if !has_host_header(&headers_for_sign) {
+            if let Some(host) = host_header {
+                headers_for_sign.push(("Host".to_owned(), host.to_owned()));
+            } else if let Some(host) = host_override.as_ref() {
+                headers_for_sign.push(("Host".to_owned(), host.clone()));
+            }
+        }
+        request_builder = apply_auth_headers(
+            request_builder,
+            &step.method,
+            &url,
+            &headers_for_sign,
+            &body_rendered,
+            auth,
+        )?;
     }
 
     if let Some(body) = step.body.as_ref() {
@@ -498,7 +574,7 @@ fn apply_connect_to(
                 .map_err(|err| format!("Invalid connect-to host: {}", err))?;
             rewritten
                 .set_port(Some(mapping.target_port))
-                .map_err(|err| format!("Invalid connect-to port: {}", err))?;
+                .map_err(|_| "Invalid connect-to port.".to_owned())?;
             let host_header = if port == 80 || port == 443 {
                 host.to_owned()
             } else {
@@ -514,6 +590,89 @@ fn has_host_header(headers: &[(String, String)]) -> bool {
     headers
         .iter()
         .any(|(key, _)| key.eq_ignore_ascii_case("host"))
+}
+
+fn http_method_str(method: &HttpMethod) -> &'static str {
+    match method {
+        HttpMethod::Get => "GET",
+        HttpMethod::Post => "POST",
+        HttpMethod::Patch => "PATCH",
+        HttpMethod::Put => "PUT",
+        HttpMethod::Delete => "DELETE",
+    }
+}
+
+fn apply_auth_headers(
+    mut builder: RequestBuilder,
+    method: &HttpMethod,
+    url: &Url,
+    headers: &[(String, String)],
+    body: &str,
+    auth: &AuthConfig,
+) -> Result<RequestBuilder, String> {
+    match auth {
+        AuthConfig::Basic { username, password } => {
+            let token = format!("{}:{}", username, password);
+            let encoded = base64::engine::general_purpose::STANDARD.encode(token.as_bytes());
+            builder = builder.header("Authorization", format!("Basic {}", encoded));
+            Ok(builder)
+        }
+        AuthConfig::SigV4 {
+            access_key,
+            secret_key,
+            session_token,
+            region,
+            service,
+        } => {
+            let identity: Identity = Credentials::new(
+                access_key,
+                secret_key,
+                session_token.clone(),
+                None,
+                "strest",
+            )
+            .into();
+            let signing_settings = SigningSettings::default();
+            let signing_params = v4::SigningParams::builder()
+                .identity(&identity)
+                .region(region)
+                .name(service)
+                .time(std::time::SystemTime::now())
+                .settings(signing_settings)
+                .build()
+                .map_err(|err| format!("Failed to build sigv4 params: {}", err))?
+                .into();
+
+            let method_str = http_method_str(method);
+            let signable = SignableRequest::new(
+                method_str,
+                url.as_str(),
+                headers.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+                SignableBody::Bytes(body.as_bytes()),
+            )
+            .map_err(|err| format!("Failed to build sigv4 request: {}", err))?;
+
+            let (instructions, _signature) = sign(signable, &signing_params)
+                .map_err(|err| format!("Failed to sign request: {}", err))?
+                .into_parts();
+
+            let mut http_req = http::Request::builder()
+                .method(method_str)
+                .uri(url.as_str());
+            for (key, value) in headers {
+                http_req = http_req.header(key, value);
+            }
+            let mut http_req = http_req
+                .body(())
+                .map_err(|err| format!("Failed to build sign request: {}", err))?;
+            instructions.apply_to_request_http1x(&mut http_req);
+
+            for (name, value) in http_req.headers().iter() {
+                builder = builder.header(name, value);
+            }
+            Ok(builder)
+        }
+    }
 }
 
 fn resolve_step_url(
