@@ -64,6 +64,17 @@ pub enum OutputFormat {
 
 #[derive(Debug, Clone, Copy, ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+pub enum TimeUnit {
+    Ns,
+    Us,
+    Ms,
+    S,
+    M,
+    H,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum ControllerMode {
     Auto,
     Manual,

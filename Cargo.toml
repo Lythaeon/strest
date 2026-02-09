@@ -25,13 +25,15 @@ categories = [
 exclude = ["/fuzz/", "/target/", "/charts/"]
 
 [dependencies]
-reqwest = { version = "0.12", features = ["json", "native-tls"] }
+reqwest = { version = "0.12", features = ["json", "multipart", "native-tls"] }
 base64 = "0.22.1"
 aws-credential-types = "1.2.1"
 aws-sigv4 = "1.2.1"
 http = "1.1.0"
 aws-smithy-runtime-api = { version = "1.9.3", features = ["client", "http-auth"] }
 tokio = { version = "1.32.0", features = ["full"] }
+rand = "0.8.5"
+rand_regex = "0.17.0"
 clap = { version = "4.4.4", features = ["derive", "env"] }
 async-trait = "0.1"
 arcshift = "0.4.2"

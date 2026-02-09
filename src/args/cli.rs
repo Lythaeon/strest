@@ -11,7 +11,7 @@ use super::parsers::{
 };
 use super::types::{
     ConnectToMapping, ControllerMode, HttpMethod, HttpVersion, LoadProfile, OutputFormat,
-    PositiveU64, PositiveUsize, Scenario, TlsVersion,
+    PositiveU64, PositiveUsize, Scenario, TimeUnit, TlsVersion,
 };
 
 #[derive(Debug, Subcommand, Clone)]
@@ -92,6 +92,30 @@ pub struct TesterArgs {
     #[arg(long, short)]
     pub url: Option<String>,
 
+    /// Read URLs from file (newline-delimited)
+    #[arg(
+        long = "urls-from-file",
+        conflicts_with = "rand_regex_url",
+        requires = "url"
+    )]
+    pub urls_from_file: bool,
+
+    /// Generate URLs from a rand_regex pattern (uses --url as the pattern)
+    #[arg(
+        long = "rand-regex-url",
+        conflicts_with = "urls_from_file",
+        requires = "url"
+    )]
+    pub rand_regex_url: bool,
+
+    /// Maximum extra repeat count for rand_regex quantifiers
+    #[arg(long = "max-repeat", default_value = "4", value_parser = parse_positive_usize)]
+    pub max_repeat: PositiveUsize,
+
+    /// Dump generated URLs and exit (requires --rand-regex-url)
+    #[arg(long = "dump-urls", value_parser = parse_positive_usize, requires = "rand_regex_url")]
+    pub dump_urls: Option<PositiveUsize>,
+
     /// HTTP headers in 'Key: Value' format (repeatable)
     #[arg(long, short = 'H', value_parser = parse_header)]
     pub headers: Vec<(String, String)>,
@@ -115,6 +139,10 @@ pub struct TesterArgs {
     /// Request body data (for POST/PUT)
     #[arg(long, short, default_value = "")]
     pub data: String,
+
+    /// Specify HTTP multipart form data (repeatable, curl-compatible)
+    #[arg(long = "form", short = 'F', conflicts_with_all = ["data", "data_file", "data_lines"])]
+    pub form: Vec<String>,
 
     /// Basic authentication (username:password), or AWS credentials (access_key:secret_key)
     #[arg(long = "basic-auth", short = 'a')]
@@ -145,8 +173,12 @@ pub struct TesterArgs {
     )]
     pub target_duration: PositiveU64,
 
+    /// Wait for ongoing requests after the duration is reached
+    #[arg(long = "wait-ongoing-requests-after-deadline")]
+    pub wait_ongoing_requests_after_deadline: bool,
+
     /// Stop after N total requests
-    #[arg(long = "requests", value_parser = parse_positive_u64)]
+    #[arg(long = "requests", short = 'n', value_parser = parse_positive_u64)]
     pub requests: Option<PositiveU64>,
 
     /// Expected HTTP status code
@@ -190,11 +222,11 @@ pub struct TesterArgs {
     pub charts_path: String,
 
     /// Disable chart generation
-    #[arg(long, short = 'n')]
+    #[arg(long)]
     pub no_charts: bool,
 
     /// Enable verbose logging (sets log level to debug unless overridden by STREST_LOG/RUST_LOG)
-    #[arg(long, short = 'v')]
+    #[arg(long, short = 'v', alias = "debug")]
     pub verbose: bool,
 
     /// Path to config file (TOML/JSON). Defaults to ./strest.toml or ./strest.json if present.
@@ -220,6 +252,10 @@ pub struct TesterArgs {
     /// Output format
     #[arg(long = "output-format", value_enum)]
     pub output_format: Option<OutputFormat>,
+
+    /// Time unit for text output (ns, us, ms, s, m, h)
+    #[arg(long = "time-unit", value_enum)]
+    pub time_unit: Option<TimeUnit>,
 
     /// Export metrics to CSV (uses the same bounds as charts)
     #[arg(long = "export-csv")]
@@ -285,6 +321,10 @@ pub struct TesterArgs {
     #[arg(long = "http2")]
     pub http2: bool,
 
+    /// Number of parallel HTTP/2 requests per connection
+    #[arg(long = "http2-parallel", default_value = "1", value_parser = parse_positive_usize)]
+    pub http2_parallel: PositiveUsize,
+
     /// ALPN protocols to advertise (repeatable, e.g. --alpn h2 --alpn http/1.1)
     #[arg(long = "alpn")]
     pub alpn: Vec<String>,
@@ -334,8 +374,20 @@ pub struct TesterArgs {
     pub tick_interval: PositiveU64,
 
     /// Limit requests per second (optional)
-    #[arg(long = "rate", value_parser = parse_positive_u64, required = false)]
+    #[arg(long = "rate", short = 'q', value_parser = parse_positive_u64, required = false)]
     pub rate_limit: Option<PositiveU64>,
+
+    /// Burst delay (ignored if --rate is set)
+    #[arg(long = "burst-delay", value_parser = parse_duration_arg)]
+    pub burst_delay: Option<Duration>,
+
+    /// Burst rate (requests per burst; ignored if --rate is set)
+    #[arg(long = "burst-rate", default_value = "1", value_parser = parse_positive_usize)]
+    pub burst_rate: PositiveUsize,
+
+    /// Correct latency to avoid coordinated omission (ignored if --rate is not set)
+    #[arg(long = "latency-correction")]
+    pub latency_correction: bool,
 
     /// Override DNS resolution and port for a host (repeatable)
     #[arg(long = "connect-to", value_parser = parse_connect_to)]

@@ -17,6 +17,8 @@ mod ui;
 use app::{run_cleanup, run_local, run_replay};
 use args::{Command, OutputFormat, TesterArgs};
 use clap::{CommandFactory, FromArgMatches};
+use rand::distributions::Distribution;
+use rand::thread_rng;
 use std::error::Error;
 use std::path::Path;
 
@@ -72,6 +74,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         apply_output_aliases(&mut args).map_err(std::io::Error::other)?;
         validate_db_logging(&args).map_err(std::io::Error::other)?;
+
+        if args.dump_urls.is_some() {
+            dump_urls(&args).map_err(std::io::Error::other)?;
+            return Ok(());
+        }
 
         if args.controller_listen.is_some() && args.agent_join.is_some() {
             return Err(std::io::Error::other(
@@ -155,12 +162,9 @@ fn apply_output_aliases(args: &mut TesterArgs) -> Result<(), String> {
         return Err("`--output` cannot be combined with export flags.".to_owned());
     }
 
-    let format = match args.output_format {
-        Some(format) => format,
-        None => infer_output_format(&output).ok_or_else(|| {
-            "Unable to infer output format; use `--output-format json|jsonl|csv`.".to_owned()
-        })?,
-    };
+    let format = args
+        .output_format
+        .unwrap_or_else(|| infer_output_format(&output).unwrap_or(OutputFormat::Text));
 
     match format {
         OutputFormat::Json => {
@@ -173,10 +177,7 @@ fn apply_output_aliases(args: &mut TesterArgs) -> Result<(), String> {
             args.export_csv = Some(output);
         }
         OutputFormat::Text | OutputFormat::Quiet => {
-            return Err(
-                "`--output` only aliases export formats (json/jsonl/csv). Use `--summary` for text output."
-                    .to_owned(),
-            );
+            args.output_format = Some(format);
         }
     }
 
@@ -200,6 +201,32 @@ fn infer_output_format(output: &str) -> Option<OutputFormat> {
 fn validate_db_logging(args: &TesterArgs) -> Result<(), String> {
     if args.db_url.is_some() && args.log_shards.get() > 1 {
         return Err("`--db-url` requires `--log-shards 1`.".to_owned());
+    }
+    Ok(())
+}
+
+fn dump_urls(args: &TesterArgs) -> Result<(), String> {
+    if args.scenario.is_some() {
+        return Err("--dump-urls cannot be used with scenarios.".to_owned());
+    }
+    if !args.rand_regex_url {
+        return Err("--dump-urls requires --rand-regex-url.".to_owned());
+    }
+    let count = args
+        .dump_urls
+        .map(|value| value.get())
+        .ok_or_else(|| "--dump-urls requires a count.".to_owned())?;
+    let pattern = args
+        .url
+        .as_deref()
+        .ok_or_else(|| "Missing URL (set --url or provide in config).".to_owned())?;
+    let max_repeat = u32::try_from(args.max_repeat.get()).unwrap_or(u32::MAX);
+    let regex = rand_regex::Regex::compile(pattern, max_repeat)
+        .map_err(|err| format!("Invalid rand-regex pattern '{}': {}", pattern, err))?;
+    let mut rng = thread_rng();
+    for _ in 0..count {
+        let url: String = regex.sample(&mut rng);
+        println!("{}", url);
     }
     Ok(())
 }

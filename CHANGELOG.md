@@ -13,7 +13,20 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 - Added `--no-tui` as the preferred UI disable flag (`--no-ui` remains as an alias).
 - Added fuzz coverage for usability-oriented CLI flags.
 - Added `--db-url` to persist per-request metrics into sqlite.
-- Added `--output`/`--output-format` as aliases for JSON/JSONL/CSV exports.
+- Added `--output`/`--output-format` support for text/quiet output and JSON/JSONL/CSV exports.
+- Added URL generation flags: `--urls-from-file`, `--rand-regex-url`, `--max-repeat`, `--dump-urls`.
+- Added multipart form uploads via `--form` (`-F`).
+- Added auth and signing flags: `--basic-auth`, `--aws-session`, `--aws-sigv4`.
+- Added TLS flags: `--cacert`, `--cert`, `--key`, `--insecure`.
+- Added HTTP version/proxy flags: `--http-version`, `--proxy-header`, `--proxy-http-version`, `--proxy-http2`.
+- Added redirect/connection flags: `--redirect`, `--disable-keepalive`, `--disable-compression`.
+- Added DNS and socket flags: `--connect-to`, `--host`, `--no-pre-lookup`, `--ipv4`, `--ipv6`, `--unix-socket`.
+- Added UI/stat flags: `--no-color`, `--fps`, `--stats-success-breakdown`.
+- Added deadline handling and time-unit controls: `--wait-ongoing-requests-after-deadline`, `--time-unit`.
+- Added HTTP/2 concurrency and burst controls: `--http2-parallel`, `--burst-delay`, `--burst-rate`, `--latency-correction`.
+- Added `-n` (requests) and `-q` (rate) short flags for parity.
+- Reassigned `-n` from `--no-charts` to `--requests`.
+- Added fuzz targets for rand-regex URL generation and multipart form entries.
 
 ## 0.1.3
 

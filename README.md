@@ -360,27 +360,49 @@ Snapshots default to `~/.strest/snapshots` (or `%USERPROFILE%\\.strest\\snapshot
 
 - `--method` (`-X`) sets the HTTP method.
 - `--url` (`-u`) sets the target URL.
+- `--urls-from-file` reads newline-delimited URLs from the file specified by `--url`.
+- `--rand-regex-url` treats `--url` as a rand_regex pattern and generates URLs per request.
+- `--max-repeat` bounds rand_regex repeat counts (default `4`).
+- `--dump-urls` prints generated URLs and exits (requires `--rand-regex-url`).
 - `--headers` (`-H`) adds request headers (repeatable, `Key: Value`).
 - `--accept` (`-A`) sets the Accept header (shortcut for `-H "Accept: ..."`)
 - `--content-type` (`-T`) sets the Content-Type header (shortcut for `-H "Content-Type: ..."`)
 - `--no-ua` disables the default `User-Agent: strest-loadtest/<version> (+https://github.com/Lythaeon/strest)` header (requires `--authorized`).
 - `--authorized` confirms you have explicit permission to run tests when using `--no-ua`.
+- `--basic-auth` (`-a`) sets Basic auth (username:password) or AWS credentials (access_key:secret_key).
+- `--aws-session` sets the AWS session token (requires `--aws-sigv4`).
+- `--aws-sigv4` enables AWS SigV4 signing (format `aws:amz:region:service`).
 - `--data` (`-d`) sets the request body data (POST/PUT/PATCH).
+- `--form` (`-F`) sets multipart form fields (`name=value` or `name=@path`, repeatable).
 - `--data-file` (`-D`) sets the request body from a file.
 - `--data-lines` (`-Z`) sets the request body from a file line by line.
 - `--duration` (`-t`) sets the test duration in seconds.
-- `--requests` stops after N total requests.
+- `--wait-ongoing-requests-after-deadline` waits for in-flight requests after duration.
+- `--requests` (`-n`) stops after N total requests.
 - `--no-tui` disables the interactive UI and shows a progress bar in the terminal (summary output is printed automatically).
 - `--ui-window-ms` sets the UI chart window length in milliseconds (default: `10000`).
+- `--fps` sets the UI frame rate (default: `16`).
+- `--no-color` disables colored output (`NO_COLOR=1` is supported).
 - `--summary` prints an end-of-run summary.
 - `--status` (`-s`) sets the expected HTTP status code.
 - `--timeout` sets the request timeout (supports `ms`, `s`, `m`, `h`).
 - `--connect-timeout` sets the connection timeout (supports `ms`, `s`, `m`, `h`).
 - `--warmup` ignores the first N seconds for summary/charts/exports (supports `ms`, `s`, `m`, `h`).
+- `--time-unit` sets the text output time unit (`ns`, `us`, `ms`, `s`, `m`, `h`).
 - `--proxy` (`-p`) sets a proxy URL.
+- `--proxy-header` adds proxy headers (repeatable).
+- `--proxy-http-version` forces the proxy HTTP version (`0.9`, `1.0`, `1.1`, `2`).
+- `--proxy-http2` uses HTTP/2 for proxy connections (alias for `--proxy-http-version=2`).
 - `--max-tasks` (`-m`) limits concurrent request tasks (`--concurrency`, `--connections` alias).
 - `--spawn-rate` (`-r`) and `--spawn-interval` (`-i`) control how quickly tasks are spawned.
-- `--rate` sets a global requests-per-second limit.
+- `--rate` (`-q`) sets a global requests-per-second limit.
+- `--burst-delay` adds a delay between bursts (ignored when `--rate` is set).
+- `--burst-rate` sets the burst size (default `1`, ignored when `--rate` is set).
+- `--latency-correction` corrects latency for coordinated omission (ignored when `--rate` is unset).
+- `--redirect` limits redirects (0 disables).
+- `--disable-keepalive` disables connection reuse (HTTP/1 only).
+- `--disable-compression` disables gzip/brotli/deflate.
+- `--http-version` prefers an HTTP version (`0.9`, `1.0`, `1.1`, `2`, `3`).
 - `--controller-listen` starts a distributed controller (e.g., `0.0.0.0:9009`).
 - `--controller-mode` selects controller mode (`auto` or `manual`).
 - `--control-listen` sets the manual control-plane HTTP listen address.
@@ -405,9 +427,19 @@ Snapshots default to `~/.strest/snapshots` (or `%USERPROFILE%\\.strest\\snapshot
 - `--replay-snapshot-out` sets where snapshots are written (dir or file).
 - `--replay-snapshot-format` sets snapshot format (`json`, `jsonl`, `csv`).
 - `--tls-min` and `--tls-max` set the TLS version floor/ceiling.
+- `--cacert` sets a CA bundle for TLS verification.
+- `--cert`/`--key` set the client certificate and key for mutual TLS.
+- `--insecure` disables TLS verification.
 - `--http2` enables HTTP/2 (adaptive).
+- `--http2-parallel` sets parallel HTTP/2 requests per connection.
 - `--http3` enables HTTP/3 (requires `--features http3` and `RUSTFLAGS=--cfg reqwest_unstable`).
 - `--alpn` sets the advertised protocols (repeatable, e.g. `--alpn h2`).
+- `--connect-to` overrides DNS resolution and ports (repeatable, `host:port:target_host:target_port`).
+- `--host` sets an explicit Host header.
+- `--no-pre-lookup` skips DNS pre-lookup.
+- `--ipv4` / `--ipv6` force DNS resolution to IPv4/IPv6.
+- `--unix-socket` connects over a unix socket (HTTP only).
+- `--stats-success-breakdown` adds success vs non-success breakdown in stats.
 - `--tmp-path` sets where temporary run data is written.
 - `--keep-tmp` keeps temporary run data after completion.
 - `--log-shards` controls the number of log writers (default `1`).
@@ -415,7 +447,7 @@ Snapshots default to `~/.strest/snapshots` (or `%USERPROFILE%\\.strest\\snapshot
 - `--export-json` writes summary and metrics to a JSON file (bounded by `--metrics-range` and `--metrics-max`).
 - `--export-jsonl` writes summary and metrics as newline-delimited JSON (JSONL).
 - `--output` (`-o`) writes results to a file (aliases the export formats).
-- `--output-format` selects `json`, `jsonl`, or `csv` (or infer from extension for `--output`).
+- `--output-format` selects `text`, `json`, `jsonl`, `csv`, or `quiet` (or infer from extension for `--output`).
 - `--db-url` writes per-request metrics to a sqlite database (table `metrics`).
 - `--install-service` installs a Linux systemd service for controller/agent.
 - `--uninstall-service` removes a Linux systemd service for controller/agent.

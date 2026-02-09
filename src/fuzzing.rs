@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use clap::{ArgMatches, CommandFactory, FromArgMatches};
+use rand::distributions::Distribution;
+use rand::thread_rng;
 
 use crate::args::{
     PositiveU64, PositiveUsize, Scenario, ScenarioStep, TesterArgs, TlsVersion, parse_header,
@@ -11,7 +13,7 @@ use crate::config::apply::parse_scenario;
 use crate::config::types::{ConfigFile, LoadConfig, ScenarioConfig};
 use crate::config::{apply_config, parse_duration_value};
 use crate::http::workload::render_template;
-use crate::http::workload::{build_step_request, build_template_vars};
+use crate::http::workload::{StepRequestContext, build_step_request, build_template_vars};
 use crate::metrics::MetricsRange;
 use reqwest::Client;
 
@@ -109,6 +111,41 @@ pub fn parse_positive_usize_input(input: &str) -> Result<usize, String> {
     Ok(value.get())
 }
 
+/// Compiles a rand_regex pattern with a max_repeat hint.
+///
+/// # Errors
+///
+/// Returns an error when the regex pattern is invalid.
+pub fn compile_rand_regex_input(pattern: &str, max_repeat: u32) -> Result<(), String> {
+    let regex = rand_regex::Regex::compile(pattern, max_repeat)
+        .map_err(|err| format!("Invalid rand-regex pattern: {}", err))?;
+    let _sample: String = rand::thread_rng().sample(&regex);
+    Ok(())
+}
+
+/// Parses a multipart form entry (name=value or name=@path).
+///
+/// # Errors
+///
+/// Returns an error when the entry is malformed.
+pub fn parse_form_entry_input(input: &str) -> Result<(), String> {
+    let (name, value) = input
+        .split_once('=')
+        .ok_or_else(|| "Expected form entry format name=value.".to_owned())?;
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Form field name must not be empty.".to_owned());
+    }
+    let value = value.trim();
+    if let Some(path) = value.strip_prefix('@') {
+        if path.is_empty() {
+            return Err("Form file path must not be empty.".to_owned());
+        }
+        return Ok(());
+    }
+    Ok(())
+}
+
 /// Parses a load profile from a config block.
 ///
 /// # Errors
@@ -148,7 +185,17 @@ pub fn build_scenario_request_input(
 ) -> Result<(), String> {
     let client = Client::new();
     let vars = build_template_vars(scenario, step, seq, step_index);
-    build_step_request(&client, scenario, step, &vars)?;
+    build_step_request(
+        &client,
+        scenario,
+        step,
+        &vars,
+        &StepRequestContext {
+            connect_to: &[],
+            host_header: None,
+            auth: None,
+        },
+    )?;
     Ok(())
 }
 

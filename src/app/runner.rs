@@ -8,7 +8,7 @@ use tokio::time::Instant;
 use tracing::info;
 
 use crate::{
-    args::TesterArgs,
+    args::{OutputFormat, TesterArgs},
     charts::plot_metrics,
     http,
     metrics::{self, Metrics},
@@ -209,7 +209,10 @@ pub(crate) async fn run_local(
 
     let summary_stats = summary::compute_summary_stats(&summary);
 
-    if summary_enabled && !args.distributed_silent {
+    if summary_enabled
+        && !args.distributed_silent
+        && args.output_format != Some(OutputFormat::Quiet)
+    {
         let extras = summary::SummaryExtras {
             metrics_truncated,
             charts_enabled,
@@ -221,6 +224,32 @@ pub(crate) async fn run_local(
             success_p99,
         };
         summary::print_summary(&summary, &extras, &summary_stats, &args);
+    }
+
+    if let Some(path) = args.output.as_deref()
+        && matches!(
+            args.output_format,
+            Some(OutputFormat::Text | OutputFormat::Quiet)
+        )
+        && let Err(err) = export_text_summary(
+            path,
+            &summary,
+            &summary_stats,
+            &args,
+            &summary::SummaryExtras {
+                metrics_truncated,
+                charts_enabled,
+                p50,
+                p90,
+                p99,
+                success_p50,
+                success_p90,
+                success_p99,
+            },
+        )
+        .await
+    {
+        runtime_errors.push(format!("Failed to write output: {}", err));
     }
 
     if let Some(path) = args.export_csv.as_deref()
@@ -279,4 +308,21 @@ pub(crate) async fn run_local(
         success_latency_sum_ms,
         runtime_errors,
     })
+}
+
+async fn export_text_summary(
+    path: &str,
+    summary: &metrics::MetricsSummary,
+    stats: &summary::SummaryStats,
+    args: &TesterArgs,
+    extras: &summary::SummaryExtras,
+) -> Result<(), std::io::Error> {
+    if matches!(args.output_format, Some(OutputFormat::Quiet)) {
+        tokio::fs::write(path, "").await?;
+        return Ok(());
+    }
+    let lines = summary::summary_lines(summary, extras, stats, args);
+    let content = lines.join("\n");
+    tokio::fs::write(path, content).await?;
+    Ok(())
 }

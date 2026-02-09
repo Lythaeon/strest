@@ -136,3 +136,15 @@ name = "scenario_request"
 path = "fuzz_targets/scenario_request.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "rand_regex_url"
+path = "fuzz_targets/rand_regex_url.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "form_entry"
+path = "fuzz_targets/form_entry.rs"
+test = false
+doc = false

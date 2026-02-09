@@ -23,6 +23,7 @@ fn ui_render_does_not_panic() -> Result<(), String> {
         transport_errors: 0,
         non_expected_status: 0,
         ui_window_ms: 10_000,
+        no_color: false,
         latencies: vec![(0, 10), (500, 20), (900, 15)],
         p50: 15,
         p90: 20,

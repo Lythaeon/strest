@@ -46,6 +46,18 @@ fn parse_args_defaults() -> Result<(), String> {
     if args.url.as_deref() != Some("http://localhost") {
         return Err("Unexpected url".to_owned());
     }
+    if args.urls_from_file {
+        return Err("Expected urls_from_file to be false".to_owned());
+    }
+    if args.rand_regex_url {
+        return Err("Expected rand_regex_url to be false".to_owned());
+    }
+    if args.max_repeat.get() != 4 {
+        return Err(format!("Unexpected max_repeat: {}", args.max_repeat.get()));
+    }
+    if args.dump_urls.is_some() {
+        return Err("Expected dump_urls to be None".to_owned());
+    }
     if args.accept_header.is_some() {
         return Err("Expected accept_header to be None".to_owned());
     }
@@ -107,6 +119,9 @@ fn parse_args_defaults() -> Result<(), String> {
     if args.authorized {
         return Err("Expected authorized to be false".to_owned());
     }
+    if !args.form.is_empty() {
+        return Err("Expected form to be empty".to_owned());
+    }
     if args.data_file.is_some() {
         return Err("Expected data_file to be None".to_owned());
     }
@@ -121,6 +136,9 @@ fn parse_args_defaults() -> Result<(), String> {
     }
     if args.aws_sigv4.is_some() {
         return Err("Expected aws_sigv4 to be None".to_owned());
+    }
+    if args.wait_ongoing_requests_after_deadline {
+        return Err("Expected wait_ongoing_requests_after_deadline to be false".to_owned());
     }
     if args.verbose {
         return Err("Expected verbose to be false".to_owned());
@@ -171,6 +189,12 @@ fn parse_args_defaults() -> Result<(), String> {
     if args.http2 {
         return Err("Expected http2 to be false".to_owned());
     }
+    if args.http2_parallel.get() != 1 {
+        return Err(format!(
+            "Unexpected http2_parallel: {}",
+            args.http2_parallel.get()
+        ));
+    }
     if !args.alpn.is_empty() {
         return Err("Expected alpn to be empty".to_owned());
     }
@@ -182,6 +206,15 @@ fn parse_args_defaults() -> Result<(), String> {
     }
     if args.proxy_http2 {
         return Err("Expected proxy_http2 to be false".to_owned());
+    }
+    if args.output.is_some() {
+        return Err("Expected output to be None".to_owned());
+    }
+    if args.output_format.is_some() {
+        return Err("Expected output_format to be None".to_owned());
+    }
+    if args.time_unit.is_some() {
+        return Err("Expected time_unit to be None".to_owned());
     }
     if args.export_csv.is_some() {
         return Err("Expected export_csv to be None".to_owned());
@@ -212,6 +245,15 @@ fn parse_args_defaults() -> Result<(), String> {
     }
     if args.rate_limit.is_some() {
         return Err("Expected rate_limit to be None".to_owned());
+    }
+    if args.burst_delay.is_some() {
+        return Err("Expected burst_delay to be None".to_owned());
+    }
+    if args.burst_rate.get() != 1 {
+        return Err(format!("Unexpected burst_rate: {}", args.burst_rate.get()));
+    }
+    if args.latency_correction {
+        return Err("Expected latency_correction to be false".to_owned());
     }
     if !args.connect_to.is_empty() {
         return Err("Expected connect_to to be empty".to_owned());
@@ -455,6 +497,171 @@ fn parse_args_requests_limit() -> Result<(), String> {
     };
     if args.requests.map(u64::from) != Some(15) {
         return Err("Unexpected requests".to_owned());
+    }
+    Ok(())
+}
+
+#[test]
+fn parse_args_requests_short_n() -> Result<(), String> {
+    let args_result = TesterArgs::try_parse_from(["strest", "-u", "http://localhost", "-n", "7"]);
+    let args = match args_result {
+        Ok(args) => args,
+        Err(err) => {
+            return Err(format!("Expected Ok, got Err: {}", err));
+        }
+    };
+    if args.requests.map(u64::from) != Some(7) {
+        return Err("Unexpected requests".to_owned());
+    }
+    Ok(())
+}
+
+#[test]
+fn parse_args_rate_short_q() -> Result<(), String> {
+    let args_result = TesterArgs::try_parse_from(["strest", "-u", "http://localhost", "-q", "9"]);
+    let args = match args_result {
+        Ok(args) => args,
+        Err(err) => {
+            return Err(format!("Expected Ok, got Err: {}", err));
+        }
+    };
+    if args.rate_limit.map(u64::from) != Some(9) {
+        return Err("Unexpected rate_limit".to_owned());
+    }
+    Ok(())
+}
+
+#[test]
+fn parse_args_urls_from_file_flag() -> Result<(), String> {
+    let args_result = TesterArgs::try_parse_from(["strest", "-u", "urls.txt", "--urls-from-file"]);
+    let args = match args_result {
+        Ok(args) => args,
+        Err(err) => {
+            return Err(format!("Expected Ok, got Err: {}", err));
+        }
+    };
+    if !args.urls_from_file {
+        return Err("Expected urls_from_file to be true".to_owned());
+    }
+    Ok(())
+}
+
+#[test]
+fn parse_args_rand_regex_flag() -> Result<(), String> {
+    let args_result = TesterArgs::try_parse_from([
+        "strest",
+        "-u",
+        "http://localhost/[a-z]{2}",
+        "--rand-regex-url",
+        "--max-repeat",
+        "6",
+    ]);
+    let args = match args_result {
+        Ok(args) => args,
+        Err(err) => {
+            return Err(format!("Expected Ok, got Err: {}", err));
+        }
+    };
+    if !args.rand_regex_url {
+        return Err("Expected rand_regex_url to be true".to_owned());
+    }
+    if args.max_repeat.get() != 6 {
+        return Err("Unexpected max_repeat".to_owned());
+    }
+    Ok(())
+}
+
+#[test]
+fn parse_args_dump_urls_requires_regex() -> Result<(), String> {
+    let args_result =
+        TesterArgs::try_parse_from(["strest", "-u", "http://localhost", "--dump-urls", "2"]);
+    if args_result.is_ok() {
+        return Err("Expected Err for dump-urls without rand-regex-url".to_owned());
+    }
+    Ok(())
+}
+
+#[test]
+fn parse_args_form_fields() -> Result<(), String> {
+    let args_result = TesterArgs::try_parse_from([
+        "strest",
+        "-u",
+        "http://localhost",
+        "--form",
+        "name=demo",
+        "--form",
+        "file=@payload.txt",
+    ]);
+    let args = match args_result {
+        Ok(args) => args,
+        Err(err) => {
+            return Err(format!("Expected Ok, got Err: {}", err));
+        }
+    };
+    if args.form.len() != 2 {
+        return Err(format!("Unexpected form length: {}", args.form.len()));
+    }
+    Ok(())
+}
+
+#[test]
+fn parse_args_time_unit() -> Result<(), String> {
+    let args_result =
+        TesterArgs::try_parse_from(["strest", "-u", "http://localhost", "--time-unit", "ms"]);
+    let args = match args_result {
+        Ok(args) => args,
+        Err(err) => {
+            return Err(format!("Expected Ok, got Err: {}", err));
+        }
+    };
+    if args.time_unit != Some(TimeUnit::Ms) {
+        return Err("Unexpected time_unit".to_owned());
+    }
+    Ok(())
+}
+
+#[test]
+fn parse_args_http2_parallel() -> Result<(), String> {
+    let args_result =
+        TesterArgs::try_parse_from(["strest", "-u", "http://localhost", "--http2-parallel", "4"]);
+    let args = match args_result {
+        Ok(args) => args,
+        Err(err) => {
+            return Err(format!("Expected Ok, got Err: {}", err));
+        }
+    };
+    if args.http2_parallel.get() != 4 {
+        return Err("Unexpected http2_parallel".to_owned());
+    }
+    Ok(())
+}
+
+#[test]
+fn parse_args_burst_and_latency_flags() -> Result<(), String> {
+    let args_result = TesterArgs::try_parse_from([
+        "strest",
+        "-u",
+        "http://localhost",
+        "--burst-delay",
+        "10s",
+        "--burst-rate",
+        "3",
+        "--latency-correction",
+    ]);
+    let args = match args_result {
+        Ok(args) => args,
+        Err(err) => {
+            return Err(format!("Expected Ok, got Err: {}", err));
+        }
+    };
+    if args.burst_delay != Some(Duration::from_secs(10)) {
+        return Err("Unexpected burst_delay".to_owned());
+    }
+    if args.burst_rate.get() != 3 {
+        return Err("Unexpected burst_rate".to_owned());
+    }
+    if !args.latency_correction {
+        return Err("Expected latency_correction to be true".to_owned());
     }
     Ok(())
 }

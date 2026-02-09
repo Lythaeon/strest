@@ -28,6 +28,13 @@ pub fn apply_config(
     if config.data_file.is_some() && config.data_lines.is_some() {
         return Err("Config cannot set both 'data_file' and 'data_lines'.".to_owned());
     }
+    if config.form.is_some()
+        && (config.data.is_some() || config.data_file.is_some() || config.data_lines.is_some())
+    {
+        return Err(
+            "Config cannot set both 'form' and 'data'/'data_file'/'data_lines'.".to_owned(),
+        );
+    }
     if config.load.is_some() && (config.rate.is_some() || config.rpm.is_some()) {
         return Err("Config cannot set both 'load' and top-level 'rate'/'rpm' options.".to_owned());
     }
@@ -41,6 +48,30 @@ pub fn apply_config(
         && let Some(url) = config.url.clone()
     {
         args.url = Some(url);
+    }
+
+    if !is_cli(matches, "urls_from_file")
+        && let Some(value) = config.urls_from_file
+    {
+        args.urls_from_file = value;
+    }
+
+    if !is_cli(matches, "rand_regex_url")
+        && let Some(value) = config.rand_regex_url
+    {
+        args.rand_regex_url = value;
+    }
+
+    if !is_cli(matches, "max_repeat")
+        && let Some(value) = config.max_repeat
+    {
+        args.max_repeat = ensure_positive_usize(value, "max_repeat")?;
+    }
+
+    if !is_cli(matches, "dump_urls")
+        && let Some(value) = config.dump_urls
+    {
+        args.dump_urls = Some(ensure_positive_usize(value, "dump_urls")?);
     }
 
     if !is_cli(matches, "headers")
@@ -69,6 +100,12 @@ pub fn apply_config(
         && let Some(data) = config.data.clone()
     {
         args.data = data;
+    }
+
+    if !is_cli(matches, "form")
+        && let Some(form) = config.form.clone()
+    {
+        args.form = form;
     }
 
     if !is_cli(matches, "basic_auth")
@@ -105,6 +142,12 @@ pub fn apply_config(
         && let Some(duration) = config.duration
     {
         args.target_duration = ensure_positive_u64(duration, "duration")?;
+    }
+
+    if !is_cli(matches, "wait_ongoing_requests_after_deadline")
+        && let Some(value) = config.wait_ongoing_requests_after_deadline
+    {
+        args.wait_ongoing_requests_after_deadline = value;
     }
 
     if !is_cli(matches, "requests")
@@ -203,6 +246,12 @@ pub fn apply_config(
         args.output_format = Some(format);
     }
 
+    if !is_cli(matches, "time_unit")
+        && let Some(unit) = config.time_unit
+    {
+        args.time_unit = Some(unit);
+    }
+
     if !is_cli(matches, "export_csv")
         && let Some(path) = config.export_csv.clone()
     {
@@ -293,6 +342,12 @@ pub fn apply_config(
         args.http2 = http2;
     }
 
+    if !is_cli(matches, "http2_parallel")
+        && let Some(value) = config.http2_parallel
+    {
+        args.http2_parallel = ensure_positive_usize(value, "http2_parallel")?;
+    }
+
     if !is_cli(matches, "http_version")
         && let Some(version) = config.http_version
     {
@@ -365,6 +420,24 @@ pub fn apply_config(
         } else if config.rate.is_some() || config.rpm.is_some() {
             args.load_profile = Some(parse_simple_load(config.rate, config.rpm)?);
         }
+    }
+
+    if !is_cli(matches, "burst_delay")
+        && let Some(delay) = config.burst_delay.as_ref()
+    {
+        args.burst_delay = Some(delay.to_duration()?);
+    }
+
+    if !is_cli(matches, "burst_rate")
+        && let Some(rate) = config.burst_rate
+    {
+        args.burst_rate = ensure_positive_usize(rate, "burst_rate")?;
+    }
+
+    if !is_cli(matches, "latency_correction")
+        && let Some(value) = config.latency_correction
+    {
+        args.latency_correction = value;
     }
 
     if !is_cli(matches, "connect_to")

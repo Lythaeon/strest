@@ -277,7 +277,7 @@ fn render_once(
         success_p90,
         success_p99,
     };
-    for line in summary_lines(&summary_output.summary, &extras, &stats, args) {
+    for line in summary::summary_lines(&summary_output.summary, &extras, &stats, args) {
         println!("{line}");
     }
     Ok(())
@@ -930,78 +930,6 @@ async fn read_jsonl_records(path: &Path) -> Result<Vec<MetricRecord>, String> {
 fn parse_bool(value: &str) -> bool {
     let trimmed = value.trim();
     trimmed == "1" || trimmed.eq_ignore_ascii_case("true")
-}
-
-fn summary_lines(
-    summary: &MetricsSummary,
-    extras: &summary::SummaryExtras,
-    stats: &summary::SummaryStats,
-    args: &TesterArgs,
-) -> Vec<String> {
-    let mut lines = Vec::new();
-    let total = summary.total_requests;
-    let success = summary.successful_requests;
-    let errors = summary.error_requests;
-
-    lines.push(format!("Duration: {}s", summary.duration.as_secs()));
-    lines.push(format!("Total Requests: {}", total));
-    lines.push(format!(
-        "Successful: {} ({}.{:02}%)",
-        success,
-        stats.success_rate_x100 / 100,
-        stats.success_rate_x100 % 100
-    ));
-    lines.push(format!("Errors: {}", errors));
-    lines.push(format!("Timeouts: {}", summary.timeout_requests));
-    lines.push(format!("Transport Errors: {}", summary.transport_errors));
-    lines.push(format!(
-        "Non-Expected Status: {}",
-        summary.non_expected_status
-    ));
-    lines.push(format!("Avg Latency (all): {}ms", summary.avg_latency_ms));
-    lines.push(format!(
-        "Avg Latency (ok): {}ms",
-        summary.success_avg_latency_ms
-    ));
-    lines.push(format!(
-        "Min/Max Latency (all): {}ms / {}ms",
-        summary.min_latency_ms, summary.max_latency_ms
-    ));
-    lines.push(format!(
-        "Min/Max Latency (ok): {}ms / {}ms",
-        summary.success_min_latency_ms, summary.success_max_latency_ms
-    ));
-    lines.push(format!(
-        "P50/P90/P99 Latency (all): {}ms / {}ms / {}ms",
-        extras.p50, extras.p90, extras.p99
-    ));
-    lines.push(format!(
-        "P50/P90/P99 Latency (ok): {}ms / {}ms / {}ms",
-        extras.success_p50, extras.success_p90, extras.success_p99
-    ));
-    lines.push(format!(
-        "Avg RPS: {}.{:02}",
-        stats.avg_rps_x100 / 100,
-        stats.avg_rps_x100 % 100
-    ));
-    lines.push(format!(
-        "Avg RPM: {}.{:02}",
-        stats.avg_rpm_x100 / 100,
-        stats.avg_rpm_x100 % 100
-    ));
-
-    if !extras.charts_enabled {
-        lines.push("Charts: disabled".to_owned());
-    } else if extras.metrics_truncated {
-        lines.push(format!(
-            "Charts: enabled (truncated at {} metrics).",
-            args.metrics_max.get()
-        ));
-    } else {
-        lines.push("Charts: enabled".to_owned());
-    }
-
-    lines
 }
 
 fn build_ui_data(

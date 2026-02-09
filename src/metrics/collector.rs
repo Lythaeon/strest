@@ -109,8 +109,8 @@ pub fn setup_metrics_collector(
         let start_time = run_start;
         let mut shutdown_rx_inner = shutdown_tx_main.subscribe();
         let ui_tx_clone = ui_tx.clone();
-        let interval_ms = (1000 / ui_fps).max(1);
-        let mut ui_interval = tokio::time::interval(Duration::from_millis(interval_ms.into()));
+        let interval_ms = 1000u64.checked_div(u64::from(ui_fps)).unwrap_or(1).max(1);
+        let mut ui_interval = tokio::time::interval(Duration::from_millis(interval_ms));
         ui_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut sink_interval = tokio::time::interval(sink_interval_duration);
         sink_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);

@@ -5,6 +5,9 @@ use std::sync::{
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rand::distributions::Distribution;
+use rand::thread_rng;
+use rand_regex::Regex as RandRegex;
 use reqwest::{Client, Request, RequestBuilder, Url};
 use tokio::sync::Semaphore;
 use tokio::{
@@ -99,11 +102,48 @@ pub(super) enum BodySource {
 }
 
 #[derive(Clone)]
+pub(super) enum UrlSource {
+    Static(String),
+    List(Arc<Vec<String>>, Arc<AtomicUsize>),
+    Regex(Arc<RandRegex>),
+}
+
+impl UrlSource {
+    pub(super) fn next_url(&self) -> Result<String, String> {
+        match self {
+            UrlSource::Static(url) => Ok(url.clone()),
+            UrlSource::List(list, cursor) => {
+                if list.is_empty() {
+                    return Err("URL list was empty.".to_owned());
+                }
+                let idx = cursor.fetch_add(1, Ordering::Relaxed);
+                let len = list.len();
+                let selected = idx.rem_euclid(len);
+                list.get(selected)
+                    .cloned()
+                    .ok_or_else(|| "URL list was empty.".to_owned())
+            }
+            UrlSource::Regex(regex) => {
+                let mut rng = thread_rng();
+                Ok(regex.sample(&mut rng))
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(super) enum FormFieldSpec {
+    Text { name: String, value: String },
+    File { name: String, path: String },
+}
+
+#[derive(Clone)]
 pub(super) struct SingleRequestSpec {
     pub(super) method: HttpMethod,
-    pub(super) url: String,
+    pub(super) url: UrlSource,
     pub(super) headers: Vec<(String, String)>,
     pub(super) body: BodySource,
+    pub(super) form: Option<Arc<Vec<FormFieldSpec>>>,
     pub(super) connect_to: Arc<Vec<ConnectToMapping>>,
     pub(super) auth: Option<AuthConfig>,
 }
@@ -112,6 +152,8 @@ pub(super) struct WorkerContext<'ctx> {
     pub(super) shutdown_tx: &'ctx broadcast::Sender<u16>,
     pub(super) rate_limiter: Option<&'ctx Arc<Semaphore>>,
     pub(super) request_limiter: Option<&'ctx Arc<RequestLimiter>>,
+    pub(super) wait_ongoing: bool,
+    pub(super) latency_correction: bool,
     pub(super) client: &'ctx Client,
     pub(super) log_sink: &'ctx Option<Arc<LogSink>>,
     pub(super) metrics_tx: &'ctx mpsc::Sender<Metrics>,
@@ -146,9 +188,11 @@ pub(super) async fn preflight_request(client: &Client, workload: &Workload) -> R
                 scenario,
                 step,
                 &vars,
-                connect_to,
-                host_header.as_deref(),
-                auth.as_ref(),
+                &StepRequestContext {
+                    connect_to,
+                    host_header: host_header.as_deref(),
+                    auth: auth.as_ref(),
+                },
             )?;
             execute_request(client, request, true)
                 .await
@@ -163,11 +207,19 @@ pub(super) async fn run_single_iteration(
     context: &WorkerContext<'_>,
     request_template: &Arc<Request>,
 ) -> bool {
+    if context.wait_ongoing && shutdown_rx.try_recv().is_ok() {
+        return true;
+    }
     if let Some(request_limiter) = context.request_limiter
         && !request_limiter.try_reserve(context.shutdown_tx)
     {
         return true;
     }
+    let mut latency_start = if context.latency_correction {
+        Some(Instant::now())
+    } else {
+        None
+    };
     if let Some(rate_limiter) = context.rate_limiter {
         let rate_permit_result = tokio::select! {
             _ = shutdown_rx.recv() => return true,
@@ -176,33 +228,40 @@ pub(super) async fn run_single_iteration(
         if rate_permit_result.is_err() {
             return true;
         }
+        if !context.latency_correction {
+            latency_start = None;
+        }
     }
 
-    let should_stop = tokio::select! {
-        _ = shutdown_rx.recv() => true,
-        result = async {
-            let start = Instant::now();
-            let (status, timed_out, transport_error) = match request_template.try_clone() {
-                Some(req_clone) => execute_request_status(context.client, req_clone).await,
-                None => {
-                    error!("Failed to clone request template.");
-                    (500, false, true)
-                }
-            };
-            let metric = Metrics::new(start, status, timed_out, transport_error);
-            if let Some(log_sink) = context.log_sink
-                && !log_sink.send(metric)
-            {
-                return true;
+    let run_request = async {
+        let start = latency_start.unwrap_or_else(Instant::now);
+        let (status, timed_out, transport_error) = match request_template.try_clone() {
+            Some(req_clone) => execute_request_status(context.client, req_clone).await,
+            None => {
+                error!("Failed to clone request template.");
+                (500, false, true)
             }
-            if context.metrics_tx.try_send(metric).is_err() {
-                // Ignore UI backpressure; summary and charts use log pipeline.
-            }
-            false
-        } => result,
+        };
+        let metric = Metrics::new(start, status, timed_out, transport_error);
+        if let Some(log_sink) = context.log_sink
+            && !log_sink.send(metric)
+        {
+            return true;
+        }
+        if context.metrics_tx.try_send(metric).is_err() {
+            // Ignore UI backpressure; summary and charts use log pipeline.
+        }
+        false
     };
 
-    should_stop
+    if context.wait_ongoing {
+        run_request.await
+    } else {
+        tokio::select! {
+            _ = shutdown_rx.recv() => true,
+            result = run_request => result,
+        }
+    }
 }
 
 pub(super) async fn run_single_dynamic_iteration(
@@ -210,11 +269,19 @@ pub(super) async fn run_single_dynamic_iteration(
     context: &WorkerContext<'_>,
     spec: &Arc<SingleRequestSpec>,
 ) -> bool {
+    if context.wait_ongoing && shutdown_rx.try_recv().is_ok() {
+        return true;
+    }
     if let Some(request_limiter) = context.request_limiter
         && !request_limiter.try_reserve(context.shutdown_tx)
     {
         return true;
     }
+    let mut latency_start = if context.latency_correction {
+        Some(Instant::now())
+    } else {
+        None
+    };
     if let Some(rate_limiter) = context.rate_limiter {
         let rate_permit_result = tokio::select! {
             _ = shutdown_rx.recv() => return true,
@@ -223,35 +290,42 @@ pub(super) async fn run_single_dynamic_iteration(
         if rate_permit_result.is_err() {
             return true;
         }
+        if !context.latency_correction {
+            latency_start = None;
+        }
     }
 
-    let should_stop = tokio::select! {
-        _ = shutdown_rx.recv() => true,
-        result = async {
-            let request = match build_request_from_spec(context.client, spec) {
-                Ok(request) => request,
-                Err(err) => {
-                    error!("Failed to build request: {}", err);
-                    return true;
-                }
-            };
-            let start = Instant::now();
-            let (status, timed_out, transport_error) =
-                execute_request_status(context.client, request).await;
-            let metric = Metrics::new(start, status, timed_out, transport_error);
-            if let Some(log_sink) = context.log_sink
-                && !log_sink.send(metric)
-            {
+    let run_request = async {
+        let request = match build_request_from_spec(context.client, spec) {
+            Ok(request) => request,
+            Err(err) => {
+                error!("Failed to build request: {}", err);
                 return true;
             }
-            if context.metrics_tx.try_send(metric).is_err() {
-                // Ignore UI backpressure; summary and charts use log pipeline.
-            }
-            false
-        } => result,
+        };
+        let start = latency_start.unwrap_or_else(Instant::now);
+        let (status, timed_out, transport_error) =
+            execute_request_status(context.client, request).await;
+        let metric = Metrics::new(start, status, timed_out, transport_error);
+        if let Some(log_sink) = context.log_sink
+            && !log_sink.send(metric)
+        {
+            return true;
+        }
+        if context.metrics_tx.try_send(metric).is_err() {
+            // Ignore UI backpressure; summary and charts use log pipeline.
+        }
+        false
     };
 
-    should_stop
+    if context.wait_ongoing {
+        run_request.await
+    } else {
+        tokio::select! {
+            _ = shutdown_rx.recv() => true,
+            result = run_request => result,
+        }
+    }
 }
 
 pub(super) struct ScenarioRunContext<'ctx> {
@@ -272,11 +346,19 @@ pub(super) async fn run_scenario_iteration(
     context: &mut ScenarioRunContext<'_>,
 ) -> bool {
     for (step_index, step) in context.scenario.steps.iter().enumerate() {
+        if worker.wait_ongoing && shutdown_rx.try_recv().is_ok() {
+            return true;
+        }
         if let Some(request_limiter) = worker.request_limiter
             && !request_limiter.try_reserve(worker.shutdown_tx)
         {
             return true;
         }
+        let mut latency_start = if worker.latency_correction {
+            Some(Instant::now())
+        } else {
+            None
+        };
         if let Some(rate_limiter) = worker.rate_limiter {
             let rate_permit_result = tokio::select! {
                 _ = shutdown_rx.recv() => return true,
@@ -284,6 +366,9 @@ pub(super) async fn run_scenario_iteration(
             };
             if rate_permit_result.is_err() {
                 return true;
+            }
+            if !worker.latency_correction {
+                latency_start = None;
             }
         }
 
@@ -293,9 +378,11 @@ pub(super) async fn run_scenario_iteration(
             context.scenario,
             step,
             &vars,
-            context.connect_to,
-            context.host_header,
-            context.auth,
+            &StepRequestContext {
+                connect_to: context.connect_to,
+                host_header: context.host_header,
+                auth: context.auth,
+            },
         ) {
             Ok(request) => request,
             Err(err) => {
@@ -305,16 +392,24 @@ pub(super) async fn run_scenario_iteration(
         };
 
         let expected = step.assert_status.unwrap_or(context.expected_status_code);
-        let start = Instant::now();
-        let outcome = tokio::select! {
-            _ = shutdown_rx.recv() => return true,
-            result = execute_request_with_asserts(
+        let start = latency_start.unwrap_or_else(Instant::now);
+        let run_request = async {
+            execute_request_with_asserts(
                 context.client,
                 request,
                 context.expected_status_code,
                 step.assert_status,
                 step.assert_body_contains.as_deref(),
-            ) => result,
+            )
+            .await
+        };
+        let outcome = if worker.wait_ongoing {
+            run_request.await
+        } else {
+            tokio::select! {
+                _ = shutdown_rx.recv() => return true,
+                result = run_request => result,
+            }
         };
 
         if !outcome.success {
@@ -430,8 +525,8 @@ async fn execute_request_with_asserts(
 }
 
 fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> Result<Request, String> {
-    let url =
-        Url::parse(&spec.url).map_err(|err| format!("Invalid URL '{}': {}", spec.url, err))?;
+    let url_raw = spec.url.next_url()?;
+    let url = Url::parse(&url_raw).map_err(|err| format!("Invalid URL '{}': {}", url_raw, err))?;
     let (url, host_override) = apply_connect_to(&url, &spec.connect_to)?;
 
     let mut request_builder = match spec.method {
@@ -445,10 +540,10 @@ fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> Result<
     for (key, value) in &spec.headers {
         request_builder = request_builder.header(key, value);
     }
-    if let Some(host) = host_override.as_ref() {
-        if !has_host_header(&spec.headers) {
-            request_builder = request_builder.header("Host", host);
-        }
+    if let Some(host) = host_override.as_ref()
+        && !has_host_header(&spec.headers)
+    {
+        request_builder = request_builder.header("Host", host);
     }
 
     let body = match &spec.body {
@@ -469,14 +564,14 @@ fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> Result<
 
     if let Some(auth) = spec.auth.as_ref() {
         let mut headers_for_sign = spec.headers.clone();
-        if let Some(host) = host_override.as_ref() {
-            if !has_host_header(&headers_for_sign) {
-                headers_for_sign.push(("Host".to_owned(), host.clone()));
-            }
+        if let Some(host) = host_override.as_ref()
+            && !has_host_header(&headers_for_sign)
+        {
+            headers_for_sign.push(("Host".to_owned(), host.clone()));
         }
         request_builder = apply_auth_headers(
             request_builder,
-            &spec.method,
+            spec.method,
             &url,
             &headers_for_sign,
             &body,
@@ -484,10 +579,46 @@ fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> Result<
         )?;
     }
 
+    if let Some(form) = spec.form.as_ref() {
+        let multipart = build_multipart(form)?;
+        request_builder = request_builder.multipart(multipart);
+    } else {
+        request_builder = request_builder.body(body);
+    }
+
     request_builder
-        .body(body)
         .build()
         .map_err(|err| format!("Failed to build request: {}", err))
+}
+
+fn build_multipart(fields: &[FormFieldSpec]) -> Result<reqwest::multipart::Form, String> {
+    let mut form = reqwest::multipart::Form::new();
+    for field in fields {
+        match field {
+            FormFieldSpec::Text { name, value } => {
+                form = form.text(name.clone(), value.clone());
+            }
+            FormFieldSpec::File { name, path } => {
+                let bytes = std::fs::read(path)
+                    .map_err(|err| format!("Failed to read form file '{}': {}", path, err))?;
+                let part = reqwest::multipart::Part::bytes(bytes).file_name(
+                    std::path::Path::new(path)
+                        .file_name()
+                        .and_then(|value| value.to_str())
+                        .unwrap_or("file")
+                        .to_owned(),
+                );
+                form = form.part(name.clone(), part);
+            }
+        }
+    }
+    Ok(form)
+}
+
+pub(crate) struct StepRequestContext<'ctx> {
+    pub connect_to: &'ctx [ConnectToMapping],
+    pub host_header: Option<&'ctx str>,
+    pub auth: Option<&'ctx AuthConfig>,
 }
 
 pub(crate) fn build_step_request(
@@ -495,12 +626,10 @@ pub(crate) fn build_step_request(
     scenario: &Scenario,
     step: &ScenarioStep,
     vars: &BTreeMap<String, String>,
-    connect_to: &[ConnectToMapping],
-    host_header: Option<&str>,
-    auth: Option<&AuthConfig>,
+    context: &StepRequestContext<'_>,
 ) -> Result<Request, String> {
     let url = resolve_step_url(scenario, step, vars)?;
-    let (url, host_override) = apply_connect_to(&url, connect_to)?;
+    let (url, host_override) = apply_connect_to(&url, context.connect_to)?;
     let mut request_builder = match step.method {
         HttpMethod::Get => client.get(url.clone()),
         HttpMethod::Post => client.post(url.clone()),
@@ -517,7 +646,7 @@ pub(crate) fn build_step_request(
         rendered_headers.push((key_rendered, value_rendered));
     }
     if !has_host_header(&rendered_headers) {
-        if let Some(host) = host_header {
+        if let Some(host) = context.host_header {
             request_builder = request_builder.header("Host", host);
         } else if let Some(host) = host_override.as_ref() {
             request_builder = request_builder.header("Host", host);
@@ -529,10 +658,10 @@ pub(crate) fn build_step_request(
         .as_ref()
         .map(|body| render_template(body, vars))
         .unwrap_or_default();
-    if let Some(auth) = auth {
+    if let Some(auth) = context.auth {
         let mut headers_for_sign = rendered_headers.clone();
         if !has_host_header(&headers_for_sign) {
-            if let Some(host) = host_header {
+            if let Some(host) = context.host_header {
                 headers_for_sign.push(("Host".to_owned(), host.to_owned()));
             } else if let Some(host) = host_override.as_ref() {
                 headers_for_sign.push(("Host".to_owned(), host.clone()));
@@ -540,7 +669,7 @@ pub(crate) fn build_step_request(
         }
         request_builder = apply_auth_headers(
             request_builder,
-            &step.method,
+            step.method,
             &url,
             &headers_for_sign,
             &body_rendered,
@@ -549,8 +678,8 @@ pub(crate) fn build_step_request(
     }
 
     if let Some(body) = step.body.as_ref() {
-        let body_rendered = render_template(body, vars);
-        request_builder = request_builder.body(body_rendered);
+        let body_rendered_step = render_template(body, vars);
+        request_builder = request_builder.body(body_rendered_step);
     }
 
     request_builder
@@ -574,7 +703,7 @@ fn apply_connect_to(
                 .map_err(|err| format!("Invalid connect-to host: {}", err))?;
             rewritten
                 .set_port(Some(mapping.target_port))
-                .map_err(|_| "Invalid connect-to port.".to_owned())?;
+                .map_err(|()| "Invalid connect-to port.".to_owned())?;
             let host_header = if port == 80 || port == 443 {
                 host.to_owned()
             } else {
@@ -592,7 +721,7 @@ fn has_host_header(headers: &[(String, String)]) -> bool {
         .any(|(key, _)| key.eq_ignore_ascii_case("host"))
 }
 
-fn http_method_str(method: &HttpMethod) -> &'static str {
+const fn http_method_str(method: HttpMethod) -> &'static str {
     match method {
         HttpMethod::Get => "GET",
         HttpMethod::Post => "POST",
@@ -604,7 +733,7 @@ fn http_method_str(method: &HttpMethod) -> &'static str {
 
 fn apply_auth_headers(
     mut builder: RequestBuilder,
-    method: &HttpMethod,
+    method: HttpMethod,
     url: &Url,
     headers: &[(String, String)],
     body: &str,

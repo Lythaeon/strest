@@ -32,16 +32,26 @@ pub(crate) fn parse_connect_to(s: &str) -> Result<ConnectToMapping, String> {
             s
         ));
     }
-    let source_host = parts[0].trim();
-    let source_port: u16 = parts[1]
+    let source_host = parts
+        .first()
+        .ok_or_else(|| format!("Invalid connect-to '{}'.", s))?
+        .trim();
+    let source_port: u16 = parts
+        .get(1)
+        .ok_or_else(|| format!("Invalid connect-to '{}'.", s))?
         .trim()
         .parse()
-        .map_err(|_| format!("Invalid source port in '{}'.", s))?;
-    let target_host = parts[2].trim();
-    let target_port: u16 = parts[3]
+        .map_err(|err| format!("Invalid source port in '{}': {}", s, err))?;
+    let target_host = parts
+        .get(2)
+        .ok_or_else(|| format!("Invalid connect-to '{}'.", s))?
+        .trim();
+    let target_port: u16 = parts
+        .get(3)
+        .ok_or_else(|| format!("Invalid connect-to '{}'.", s))?
         .trim()
         .parse()
-        .map_err(|_| format!("Invalid target port in '{}'.", s))?;
+        .map_err(|err| format!("Invalid target port in '{}': {}", s, err))?;
     if source_host.is_empty() || target_host.is_empty() {
         return Err(format!(
             "Invalid connect-to '{}'. Host must not be empty.",
