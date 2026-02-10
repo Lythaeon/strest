@@ -1055,7 +1055,7 @@ If you'd like to contribute, please start with `CONTRIBUTING.md` for the exact w
 I'm a solo maintainer, so response times may vary. I review contributions as time allows and will respond when I can.
 
 
-This project is licensed under the GNU AGPL v3.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ## Motivation 
 

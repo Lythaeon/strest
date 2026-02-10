@@ -168,7 +168,7 @@ impl UiActions for Ui {
                     Span::from("Snapshot: "),
                     Span::styled(
                         format!("start {} end {}", snapshot_start, snapshot_end),
-                        Style::default().fg(Color::LightBlue),
+                        style_color(data.no_color, Color::LightBlue),
                     ),
                 ]));
                 run_lines.push(text::Line::from(Span::styled(
@@ -186,7 +186,7 @@ impl UiActions for Ui {
                     Span::from("Requests: "),
                     Span::styled(
                         format!("{:>6}", total_requests),
-                        Style::default().fg(Color::LightBlue),
+                        style_color(data.no_color, Color::LightBlue),
                     ),
                     Span::from("   OK: "),
                     Span::styled(
