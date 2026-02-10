@@ -5,6 +5,8 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+- Changed project license to Apache-2.0.
+
 ## 0.1.4
 
 Released: 2026-02-09
