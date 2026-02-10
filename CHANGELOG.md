@@ -5,7 +5,12 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+## 0.1.5
+
+Released: 2026-02-10
+
 - Changed project license to Apache-2.0.
+- Honored `--no-color` across TUI, progress bar, and logging output.
 
 ## 0.1.4
 
