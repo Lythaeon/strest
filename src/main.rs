@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut args = TesterArgs::from_arg_matches(&matches)
         .map_err(|err| std::io::Error::other(err.to_string()))?;
 
-    logger::init_logging(args.verbose);
+    logger::init_logging(args.verbose, args.no_color);
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

@@ -20,6 +20,7 @@ pub(crate) fn setup_progress_indicator(
     let target_secs = args.target_duration.get();
     let goal = usize::try_from(target_secs.max(1)).unwrap_or(1);
     let style = ProgressStyle::new(30);
+    let no_color = args.no_color;
 
     tokio::spawn(async move {
         if !std::io::stderr().is_terminal() {
@@ -32,7 +33,7 @@ pub(crate) fn setup_progress_indicator(
             tokio::select! {
                 _ = shutdown_rx.recv() => {
                     let elapsed_ms = u128::from(target_secs).saturating_mul(1000);
-                    if render_progress_line(&style, goal, elapsed_ms).is_err() {
+                    if render_progress_line(&style, goal, elapsed_ms, no_color).is_err() {
                         break;
                     }
                     if finish_progress_line().is_err() {
@@ -42,7 +43,7 @@ pub(crate) fn setup_progress_indicator(
                 }
                 _ = ticker.tick() => {
                     let elapsed_ms = run_start.elapsed().as_millis();
-                    if render_progress_line(&style, goal, elapsed_ms).is_err() {
+                    if render_progress_line(&style, goal, elapsed_ms, no_color).is_err() {
                         break;
                     }
                 }
@@ -55,16 +56,19 @@ fn render_progress_line(
     style: &ProgressStyle,
     goal: usize,
     elapsed_ms: u128,
+    no_color: bool,
 ) -> Result<(), std::io::Error> {
     let elapsed_secs = elapsed_ms.checked_div(1000).unwrap_or(0);
     let current = usize::try_from(elapsed_secs).unwrap_or(goal);
     let current = current.min(goal);
-    let line = build_progress_line(style, current, goal, elapsed_ms);
+    let line = build_progress_line(style, current, goal, elapsed_ms, no_color);
 
     let mut out = std::io::stderr();
     queue!(out, cursor::MoveToColumn(0), Clear(ClearType::CurrentLine))?;
     for segment in line {
-        if let Some(color) = segment.color {
+        if no_color {
+            queue!(out, Print(&segment.text))?;
+        } else if let Some(color) = segment.color {
             queue!(
                 out,
                 SetForegroundColor(color),
@@ -91,6 +95,7 @@ fn build_progress_line(
     current: usize,
     goal: usize,
     elapsed_ms: u128,
+    no_color: bool,
 ) -> Vec<ProgressSegment> {
     let size = style.size.max(1);
     let goal = goal.max(1);
@@ -128,11 +133,19 @@ fn build_progress_line(
         style.end
     );
 
-    vec![
-        ProgressSegment::plain(progress_bar),
-        ProgressSegment::colored(percent_text, Color::Cyan),
-        ProgressSegment::colored(time_text, Color::Yellow),
-    ]
+    if no_color {
+        vec![
+            ProgressSegment::plain(progress_bar),
+            ProgressSegment::plain(percent_text),
+            ProgressSegment::plain(time_text),
+        ]
+    } else {
+        vec![
+            ProgressSegment::plain(progress_bar),
+            ProgressSegment::colored(percent_text, Color::Cyan),
+            ProgressSegment::colored(time_text, Color::Yellow),
+        ]
+    }
 }
 
 struct ProgressStyle {
