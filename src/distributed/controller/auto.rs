@@ -173,6 +173,7 @@ pub(super) async fn run_controller_auto(args: &TesterArgs) -> AppResult<()> {
     let mut pending_agents: HashSet<String> =
         agents.iter().map(|agent| agent.agent_id.clone()).collect();
     let mut ui_latency_window: VecDeque<(u64, u64)> = VecDeque::new();
+    let mut ui_rps_window: VecDeque<(u64, u64)> = VecDeque::new();
     let charts_enabled = !args.no_charts && args.distributed_stream_summaries;
     let mut aggregated_samples: Vec<AggregatedMetricSample> = Vec::new();
     let sink_updates_enabled = args.distributed_stream_summaries && args.sinks.is_some();
@@ -335,7 +336,13 @@ pub(super) async fn run_controller_auto(args: &TesterArgs) -> AppResult<()> {
                     record_aggregated_sample(&mut aggregated_samples, &agent_states);
                 }
                 if let Some(ui_tx) = ui_tx.as_ref() {
-                    update_ui(ui_tx, args, &agent_states, &mut ui_latency_window);
+                    update_ui(
+                        ui_tx,
+                        args,
+                        &agent_states,
+                        &mut ui_latency_window,
+                        &mut ui_rps_window,
+                    );
                 }
                 if pending_agents.is_empty() {
                     break;

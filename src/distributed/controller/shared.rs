@@ -204,6 +204,7 @@ pub(super) fn update_ui(
     args: &TesterArgs,
     agent_states: &HashMap<String, AgentSnapshot>,
     latency_window: &mut VecDeque<(u64, u64)>,
+    rps_window: &mut VecDeque<(u64, u64)>,
 ) {
     let Ok((summary, merged_hist, success_hist)) = aggregate_snapshots(agent_states) else {
         return;
@@ -222,6 +223,12 @@ pub(super) fn update_ui(
         latency_window.pop_front();
     }
     let latencies: Vec<(u64, u64)> = latency_window.iter().copied().collect();
+    let rps = stats.avg_rps_x100 / 100;
+    rps_window.push_back((elapsed_ms, rps));
+    while rps_window.front().is_some_and(|(ts, _)| *ts < window_start) {
+        rps_window.pop_front();
+    }
+    let rps_series: Vec<(u64, u64)> = rps_window.iter().copied().collect();
 
     drop(ui_tx.send(UiData {
         elapsed_time: summary.duration,
@@ -231,16 +238,20 @@ pub(super) fn update_ui(
         timeout_requests: summary.timeout_requests,
         transport_errors: summary.transport_errors,
         non_expected_status: summary.non_expected_status,
+        in_flight_ops: 0,
         ui_window_ms,
         no_color: args.no_color,
         latencies,
+        rps_series,
+        status_counts: None,
+        data_usage: None,
         p50,
         p90,
         p99,
         p50_ok,
         p90_ok,
         p99_ok,
-        rps: stats.avg_rps_x100 / 100,
+        rps,
         rpm: stats.avg_rpm_x100 / 100,
         replay: None,
     }));

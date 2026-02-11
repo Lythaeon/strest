@@ -1,9 +1,10 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use crate::args::TesterArgs;
 use crate::error::AppResult;
 use crate::metrics::MetricRecord;
-use crate::ui::model::{ReplayUi, UiData};
+use crate::ui::model::{ReplayUi, StatusCounts, UiData};
 
 use super::super::summary as app_summary;
 use super::state::{ReplayWindow, SnapshotMarkers};
@@ -65,6 +66,31 @@ pub(super) fn build_ui_data(
         .iter()
         .map(|record| (record.elapsed_ms, record.latency_ms))
         .collect();
+    let mut rps_buckets: BTreeMap<u64, u64> = BTreeMap::new();
+    for record in chart_slice {
+        let bucket = record
+            .elapsed_ms
+            .checked_div(MS_PER_SEC)
+            .unwrap_or(0)
+            .saturating_mul(MS_PER_SEC);
+        let entry = rps_buckets.entry(bucket).or_insert(0);
+        *entry = entry.saturating_add(1);
+    }
+    let rps_series: Vec<(u64, u64)> = rps_buckets.into_iter().collect();
+    let mut status_counts = StatusCounts::default();
+    for record in chart_slice {
+        if record.timed_out || record.transport_error {
+            status_counts.status_other = status_counts.status_other.saturating_add(1);
+        } else {
+            match record.status_code {
+                200..=299 => status_counts.status_2xx = status_counts.status_2xx.saturating_add(1),
+                300..=399 => status_counts.status_3xx = status_counts.status_3xx.saturating_add(1),
+                400..=499 => status_counts.status_4xx = status_counts.status_4xx.saturating_add(1),
+                500..=599 => status_counts.status_5xx = status_counts.status_5xx.saturating_add(1),
+                _ => status_counts.status_other = status_counts.status_other.saturating_add(1),
+            }
+        }
+    }
 
     let rps_start = state.cursor_ms.saturating_sub(MS_PER_SEC);
     let rps_slice = window_slice(records, rps_start, state.cursor_ms);
@@ -87,9 +113,13 @@ pub(super) fn build_ui_data(
         timeout_requests: summary_output.summary.timeout_requests,
         transport_errors: summary_output.summary.transport_errors,
         non_expected_status: summary_output.summary.non_expected_status,
+        in_flight_ops: 0,
         ui_window_ms,
         no_color: args.no_color,
         latencies,
+        rps_series,
+        status_counts: Some(status_counts),
+        data_usage: None,
         p50,
         p90,
         p99,

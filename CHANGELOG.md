@@ -5,8 +5,17 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+## 0.1.7
+
+Released: 2026-02-11
+
 - Split README into `docs/USAGE.md` and `docs/ADVANCED.md` and shortened the top-level README.
 - Refactored internal error handling and reduced redundant allocations in request sources.
+- Split large modules into smaller units across replay, distributed controller, wasm scripting, and app error paths for maintainability.
+- Simplified startup wiring by moving entry/main orchestration into clearer module boundaries.
+- Replaced magic numbers with documented constants in UI and runtime paths to make tuning and invariants explicit.
+- Fixed replay JSON/JSONL parsing regressions and strengthened replay test coverage.
+- Updated the live TUI with semantic metric colors, improved status code distribution rendering, compact/scaled number formatting, centered chart axis labels, and consistent themed splash/background rendering.
 
 ## 0.1.6
 

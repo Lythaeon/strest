@@ -185,11 +185,43 @@ pub(super) struct WorkerContext<'ctx> {
     pub(super) shutdown_tx: &'ctx ShutdownSender,
     pub(super) rate_limiter: Option<&'ctx Arc<Semaphore>>,
     pub(super) request_limiter: Option<&'ctx Arc<RequestLimiter>>,
+    pub(super) in_flight_counter: &'ctx Arc<AtomicU64>,
     pub(super) wait_ongoing: bool,
     pub(super) latency_correction: bool,
     pub(super) client: &'ctx Client,
     pub(super) log_sink: &'ctx Option<Arc<LogSink>>,
     pub(super) metrics_tx: &'ctx mpsc::Sender<Metrics>,
+}
+
+struct InflightGuard<'counter> {
+    counter: &'counter AtomicU64,
+}
+
+impl<'counter> InflightGuard<'counter> {
+    fn acquire(counter: &'counter Arc<AtomicU64>) -> Self {
+        counter.fetch_add(1, Ordering::Relaxed);
+        Self {
+            counter: counter.as_ref(),
+        }
+    }
+}
+
+impl Drop for InflightGuard<'_> {
+    fn drop(&mut self) {
+        loop {
+            let current = self.counter.load(Ordering::Relaxed);
+            let Some(next) = current.checked_sub(1) else {
+                break;
+            };
+            if self
+                .counter
+                .compare_exchange(current, next, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                break;
+            }
+        }
+    }
 }
 
 pub(super) async fn preflight_request(client: &Client, workload: &Workload) -> AppResult<()> {
@@ -272,14 +304,25 @@ pub(super) async fn run_single_iteration(
 
     let run_request = async {
         let start = latency_start.unwrap_or_else(Instant::now);
-        let (status, timed_out, transport_error) = match request_template.try_clone() {
-            Some(req_clone) => execute_request_status(context.client, req_clone).await,
-            None => {
-                error!("Failed to clone request template.");
-                (500, false, true)
-            }
-        };
-        let metric = Metrics::new(start, status, timed_out, transport_error);
+        let in_flight_guard = InflightGuard::acquire(context.in_flight_counter);
+        let (status, timed_out, transport_error, response_bytes) =
+            match request_template.try_clone() {
+                Some(req_clone) => execute_request_status(context.client, req_clone).await,
+                None => {
+                    error!("Failed to clone request template.");
+                    (500, false, true, 0)
+                }
+            };
+        drop(in_flight_guard);
+        let in_flight_ops = context.in_flight_counter.load(Ordering::Relaxed);
+        let metric = Metrics::new(
+            start,
+            status,
+            timed_out,
+            transport_error,
+            response_bytes,
+            in_flight_ops,
+        );
         if let Some(log_sink) = context.log_sink
             && !log_sink.send(metric)
         {
@@ -341,9 +384,19 @@ pub(super) async fn run_single_dynamic_iteration(
             }
         };
         let start = latency_start.unwrap_or_else(Instant::now);
-        let (status, timed_out, transport_error) =
+        let in_flight_guard = InflightGuard::acquire(context.in_flight_counter);
+        let (status, timed_out, transport_error, response_bytes) =
             execute_request_status(context.client, request).await;
-        let metric = Metrics::new(start, status, timed_out, transport_error);
+        drop(in_flight_guard);
+        let in_flight_ops = context.in_flight_counter.load(Ordering::Relaxed);
+        let metric = Metrics::new(
+            start,
+            status,
+            timed_out,
+            transport_error,
+            response_bytes,
+            in_flight_ops,
+        );
         if let Some(log_sink) = context.log_sink
             && !log_sink.send(metric)
         {
@@ -430,6 +483,7 @@ pub(super) async fn run_scenario_iteration(
 
         let expected = step.assert_status.unwrap_or(context.expected_status_code);
         let start = latency_start.unwrap_or_else(Instant::now);
+        let in_flight_guard = InflightGuard::acquire(worker.in_flight_counter);
         let run_request = async {
             execute_request_with_asserts(
                 context.client,
@@ -448,6 +502,7 @@ pub(super) async fn run_scenario_iteration(
                 result = run_request => result,
             }
         };
+        drop(in_flight_guard);
 
         if !outcome.success {
             let label = step_label(step, step_index);
@@ -469,11 +524,14 @@ pub(super) async fn run_scenario_iteration(
         } else {
             ASSERT_FAILED_STATUS
         };
+        let in_flight_ops = worker.in_flight_counter.load(Ordering::Relaxed);
         let metric = Metrics::new(
             start,
             metric_status,
             outcome.timed_out,
             outcome.transport_error,
+            outcome.response_bytes,
+            in_flight_ops,
         );
         if let Some(log_sink) = context.log_sink
             && !log_sink.send(metric)
@@ -503,6 +561,7 @@ struct RequestOutcome {
     success: bool,
     timed_out: bool,
     transport_error: bool,
+    response_bytes: u64,
 }
 
 async fn execute_request_with_asserts(
@@ -520,24 +579,26 @@ async fn execute_request_with_asserts(
 
             let body_result = match assert_body_contains {
                 Some(fragment) => drain_body_contains(response, fragment).await,
-                None => drain_response_body(response).await.map(|()| false),
+                None => drain_response_body(response)
+                    .await
+                    .map(|bytes| (true, bytes)),
             };
             let mut timed_out = false;
             let mut transport_error = false;
-            let body_ok = match (assert_body_contains, body_result) {
-                (Some(_), Ok(found)) => found,
+            let (body_ok, response_bytes) = match (assert_body_contains, body_result) {
+                (Some(_), Ok((found, bytes))) => (found, bytes),
                 (Some(_), Err(err)) => {
                     timed_out = err.is_timeout();
                     transport_error = !timed_out;
                     error!("Failed to read response body: {}", err);
-                    false
+                    (false, 0)
                 }
-                (None, Ok(_)) => true,
+                (None, Ok((found, bytes))) => (found, bytes),
                 (None, Err(err)) => {
                     timed_out = err.is_timeout();
                     transport_error = !timed_out;
                     error!("Failed to read response body: {}", err);
-                    false
+                    (false, 0)
                 }
             };
 
@@ -546,6 +607,7 @@ async fn execute_request_with_asserts(
                 success: status_ok && body_ok,
                 timed_out,
                 transport_error,
+                response_bytes,
             }
         }
         Err(err) => {
@@ -556,6 +618,7 @@ async fn execute_request_with_asserts(
                 success: false,
                 timed_out,
                 transport_error: !timed_out,
+                response_bytes: 0,
             }
         }
     }
@@ -980,52 +1043,56 @@ async fn execute_request(
     let response = client.execute(request).await?;
     let status = response.status().as_u16();
     if drain_body {
-        drain_response_body(response).await?;
+        let _ = drain_response_body(response).await?;
     }
     Ok(status)
 }
 
-async fn execute_request_status(client: &Client, request: Request) -> (u16, bool, bool) {
+async fn execute_request_status(client: &Client, request: Request) -> (u16, bool, bool, u64) {
     match client.execute(request).await {
         Ok(response) => {
             let status = response.status().as_u16();
             match drain_response_body(response).await {
-                Ok(()) => (status, false, false),
+                Ok(bytes) => (status, false, false, bytes),
                 Err(err) => {
                     let timed_out = err.is_timeout();
-                    (500, timed_out, !timed_out)
+                    (500, timed_out, !timed_out, 0)
                 }
             }
         }
         Err(err) => {
             let timed_out = err.is_timeout();
-            (500, timed_out, !timed_out)
+            (500, timed_out, !timed_out, 0)
         }
     }
 }
 
-async fn drain_response_body(response: reqwest::Response) -> Result<(), reqwest::Error> {
+async fn drain_response_body(response: reqwest::Response) -> Result<u64, reqwest::Error> {
     let mut stream = response.bytes_stream();
+    let mut total_bytes: u64 = 0;
     while let Some(chunk) = stream.next().await {
-        chunk?;
+        let bytes = chunk?;
+        total_bytes = total_bytes.saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
     }
-    Ok(())
+    Ok(total_bytes)
 }
 
 async fn drain_body_contains(
     response: reqwest::Response,
     fragment: &str,
-) -> Result<bool, reqwest::Error> {
+) -> Result<(bool, u64), reqwest::Error> {
     let needle = fragment.as_bytes();
     if needle.is_empty() {
-        drain_response_body(response).await?;
-        return Ok(true);
+        let bytes = drain_response_body(response).await?;
+        return Ok((true, bytes));
     }
     let mut found = false;
     let mut carry: Vec<u8> = Vec::new();
     let mut stream = response.bytes_stream();
+    let mut total_bytes: u64 = 0;
     while let Some(chunk) = stream.next().await {
         let bytes = chunk?;
+        total_bytes = total_bytes.saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
         if !found {
             let mut window = std::mem::take(&mut carry);
             window.extend_from_slice(&bytes);
@@ -1046,5 +1113,5 @@ async fn drain_body_contains(
             }
         }
     }
-    Ok(found)
+    Ok((found, total_bytes))
 }

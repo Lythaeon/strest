@@ -292,7 +292,14 @@ fn update_ui_emits_aggregated_stats() -> AppResult<()> {
     );
 
     let mut latency_window = VecDeque::new();
-    update_ui(&ui_tx, &args, &agent_states, &mut latency_window);
+    let mut rps_window = VecDeque::new();
+    update_ui(
+        &ui_tx,
+        &args,
+        &agent_states,
+        &mut latency_window,
+        &mut rps_window,
+    );
 
     let snapshot = ui_rx.borrow().clone();
     if snapshot.current_requests != 10 {

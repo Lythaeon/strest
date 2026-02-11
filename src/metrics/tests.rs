@@ -251,6 +251,8 @@ fn updates_ui_data_on_tick() -> AppResult<()> {
             status_code: 200,
             timed_out: false,
             transport_error: false,
+            response_bytes: 0,
+            in_flight_ops: 0,
         }) {
             Ok(()) => {}
             Err(err) => {
@@ -408,6 +410,8 @@ fn metrics_logger_summarizes_and_limits_records() -> AppResult<()> {
             status_code: 200,
             timed_out: false,
             transport_error: false,
+            response_bytes: 0,
+            in_flight_ops: 0,
         };
         let second_start = run_start
             .checked_add(Duration::from_millis(10))
@@ -418,6 +422,8 @@ fn metrics_logger_summarizes_and_limits_records() -> AppResult<()> {
             status_code: 500,
             timed_out: true,
             transport_error: false,
+            response_bytes: 0,
+            in_flight_ops: 0,
         };
 
         if tx.send(first).await.is_err() {
