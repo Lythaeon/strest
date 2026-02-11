@@ -14,7 +14,7 @@ use crate::{
         config::{SinkStats, SinksConfig},
         writers,
     },
-    ui::model::UiData,
+    ui::model::{DataUsage, StatusCounts, UiData},
 };
 
 use super::{LatencyHistogram, Metrics, MetricsReport, MetricsSummary, StreamSnapshot};
@@ -28,6 +28,7 @@ struct UiAggregationState {
     timeout_requests: u64,
     transport_errors: u64,
     non_expected_status: u64,
+    in_flight_ops: u64,
     ui_window: Duration,
     latency_sum_ms: u128,
     success_latency_sum_ms: u128,
@@ -38,6 +39,11 @@ struct UiAggregationState {
     latency_window: VecDeque<(Instant, u64)>,
     latency_window_ok: VecDeque<(Instant, u64)>,
     rps_window: VecDeque<(Instant, u64)>,
+    rps_samples: VecDeque<(Instant, u64)>,
+    status_window: VecDeque<(Instant, StatusBucket)>,
+    bytes_window: VecDeque<(Instant, u64)>,
+    bytes_samples: VecDeque<(Instant, u64)>,
+    total_bytes: u128,
     histogram: Option<LatencyHistogram>,
     success_histogram: Option<LatencyHistogram>,
 }
@@ -65,6 +71,7 @@ impl UiAggregationState {
             timeout_requests: 0,
             transport_errors: 0,
             non_expected_status: 0,
+            in_flight_ops: 0,
             ui_window,
             latency_sum_ms: 0,
             success_latency_sum_ms: 0,
@@ -75,6 +82,11 @@ impl UiAggregationState {
             latency_window: VecDeque::new(),
             latency_window_ok: VecDeque::new(),
             rps_window: VecDeque::new(),
+            rps_samples: VecDeque::new(),
+            status_window: VecDeque::new(),
+            bytes_window: VecDeque::new(),
+            bytes_samples: VecDeque::new(),
+            total_bytes: 0,
             histogram,
             success_histogram,
         }
@@ -129,9 +141,17 @@ pub fn setup_metrics_collector(
                 timeout_requests: 0,
                 transport_errors: 0,
                 non_expected_status: 0,
+                in_flight_ops: 0,
                 ui_window_ms,
                 no_color,
                 latencies: vec![],
+                rps_series: vec![],
+                status_counts: Some(StatusCounts::default()),
+                data_usage: Some(DataUsage {
+                    total_bytes: 0,
+                    bytes_per_sec: 0,
+                    series: Vec::new(),
+                }),
                 p50: 0,
                 p90: 0,
                 p99: 0,
@@ -170,6 +190,8 @@ pub fn setup_metrics_collector(
                     let now = Instant::now();
                     prune_latency_window(&mut state.latency_window, now, state.ui_window);
                     prune_rps_window(&mut state.rps_window, now);
+                    prune_status_window(&mut state.status_window, now, state.ui_window);
+                    prune_bytes_window(&mut state.bytes_window, now);
 
                     let elapsed_time = start_time.elapsed();
                     let recent_latencies: Vec<(u64, u64)> = state
@@ -185,6 +207,7 @@ pub fn setup_metrics_collector(
 
                     let (p50, p90, p99) = compute_percentiles(&state.latency_window);
                     let (p50_ok, p90_ok, p99_ok) = compute_percentiles(&state.latency_window_ok);
+                    let status_counts = compute_status_counts(&state.status_window);
 
                     let rps: u64 = state
                         .rps_window
@@ -194,6 +217,40 @@ pub fn setup_metrics_collector(
                         .sum::<u64>();
 
                     let rpm = rps.saturating_mul(60);
+                    record_rps_sample(&mut state.rps_samples, now, rps, state.ui_window);
+                    let recent_rps: Vec<(u64, u64)> = state
+                        .rps_samples
+                        .iter()
+                        .map(|&(ts, sample_rps)| {
+                            let ms_since_start =
+                                u64::try_from(ts.duration_since(start_time).as_millis())
+                                    .unwrap_or(u64::MAX);
+                            (ms_since_start, sample_rps)
+                        })
+                        .collect();
+
+                    let bytes_per_sec: u64 = state
+                        .bytes_window
+                        .iter()
+                        .filter(|(ts, _)| now.duration_since(*ts) <= Duration::from_secs(1))
+                        .map(|(_, bytes)| *bytes)
+                        .sum::<u64>();
+                    record_bytes_sample(
+                        &mut state.bytes_samples,
+                        now,
+                        bytes_per_sec,
+                        state.ui_window,
+                    );
+                    let recent_bytes: Vec<(u64, u64)> = state
+                        .bytes_samples
+                        .iter()
+                        .map(|&(ts, bytes)| {
+                            let ms_since_start =
+                                u64::try_from(ts.duration_since(start_time).as_millis())
+                                    .unwrap_or(u64::MAX);
+                            (ms_since_start, bytes)
+                        })
+                        .collect();
 
                     if ui_enabled
                         && ui_tx_clone
@@ -205,9 +262,17 @@ pub fn setup_metrics_collector(
                                 timeout_requests: state.timeout_requests,
                                 transport_errors: state.transport_errors,
                                 non_expected_status: state.non_expected_status,
+                                in_flight_ops: state.in_flight_ops,
                                 ui_window_ms,
                                 no_color,
                                 latencies: recent_latencies,
+                                rps_series: recent_rps,
+                                status_counts: Some(status_counts),
+                                data_usage: Some(DataUsage {
+                                    total_bytes: state.total_bytes,
+                                    bytes_per_sec,
+                                    series: recent_bytes,
+                                }),
                                 p50,
                                 p90,
                                 p99,
@@ -348,6 +413,7 @@ fn process_metric_ui(
 ) {
     let status_code = msg.status_code;
     let latency_ms = u64::try_from(msg.response_time.as_millis()).unwrap_or(u64::MAX);
+    state.in_flight_ops = msg.in_flight_ops;
 
     state.current_requests = state.current_requests.saturating_add(1);
 
@@ -379,11 +445,23 @@ fn process_metric_ui(
         state.non_expected_status = state.non_expected_status.saturating_add(1);
     }
 
+    state.status_window.push_back((
+        now,
+        bucket_status(status_code, msg.timed_out, msg.transport_error),
+    ));
+    prune_status_window(&mut state.status_window, now, state.ui_window);
+
     state.latency_window.push_back((now, latency_ms));
     prune_latency_window(&mut state.latency_window, now, state.ui_window);
 
     record_rps(&mut state.rps_window, now);
     prune_rps_window(&mut state.rps_window, now);
+
+    state.total_bytes = state
+        .total_bytes
+        .saturating_add(u128::from(msg.response_bytes));
+    record_bytes(&mut state.bytes_window, now, msg.response_bytes);
+    prune_bytes_window(&mut state.bytes_window, now);
 
     state.latency_sum_ms = state.latency_sum_ms.saturating_add(u128::from(latency_ms));
     if latency_ms < state.min_latency_ms {
@@ -419,6 +497,116 @@ fn prune_rps_window(window: &mut VecDeque<(Instant, u64)>, now: Instant) {
         .is_some_and(|(ts, _)| now.duration_since(*ts) > Duration::from_secs(60))
     {
         window.pop_front();
+    }
+}
+
+#[derive(Clone, Copy)]
+enum StatusBucket {
+    Status2xx,
+    Status3xx,
+    Status4xx,
+    Status5xx,
+    Other,
+}
+
+const fn bucket_status(status_code: u16, timed_out: bool, transport_error: bool) -> StatusBucket {
+    if timed_out || transport_error {
+        return StatusBucket::Other;
+    }
+    match status_code {
+        200..=299 => StatusBucket::Status2xx,
+        300..=399 => StatusBucket::Status3xx,
+        400..=499 => StatusBucket::Status4xx,
+        500..=599 => StatusBucket::Status5xx,
+        _ => StatusBucket::Other,
+    }
+}
+
+fn prune_status_window(
+    window: &mut VecDeque<(Instant, StatusBucket)>,
+    now: Instant,
+    window_span: Duration,
+) {
+    while window
+        .front()
+        .is_some_and(|(ts, _)| now.duration_since(*ts) > window_span)
+    {
+        window.pop_front();
+    }
+}
+
+fn compute_status_counts(window: &VecDeque<(Instant, StatusBucket)>) -> StatusCounts {
+    let mut counts = StatusCounts::default();
+    for (_, bucket) in window {
+        match bucket {
+            StatusBucket::Status2xx => counts.status_2xx = counts.status_2xx.saturating_add(1),
+            StatusBucket::Status3xx => counts.status_3xx = counts.status_3xx.saturating_add(1),
+            StatusBucket::Status4xx => counts.status_4xx = counts.status_4xx.saturating_add(1),
+            StatusBucket::Status5xx => counts.status_5xx = counts.status_5xx.saturating_add(1),
+            StatusBucket::Other => counts.status_other = counts.status_other.saturating_add(1),
+        }
+    }
+    counts
+}
+
+fn record_bytes(window: &mut VecDeque<(Instant, u64)>, now: Instant, bytes: u64) {
+    if let Some((ts, count)) = window.back_mut()
+        && now.duration_since(*ts) < Duration::from_millis(100)
+    {
+        *count = count.saturating_add(bytes);
+        return;
+    }
+    window.push_back((now, bytes));
+}
+
+fn prune_bytes_window(window: &mut VecDeque<(Instant, u64)>, now: Instant) {
+    while window
+        .front()
+        .is_some_and(|(ts, _)| now.duration_since(*ts) > Duration::from_secs(60))
+    {
+        window.pop_front();
+    }
+}
+
+fn record_rps_sample(
+    samples: &mut VecDeque<(Instant, u64)>,
+    now: Instant,
+    rps: u64,
+    window_span: Duration,
+) {
+    samples.push_back((now, rps));
+    prune_rps_samples(samples, now, window_span);
+}
+
+fn prune_rps_samples(samples: &mut VecDeque<(Instant, u64)>, now: Instant, window_span: Duration) {
+    while samples
+        .front()
+        .is_some_and(|(ts, _)| now.duration_since(*ts) > window_span)
+    {
+        samples.pop_front();
+    }
+}
+
+fn record_bytes_sample(
+    samples: &mut VecDeque<(Instant, u64)>,
+    now: Instant,
+    bytes_per_sec: u64,
+    window_span: Duration,
+) {
+    samples.push_back((now, bytes_per_sec));
+    prune_bytes_samples(samples, now, window_span);
+}
+
+fn prune_bytes_samples(
+    samples: &mut VecDeque<(Instant, u64)>,
+    now: Instant,
+    window_span: Duration,
+) {
+    while samples
+        .front()
+        .is_some_and(|(ts, _)| now.duration_since(*ts) > window_span)
+    {
+        samples.pop_front();
     }
 }
 

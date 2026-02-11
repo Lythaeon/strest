@@ -13,17 +13,28 @@ pub struct Metrics {
     pub status_code: u16,
     pub timed_out: bool,
     pub transport_error: bool,
+    pub response_bytes: u64,
+    pub in_flight_ops: u64,
 }
 
 impl Metrics {
     #[must_use]
-    pub fn new(start: Instant, status_code: u16, timed_out: bool, transport_error: bool) -> Self {
+    pub fn new(
+        start: Instant,
+        status_code: u16,
+        timed_out: bool,
+        transport_error: bool,
+        response_bytes: u64,
+        in_flight_ops: u64,
+    ) -> Self {
         Self {
             start,
             response_time: start.elapsed(),
             status_code,
             timed_out,
             transport_error,
+            response_bytes,
+            in_flight_ops,
         }
     }
 }

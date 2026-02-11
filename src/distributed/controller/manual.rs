@@ -54,6 +54,7 @@ struct ManualRunState {
     ui_tx: Option<watch::Sender<UiData>>,
     shutdown_tx: Option<ShutdownSender>,
     ui_latency_window: VecDeque<(u64, u64)>,
+    ui_rps_window: VecDeque<(u64, u64)>,
     deadline: Instant,
     charts_enabled: bool,
 }
@@ -211,7 +212,13 @@ pub(super) async fn run_controller_manual(
                         );
                     }
                     if let Some(ui_tx) = state.ui_tx.as_ref() {
-                        update_ui(ui_tx, args, &state.agent_states, &mut state.ui_latency_window);
+                        update_ui(
+                            ui_tx,
+                            args,
+                            &state.agent_states,
+                            &mut state.ui_latency_window,
+                            &mut state.ui_rps_window,
+                        );
                     }
                     if state.pending_agents.is_empty() {
                         finish_run = true;
@@ -879,6 +886,7 @@ async fn start_manual_run(
         ui_tx,
         shutdown_tx,
         ui_latency_window: VecDeque::new(),
+        ui_rps_window: VecDeque::new(),
         deadline: report_deadline,
         charts_enabled,
     })

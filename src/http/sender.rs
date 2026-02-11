@@ -1,6 +1,6 @@
 use std::net::ToSocketAddrs;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, atomic::AtomicU64};
 use std::time::Duration;
 
 use reqwest::{
@@ -351,6 +351,7 @@ fn create_sender_task(
         let mut spawn_interval = interval(Duration::from_millis(tick_interval));
         let mut total_spawned: usize = 0;
         let permits = Arc::new(Semaphore::new(0));
+        let in_flight_counter = Arc::new(AtomicU64::new(0));
         let rate_limiter =
             build_rate_limiter(rate_limit, load_profile.as_ref(), burst_delay, burst_rate);
         let mut worker_handles = Vec::with_capacity(max_tasks);
@@ -364,6 +365,7 @@ fn create_sender_task(
             let workload = workload.clone();
             let rate_limiter = rate_limiter.clone();
             let request_limiter = request_limiter.clone();
+            let in_flight_counter = in_flight_counter.clone();
 
             let handle = tokio::spawn(async move {
                 let mut shutdown_rx_worker = shutdown_tx.subscribe();
@@ -382,6 +384,7 @@ fn create_sender_task(
                         shutdown_tx: &shutdown_tx,
                         rate_limiter: rate_limiter.as_ref(),
                         request_limiter: request_limiter.as_ref(),
+                        in_flight_counter: &in_flight_counter,
                         client: &client,
                         log_sink: &log_sink,
                         metrics_tx: &metrics_tx,
