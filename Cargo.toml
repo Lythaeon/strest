@@ -52,6 +52,7 @@ rusqlite = { version = "0.31.0", features = ["bundled"] }
 tokio-rusqlite = "0.5.1"
 futures-util = "0.3.30"
 libc = "0.2.159"
+thiserror = "1.0.69"
 jemalloc-ctl = { version = "0.5.4", optional = true }
 jemallocator = { version = "0.5.4", optional = true, features = ["profiling"] }
 jemalloc-sys = { version = "0.5.4", optional = true, features = ["profiling"] }

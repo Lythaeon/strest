@@ -11,7 +11,6 @@ use ratatui::{
     text::Span,
     widgets::{Block, Borders, Paragraph, Wrap},
 };
-use std::error::Error;
 use std::io;
 use std::time::Duration;
 use tokio::sync::{
@@ -20,6 +19,7 @@ use tokio::sync::{
 };
 
 use crate::args::TesterArgs;
+use crate::error::AppResult;
 
 use super::model::{UiData, UiRenderData};
 
@@ -37,7 +37,7 @@ pub trait UiActions {
     /// # Errors
     ///
     /// Returns an error when terminal setup fails.
-    fn setup_terminal() -> Result<Terminal<CrosstermBackend<std::io::Stdout>>, Box<dyn Error>>;
+    fn setup_terminal() -> AppResult<Terminal<CrosstermBackend<std::io::Stdout>>>;
     fn cleanup();
     fn render<B: Backend>(terminal: &mut Terminal<B>, data: &UiRenderData);
 }
@@ -55,7 +55,7 @@ const BANNER_LINES: [&str; 7] = [
 ];
 
 impl UiActions for Ui {
-    fn setup_terminal() -> Result<Terminal<CrosstermBackend<std::io::Stdout>>, Box<dyn Error>> {
+    fn setup_terminal() -> AppResult<Terminal<CrosstermBackend<std::io::Stdout>>> {
         enable_raw_mode()?;
         if let Err(err) = execute!(io::stdout(), EnterAlternateScreen) {
             disable_raw_mode().ok();
@@ -404,7 +404,7 @@ pub fn setup_render_ui(
 /// # Errors
 ///
 /// Returns an error if the terminal setup fails.
-pub async fn run_splash_screen(no_color: bool) -> Result<(), Box<dyn Error>> {
+pub async fn run_splash_screen(no_color: bool) -> AppResult<()> {
     let mut terminal = Ui::setup_terminal()?;
     let _guard = TerminalGuard;
 

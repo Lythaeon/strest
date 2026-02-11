@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::io::IsTerminal;
 use std::path::Path;
 use std::time::Duration;
@@ -9,7 +8,9 @@ use tracing::{info, warn};
 
 use crate::{
     args::{OutputFormat, TesterArgs},
-    charts, http,
+    charts,
+    error::{AppError, AppResult},
+    http,
     metrics::{self, Metrics},
     sinks::{config::SinkStats, writers},
     ui::{model::UiData, render::setup_render_ui},
@@ -30,7 +31,7 @@ pub(crate) async fn run_local(
     args: TesterArgs,
     stream_tx: Option<mpsc::UnboundedSender<metrics::StreamSnapshot>>,
     mut external_shutdown: Option<watch::Receiver<bool>>,
-) -> Result<RunOutcome, Box<dyn Error>> {
+) -> AppResult<RunOutcome> {
     let (shutdown_tx, _) = broadcast::channel::<u16>(1);
     if let Some(mut external_shutdown) = external_shutdown.take() {
         let shutdown_tx = shutdown_tx.clone();
@@ -170,16 +171,16 @@ pub(crate) async fn run_local(
         success_latency_sum_ms,
         success_histogram,
     ) = if !log_results.is_empty() {
-        logs::merge_log_results(log_results, metrics_max).map_err(std::io::Error::other)?
+        logs::merge_log_results(log_results, metrics_max).map_err(AppError::from)?
     } else {
         (
             report.summary,
             Vec::new(),
             false,
-            metrics::LatencyHistogram::new().map_err(std::io::Error::other)?,
+            metrics::LatencyHistogram::new().map_err(AppError::from)?,
             0,
             0,
-            metrics::LatencyHistogram::new().map_err(std::io::Error::other)?,
+            metrics::LatencyHistogram::new().map_err(AppError::from)?,
         )
     };
     let latency_sum_ms = if latency_sum_ms == 0 && summary.total_requests > 0 {

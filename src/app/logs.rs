@@ -7,6 +7,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
+use crate::error::AppResult;
 use crate::{args::TesterArgs, metrics};
 
 pub(crate) struct LogSetup {
@@ -30,7 +31,7 @@ pub(crate) async fn setup_log_sinks(
     run_start: Instant,
     charts_enabled: bool,
     summary_enabled: bool,
-) -> Result<LogSetup, Box<dyn std::error::Error>> {
+) -> AppResult<LogSetup> {
     let log_enabled = charts_enabled
         || summary_enabled
         || args.export_csv.is_some()

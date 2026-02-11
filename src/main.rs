@@ -3,6 +3,7 @@ mod args;
 mod charts;
 mod config;
 mod distributed;
+mod error;
 mod http;
 mod logger;
 mod metrics;
@@ -21,12 +22,12 @@ static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 use app::{run_cleanup, run_local, run_replay};
 use args::{Command, OutputFormat, TesterArgs};
 use clap::{CommandFactory, FromArgMatches};
+use error::{AppError, AppResult};
 use rand::distributions::Distribution;
 use rand::thread_rng;
-use std::error::Error;
 use std::path::Path;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> AppResult<()> {
     let mut cmd = TesterArgs::command();
     let raw_args: Vec<std::ffi::OsString> = std::env::args_os().collect();
     let treat_as_empty = raw_args.len() <= 1
@@ -42,8 +43,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let matches = cmd.get_matches_from(raw_args);
-    let mut args = TesterArgs::from_arg_matches(&matches)
-        .map_err(|err| std::io::Error::other(err.to_string()))?;
+    let mut args =
+        TesterArgs::from_arg_matches(&matches).map_err(|err| AppError::Message(err.to_string()))?;
 
     logger::init_logging(args.verbose, args.no_color);
 
@@ -55,9 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         if let Some(command) = args.command.clone() {
             match command {
                 Command::Cleanup(cleanup_args) => {
-                    run_cleanup(&cleanup_args)
-                        .await
-                        .map_err(std::io::Error::other)?;
+                    run_cleanup(&cleanup_args).await.map_err(AppError::from)?;
                     return Ok(());
                 }
             }
@@ -69,49 +68,43 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         let mut scenario_registry = None;
-        let mut loaded_config =
-            config::load_config(args.config.as_deref()).map_err(std::io::Error::other)?;
+        let mut loaded_config = config::load_config(args.config.as_deref()).map_err(AppError::from)?;
         if let Some(config) = loaded_config.as_mut() {
             scenario_registry = config.scenarios.take();
-            config::apply_config(&mut args, &matches, config).map_err(std::io::Error::other)?;
+            config::apply_config(&mut args, &matches, config).map_err(AppError::from)?;
         }
 
-        apply_output_aliases(&mut args).map_err(std::io::Error::other)?;
-        validate_db_logging(&args).map_err(std::io::Error::other)?;
+        apply_output_aliases(&mut args).map_err(AppError::from)?;
+        validate_db_logging(&args).map_err(AppError::from)?;
 
         if args.dump_urls.is_some() {
-            dump_urls(&args).map_err(std::io::Error::other)?;
+            dump_urls(&args).map_err(AppError::from)?;
             return Ok(());
         }
 
         if args.controller_listen.is_some() && args.agent_join.is_some() {
-            return Err(std::io::Error::other(
-                "Cannot run as controller and agent at the same time.",
-            )
-            .into());
+            return Err("Cannot run as controller and agent at the same time.".into());
         }
 
         if args.install_service || args.uninstall_service {
-            service::handle_service_action(&args).map_err(std::io::Error::other)?;
+            service::handle_service_action(&args).map_err(AppError::from)?;
             return Ok(());
         }
 
         if args.script.is_some() && args.scenario.is_some() {
-            return Err(
-                std::io::Error::other("Cannot combine --script with scenario config.").into(),
-            );
+            return Err("Cannot combine --script with scenario config.".into());
         }
 
         if let Some(script_path) = args.script.as_deref() {
             let scenario = script::load_scenario_from_wasm(script_path, &args)
-                .map_err(std::io::Error::other)?;
+                .map_err(AppError::from)?;
             args.scenario = Some(scenario);
         }
 
         if args.controller_listen.is_some() {
             distributed::run_controller(&args, scenario_registry)
                 .await
-                .map_err(std::io::Error::other)?;
+                .map_err(AppError::from)?;
             return Ok(());
         }
 
@@ -119,24 +112,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             tracing::error!(
                 "Refusing to disable the default User-Agent without explicit authorization."
             );
-            return Err(std::io::Error::other(
-                "Disabling the default User-Agent requires --authorized (or config authorized = true).",
-            )
-            .into());
+            return Err(
+                "Disabling the default User-Agent requires --authorized (or config authorized = true)."
+                    .into(),
+            );
         }
 
         if args.agent_join.is_some() {
             distributed::run_agent(args)
                 .await
-                .map_err(std::io::Error::other)?;
+                .map_err(AppError::from)?;
             return Ok(());
         }
 
         if args.url.is_none() && args.scenario.is_none() {
             tracing::error!("Missing URL (set --url or provide in config).");
-            return Err(
-                std::io::Error::other("Missing URL (set --url or provide in config).").into(),
-            );
+            return Err("Missing URL (set --url or provide in config).".into());
         }
 
         args.distributed_stream_summaries = false;
@@ -144,7 +135,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         if !outcome.runtime_errors.is_empty() {
             app::print_runtime_errors(&outcome.runtime_errors);
-            return Err(std::io::Error::other("Runtime errors occurred.").into());
+            return Err("Runtime errors occurred.".into());
         }
 
         Ok(())

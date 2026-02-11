@@ -2,12 +2,10 @@ use std::collections::BTreeMap;
 
 use plotters::prelude::*;
 
+use crate::error::AppResult;
 use crate::metrics::MetricRecord;
 
-pub fn plot_average_response_time(
-    metrics: &[MetricRecord],
-    path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn plot_average_response_time(metrics: &[MetricRecord], path: &str) -> AppResult<()> {
     let root = BitMapBackend::new(path, (1600, 600)).into_drawing_area();
     root.fill(&WHITE)?;
 

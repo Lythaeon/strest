@@ -6,6 +6,7 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 ## Unreleased
 
 - Split README into `docs/USAGE.md` and `docs/ADVANCED.md` and shortened the top-level README.
+- Refactored internal error handling and reduced redundant allocations in request sources.
 
 ## 0.1.6
 

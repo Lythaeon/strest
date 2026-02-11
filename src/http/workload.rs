@@ -60,14 +60,14 @@ pub(crate) enum AuthConfig {
 #[derive(Debug)]
 pub(super) struct RequestLimiter {
     limit: Option<u64>,
-    counter: Arc<AtomicU64>,
+    counter: AtomicU64,
 }
 
 impl RequestLimiter {
     pub(super) fn new(limit: Option<u64>) -> Option<Self> {
         limit.map(|limit| RequestLimiter {
             limit: Some(limit),
-            counter: Arc::new(AtomicU64::new(0)),
+            counter: AtomicU64::new(0),
         })
     }
 
@@ -96,34 +96,61 @@ impl RequestLimiter {
     }
 }
 
+#[derive(Debug)]
+pub(super) struct IndexedList {
+    items: Vec<String>,
+    cursor: AtomicUsize,
+}
+
+impl IndexedList {
+    const fn new(items: Vec<String>) -> Self {
+        Self {
+            items,
+            cursor: AtomicUsize::new(0),
+        }
+    }
+
+    fn next(&self) -> Option<String> {
+        if self.items.is_empty() {
+            return None;
+        }
+        let idx = self.cursor.fetch_add(1, Ordering::Relaxed);
+        let len = self.items.len();
+        let selected = idx.rem_euclid(len);
+        self.items.get(selected).cloned()
+    }
+}
+
 #[derive(Clone)]
 pub(super) enum BodySource {
     Static(String),
-    Lines(Arc<Vec<String>>, Arc<AtomicUsize>),
+    Lines(Arc<IndexedList>),
+}
+
+impl BodySource {
+    pub(super) fn from_lines(lines: Vec<String>) -> Self {
+        Self::Lines(Arc::new(IndexedList::new(lines)))
+    }
 }
 
 #[derive(Clone)]
 pub(super) enum UrlSource {
     Static(String),
-    List(Arc<Vec<String>>, Arc<AtomicUsize>),
+    List(Arc<IndexedList>),
     Regex(Arc<RandRegex>),
+}
+
+impl UrlSource {
+    pub(super) fn from_list(urls: Vec<String>) -> Self {
+        Self::List(Arc::new(IndexedList::new(urls)))
+    }
 }
 
 impl UrlSource {
     pub(super) fn next_url(&self) -> Result<String, String> {
         match self {
             UrlSource::Static(url) => Ok(url.clone()),
-            UrlSource::List(list, cursor) => {
-                if list.is_empty() {
-                    return Err("URL list was empty.".to_owned());
-                }
-                let idx = cursor.fetch_add(1, Ordering::Relaxed);
-                let len = list.len();
-                let selected = idx.rem_euclid(len);
-                list.get(selected)
-                    .cloned()
-                    .ok_or_else(|| "URL list was empty.".to_owned())
-            }
+            UrlSource::List(list) => list.next().ok_or_else(|| "URL list was empty.".to_owned()),
             UrlSource::Regex(regex) => {
                 let mut rng = thread_rng();
                 Ok(regex.sample(&mut rng))
@@ -144,8 +171,8 @@ pub(super) struct SingleRequestSpec {
     pub(super) url: UrlSource,
     pub(super) headers: Vec<(String, String)>,
     pub(super) body: BodySource,
-    pub(super) form: Option<Arc<Vec<FormFieldSpec>>>,
-    pub(super) connect_to: Arc<Vec<ConnectToMapping>>,
+    pub(super) form: Option<Vec<FormFieldSpec>>,
+    pub(super) connect_to: Vec<ConnectToMapping>,
     pub(super) auth: Option<AuthConfig>,
 }
 
@@ -549,18 +576,9 @@ fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> Result<
 
     let body = match &spec.body {
         BodySource::Static(body) => body.clone(),
-        BodySource::Lines(lines, cursor) => {
-            if lines.is_empty() {
-                return Err("Body lines file was empty.".to_owned());
-            }
-            let idx = cursor.fetch_add(1, Ordering::Relaxed);
-            let len = lines.len();
-            let selected = idx.rem_euclid(len);
-            lines
-                .get(selected)
-                .cloned()
-                .ok_or_else(|| "Body lines file was empty.".to_owned())?
-        }
+        BodySource::Lines(lines) => lines
+            .next()
+            .ok_or_else(|| "Body lines file was empty.".to_owned())?,
     };
 
     if let Some(auth) = spec.auth.as_ref() {

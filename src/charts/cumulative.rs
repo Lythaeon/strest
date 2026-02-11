@@ -2,13 +2,14 @@ use std::collections::BTreeMap;
 
 use plotters::prelude::*;
 
+use crate::error::AppResult;
 use crate::metrics::MetricRecord;
 
 pub fn plot_cumulative_successful_requests(
     metrics: &[MetricRecord],
     expected_status_code: u16,
     path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     let root = BitMapBackend::new(path, (1600, 600)).into_drawing_area();
     root.fill(&WHITE)?;
 
@@ -62,7 +63,7 @@ pub fn plot_cumulative_error_rate(
     metrics: &[MetricRecord],
     expected_status_code: u16,
     path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     let root = BitMapBackend::new(path, (1600, 600)).into_drawing_area();
     root.fill(&WHITE)?;
 
@@ -112,10 +113,7 @@ pub fn plot_cumulative_error_rate(
     Ok(())
 }
 
-pub fn plot_cumulative_total_requests(
-    metrics: &[MetricRecord],
-    path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn plot_cumulative_total_requests(metrics: &[MetricRecord], path: &str) -> AppResult<()> {
     let root = BitMapBackend::new(path, (1600, 600)).into_drawing_area();
     root.fill(&WHITE)?;
 

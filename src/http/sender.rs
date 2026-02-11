@@ -1,6 +1,5 @@
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 
 use reqwest::{
@@ -205,8 +204,8 @@ pub fn setup_request_sender(
         let form_fields = parse_form_fields(args)?;
         let headers = build_headers(args);
 
-        let requires_dynamic = matches!(body_source, BodySource::Lines(_, _))
-            || matches!(url_source, UrlSource::List(_, _) | UrlSource::Regex(_))
+        let requires_dynamic = matches!(body_source, BodySource::Lines(_))
+            || matches!(url_source, UrlSource::List(_) | UrlSource::Regex(_))
             || form_fields.is_some()
             || !args.connect_to.is_empty()
             || auth_config.is_some();
@@ -218,7 +217,7 @@ pub fn setup_request_sender(
                 headers,
                 body: body_source,
                 form: form_fields,
-                connect_to: Arc::new(args.connect_to.clone()),
+                connect_to: args.connect_to.clone(),
                 auth: auth_config,
             }))
         } else {
@@ -449,10 +448,7 @@ fn resolve_body_source(args: &TesterArgs) -> Result<BodySource, String> {
         if lines.is_empty() {
             return Err(format!("Body lines file '{}' was empty.", path));
         }
-        return Ok(BodySource::Lines(
-            Arc::new(lines),
-            Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-        ));
+        return Ok(BodySource::from_lines(lines));
     }
 
     if let Some(path) = args.data_file.as_ref() {
@@ -482,10 +478,7 @@ fn resolve_url_source(args: &TesterArgs) -> Result<UrlSource, String> {
         if urls.is_empty() {
             return Err(format!("URL file '{}' was empty.", value));
         }
-        return Ok(UrlSource::List(
-            Arc::new(urls),
-            Arc::new(AtomicUsize::new(0)),
-        ));
+        return Ok(UrlSource::from_list(urls));
     }
 
     if args.rand_regex_url {
@@ -498,7 +491,7 @@ fn resolve_url_source(args: &TesterArgs) -> Result<UrlSource, String> {
     Ok(UrlSource::Static(value.to_owned()))
 }
 
-fn parse_form_fields(args: &TesterArgs) -> Result<Option<Arc<Vec<FormFieldSpec>>>, String> {
+fn parse_form_fields(args: &TesterArgs) -> Result<Option<Vec<FormFieldSpec>>, String> {
     if args.form.is_empty() {
         return Ok(None);
     }
@@ -536,7 +529,7 @@ fn parse_form_fields(args: &TesterArgs) -> Result<Option<Arc<Vec<FormFieldSpec>>
             });
         }
     }
-    Ok(Some(Arc::new(fields)))
+    Ok(Some(fields))
 }
 
 fn resolve_http2_parallel(args: &TesterArgs) -> usize {

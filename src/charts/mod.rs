@@ -26,6 +26,7 @@ use tokio::fs;
 use tracing::{error, info};
 
 use crate::args::TesterArgs;
+use crate::error::AppResult;
 #[cfg(feature = "legacy-charts")]
 use crate::metrics::MetricRecord;
 
@@ -62,10 +63,7 @@ pub use streaming::{
 pub use timeouts::plot_timeouts_per_second;
 
 #[cfg(feature = "legacy-charts")]
-pub async fn plot_metrics(
-    metrics: &[MetricRecord],
-    args: &TesterArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn plot_metrics(metrics: &[MetricRecord], args: &TesterArgs) -> AppResult<()> {
     if metrics.is_empty() {
         return Ok(());
     }
@@ -139,7 +137,7 @@ pub async fn plot_metrics(
 pub async fn plot_aggregated_metrics(
     samples: &[crate::metrics::AggregatedMetricSample],
     args: &TesterArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if samples.is_empty() {
         return Ok(());
     }
@@ -180,7 +178,7 @@ pub async fn plot_aggregated_metrics(
 pub async fn plot_streaming_metrics(
     data: &crate::metrics::StreamingChartData,
     args: &TesterArgs,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if data.avg_buckets.is_empty() && data.rps_counts.is_empty() {
         return Ok(());
     }

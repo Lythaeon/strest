@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -12,13 +11,14 @@ use tokio::sync::{broadcast, watch};
 
 use super::{export, summary};
 use crate::args::TesterArgs;
+use crate::error::{AppError, AppResult};
 use crate::metrics::{LatencyHistogram, MetricRecord, MetricsSummary};
 use crate::ui::model::{ReplayUi, UiData};
 use crate::ui::render::setup_render_ui;
 
 const REPLAY_TICK_MS: u64 = 1000;
 
-pub(crate) async fn run_replay(args: &TesterArgs) -> Result<(), Box<dyn Error>> {
+pub(crate) async fn run_replay(args: &TesterArgs) -> AppResult<()> {
     let records = load_replay_records(args).await?;
     if records.is_empty() {
         return Err("No metrics records found for replay.".into());
@@ -245,7 +245,7 @@ pub(crate) async fn run_replay(args: &TesterArgs) -> Result<(), Box<dyn Error>> 
             .await?;
         }
 
-        Ok::<(), Box<dyn Error>>(())
+        Ok::<(), AppError>(())
     }
     .await;
 
@@ -261,7 +261,7 @@ fn render_once(
     args: &TesterArgs,
     start_ms: u64,
     end_ms: u64,
-) -> Result<(), Box<dyn Error>> {
+) -> AppResult<()> {
     let slice = window_slice(records, start_ms, end_ms);
     let summary_output = summarize(slice, args.expected_status_code, start_ms, end_ms)?;
     let stats = summary::compute_summary_stats(&summary_output.summary);
@@ -297,9 +297,9 @@ fn summarize(
     expected_status_code: u16,
     window_start_ms: u64,
     window_end_ms: u64,
-) -> Result<SummaryOutput, Box<dyn Error>> {
-    let mut histogram = LatencyHistogram::new().map_err(std::io::Error::other)?;
-    let mut success_histogram = LatencyHistogram::new().map_err(std::io::Error::other)?;
+) -> AppResult<SummaryOutput> {
+    let mut histogram = LatencyHistogram::new().map_err(AppError::from)?;
+    let mut success_histogram = LatencyHistogram::new().map_err(AppError::from)?;
 
     let mut total_requests: u64 = 0;
     let mut successful_requests: u64 = 0;
@@ -337,7 +337,7 @@ fn summarize(
             }
             success_histogram
                 .record(record.latency_ms)
-                .map_err(std::io::Error::other)?;
+                .map_err(AppError::from)?;
         }
         if record.timed_out {
             timeout_requests = timeout_requests.saturating_add(1);
@@ -348,7 +348,7 @@ fn summarize(
         }
         histogram
             .record(record.latency_ms)
-            .map_err(std::io::Error::other)?;
+            .map_err(AppError::from)?;
     }
 
     let duration_ms = window_end_ms.saturating_sub(window_start_ms);
@@ -452,7 +452,7 @@ struct SnapshotIntervalState {
 }
 
 impl SnapshotIntervalState {
-    fn new(interval: Duration, start_ms: u64, end_ms: u64) -> Result<Self, Box<dyn Error>> {
+    fn new(interval: Duration, start_ms: u64, end_ms: u64) -> AppResult<Self> {
         let interval_ms = u64::try_from(interval.as_millis()).unwrap_or(0);
         if interval_ms == 0 {
             return Err("Replay snapshot interval must be >= 1ms.".into());
@@ -476,7 +476,7 @@ fn resolve_bound(
     min_ms: u64,
     max_ms: u64,
     default: BoundDefault,
-) -> Result<u64, Box<dyn Error>> {
+) -> AppResult<u64> {
     let bound = match value {
         Some(value) => parse_bound(value)?,
         None => match default {
@@ -492,7 +492,7 @@ fn resolve_bound(
     Ok(resolved.clamp(min_ms, max_ms))
 }
 
-fn parse_bound(value: &str) -> Result<ReplayBound, Box<dyn Error>> {
+fn parse_bound(value: &str) -> AppResult<ReplayBound> {
     let trimmed = value.trim();
     if trimmed.eq_ignore_ascii_case("min") {
         return Ok(ReplayBound::Min);
@@ -510,7 +510,7 @@ enum ReplayBound {
     Duration(Duration),
 }
 
-fn parse_snapshot_format(value: &str) -> Result<SnapshotFormat, Box<dyn Error>> {
+fn parse_snapshot_format(value: &str) -> AppResult<SnapshotFormat> {
     let normalized = value.trim().to_ascii_lowercase();
     match normalized.as_str() {
         "json" => Ok(SnapshotFormat::Json),
@@ -538,7 +538,7 @@ fn resolve_snapshot_window(
     max_ms: u64,
     replay_start: u64,
     replay_end: u64,
-) -> Result<(u64, u64), Box<dyn Error>> {
+) -> AppResult<(u64, u64)> {
     let start = if args.replay_snapshot_start.is_some() {
         resolve_bound(
             args.replay_snapshot_start.as_deref(),
@@ -594,7 +594,7 @@ async fn emit_interval_snapshots(
     state: &mut SnapshotIntervalState,
     current_ms: u64,
     finalize: bool,
-) -> Result<Option<PathBuf>, Box<dyn Error>> {
+) -> AppResult<Option<PathBuf>> {
     let mut last_path = None;
     let current_ms = current_ms.min(state.end_ms);
     if current_ms < state.next_start_ms {
@@ -633,7 +633,7 @@ async fn write_snapshot(
     start_ms: u64,
     end_ms: u64,
     multi: bool,
-) -> Result<PathBuf, Box<dyn Error>> {
+) -> AppResult<PathBuf> {
     let path = snapshot_path(args, format, start_ms, end_ms, multi).await?;
     let slice = window_slice(records, start_ms, end_ms);
     match format {
@@ -658,7 +658,7 @@ async fn snapshot_path(
     start_ms: u64,
     end_ms: u64,
     multi: bool,
-) -> Result<PathBuf, Box<dyn Error>> {
+) -> AppResult<PathBuf> {
     let ext = snapshot_extension(format);
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -739,7 +739,7 @@ fn user_home_dir() -> Option<PathBuf> {
     None
 }
 
-async fn load_replay_records(args: &TesterArgs) -> Result<Vec<MetricRecord>, Box<dyn Error>> {
+async fn load_replay_records(args: &TesterArgs) -> AppResult<Vec<MetricRecord>> {
     let export_sources = [
         args.export_csv.as_ref(),
         args.export_json.as_ref(),
@@ -938,7 +938,7 @@ fn build_ui_data(
     state: &ReplayWindow,
     markers: &SnapshotMarkers,
     default_range: Option<(u64, u64)>,
-) -> Result<UiData, Box<dyn Error>> {
+) -> AppResult<UiData> {
     let slice = window_slice(records, state.start_ms, state.cursor_ms);
     let summary_output = summarize(
         slice,
