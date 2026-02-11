@@ -6,10 +6,17 @@ on:
       - main
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to attach artifacts to (e.g., v0.1.6)'
+        required: true
+        type: string
 
 jobs:
   validate:
     name: Validate Release
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -110,7 +117,7 @@ jobs:
         run: cargo package --locked
 
   publish:
-    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
+    if: github.event_name != 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
     name: Publish to Crates.io
     needs: validate
     runs-on: ubuntu-latest
@@ -170,7 +177,7 @@ jobs:
   build-binaries:
     name: Build Binaries
     needs: publish
-    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
+    if: (github.event_name == 'workflow_dispatch') || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-'))
     strategy:
       matrix:
         include:
@@ -210,6 +217,7 @@ jobs:
       - name: Package Assets
         shell: bash
         run: |
+          RELEASE_TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           mkdir dist
           # Determine binary name
           BIN_NAME="strest"
@@ -222,15 +230,15 @@ jobs:
           # Create Archive
           cd dist
           if [[ "${{ matrix.archive }}" == "tar.gz" ]]; then
-            tar -czf "../strest-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz" *
+            tar -czf "../strest-${RELEASE_TAG}-${{ matrix.suffix }}.tar.gz" *
           else
-            7z a "../strest-${{ github.ref_name }}-${{ matrix.suffix }}.zip" *
+            7z a "../strest-${RELEASE_TAG}-${{ matrix.suffix }}.zip" *
           fi
 
       - name: Upload to Release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: strest-${{ github.ref_name }}-${{ matrix.suffix }}.${{ matrix.archive }}
-          asset_name: strest-${{ github.ref_name }}-${{ matrix.suffix }}.${{ matrix.archive }}
-          tag: ${{ github.ref_name }}
+          file: strest-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.suffix }}.${{ matrix.archive }}
+          asset_name: strest-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.suffix }}.${{ matrix.archive }}
+          tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
