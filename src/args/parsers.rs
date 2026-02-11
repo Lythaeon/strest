@@ -24,6 +24,17 @@ pub(super) fn parse_tls_version(s: &str) -> Result<TlsVersion, String> {
     s.parse::<TlsVersion>()
 }
 
+pub(crate) fn parse_bool_env(s: &str) -> Result<bool, String> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "y" | "on" => Ok(true),
+        "0" | "false" | "no" | "n" | "off" => Ok(false),
+        _ => Err(format!(
+            "Invalid boolean '{}'. Expected true/false, yes/no, on/off, or 1/0.",
+            s
+        )),
+    }
+}
+
 pub(crate) fn parse_connect_to(s: &str) -> Result<ConnectToMapping, String> {
     let parts: Vec<&str> = s.split(':').collect();
     if parts.len() != 4 {

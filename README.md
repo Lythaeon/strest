@@ -8,7 +8,7 @@ strest is a command-line tool for stress testing web servers by sending a large 
 strest also ships with built-in memory debugging tools so you can investigate growth during long runs. Use RSS logging and optional heap profiling to confirm whether growth correlates with request shape/volume, connection pool behavior (idle limits/timeouts), or payload patterns, and then dial those knobs with data instead of guesswork.
 
 # Screenshot Overview  
-These screenshots showcase key metrics and real-time statistics from strest’s stress testing, including response time, error rate, request count, latency percentiles (all vs ok), timeouts, status distribution, and throughput.
+These screenshots showcase key metrics and real-time statistics from strest’s stress testing, including response time, error rate, request count, latency percentiles (All and OK charts), timeouts, status distribution, and throughput.
 
 <div style="text-align: center;">
   <img src="docs/screenshot.png" alt="CLI Screenshot" width="1000" />
@@ -24,18 +24,18 @@ These screenshots showcase key metrics and real-time statistics from strest’s 
       </a>
     </td>
     <td align="center">
-      <a href="docs/latency_percentiles_P50.png" target="_blank">
-        <img src="docs/latency_percentiles_P50.png" alt="Latency Percentiles P50" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="docs/latency_percentiles_P50_all.png" target="_blank">
+        <img src="docs/latency_percentiles_P50_all.png" alt="Latency Percentiles P50 (All)" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
     <td align="center">
-      <a href="docs/latency_percentiles_P90.png" target="_blank">
-        <img src="docs/latency_percentiles_P90.png" alt="Latency Percentiles P90" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="docs/latency_percentiles_P90_all.png" target="_blank">
+        <img src="docs/latency_percentiles_P90_all.png" alt="Latency Percentiles P90 (All)" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
     <td align="center">
-      <a href="docs/latency_percentiles_P99.png" target="_blank">
-        <img src="docs/latency_percentiles_P99.png" alt="Latency Percentiles P99" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="docs/latency_percentiles_P99_all.png" target="_blank">
+        <img src="docs/latency_percentiles_P99_all.png" alt="Latency Percentiles P99 (All)" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
   </tr>
@@ -281,6 +281,7 @@ strest --config ramp.toml --no-tui --summary --no-charts
 By default charts are stored in `~/.strest/charts` (or `%USERPROFILE%\\.strest\\charts` on Windows). You can change the location via `--charts-path` (`-c`).
 
 To disable charts use the `--no-charts` flag.
+Latency percentile charts are bucketed at 100ms by default; adjust with `--charts-latency-bucket-ms`.
 
 Charts produced:
 - `average_response_time.png`
@@ -288,9 +289,12 @@ Charts produced:
 - `cumulative_error_rate.png`
 - `cumulative_total_requests.png`
 - `requests_per_second.png`
-- `latency_percentiles_P50.png` (all vs ok overlay)
-- `latency_percentiles_P90.png` (all vs ok overlay)
-- `latency_percentiles_P99.png` (all vs ok overlay)
+- `latency_percentiles_P50_all.png` (all requests)
+- `latency_percentiles_P50_ok.png` (ok requests only)
+- `latency_percentiles_P90_all.png` (all requests)
+- `latency_percentiles_P90_ok.png` (ok requests only)
+- `latency_percentiles_P99_all.png` (all requests)
+- `latency_percentiles_P99_ok.png` (ok requests only)
 - `timeouts_per_second.png`
 - `error_rate_breakdown.png` (timeouts vs transport vs non-expected)
 - `status_code_distribution.png`
@@ -300,7 +304,7 @@ Charts produced:
 
 The UI highlights:
 - Total requests, success count, and error breakdown (timeouts, transport errors, non-expected status).
-- All vs ok latency percentiles (P50/P90/P99).
+- All vs ok latency percentiles (P50/P90/P99) in separate charts.
 - Live RPS and RPM.
 
 ### Temp Data
@@ -475,6 +479,7 @@ Config keys (top-level):
 | `pool_idle_timeout_ms` | integer | `--pool-idle-timeout-ms` |
 | `charts_path` | string | `--charts-path` (`-c`) |
 | `no_charts` | bool | `--no-charts` |
+| `charts_latency_bucket_ms` | integer | `--charts-latency-bucket-ms` |
 | `no_ua` | bool | `--no-ua` (requires `authorized = true`) |
 | `authorized` | bool | `--authorized` |
 | `tmp_path` | string | `--tmp-path` |

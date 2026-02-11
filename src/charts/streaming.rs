@@ -554,7 +554,8 @@ pub fn plot_inflight_requests_from_counts(
 }
 
 pub struct LatencyPercentilesSeries<'series> {
-    pub seconds: &'series [u64],
+    pub buckets_ms: &'series [u64],
+    pub bucket_ms: u64,
     pub p50: &'series [u64],
     pub p90: &'series [u64],
     pub p99: &'series [u64],
@@ -567,84 +568,88 @@ pub fn plot_latency_percentiles_series(
     series: &LatencyPercentilesSeries<'_>,
     base_path: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if series.seconds.is_empty() {
+    if series.buckets_ms.is_empty() {
         return Ok(());
     }
-
-    let y_max_p50 = series
-        .p50
-        .iter()
-        .copied()
-        .max()
-        .unwrap_or(1)
-        .saturating_add(1);
-    let y_max_p90 = series
-        .p90
-        .iter()
-        .copied()
-        .max()
-        .unwrap_or(1)
-        .saturating_add(1);
-    let y_max_p99 = series
-        .p99
-        .iter()
-        .copied()
-        .max()
-        .unwrap_or(1)
-        .saturating_add(1);
 
     struct LatencySeries<'series> {
         title: &'static str,
         values: &'series [u64],
-        ok_values: &'series [u64],
         color: RGBColor,
         file_path: String,
-        y_max: u64,
     }
 
     fn draw_chart(
-        seconds: &[u64],
+        buckets_ms: &[u64],
         series: &LatencySeries<'_>,
+        bucket_ms: u64,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let root = BitMapBackend::new(&series.file_path, (1600, 600)).into_drawing_area();
         root.fill(&WHITE)?;
 
-        let x_min = *seconds.first().unwrap_or(&0);
-        let x_max = seconds.last().copied().unwrap_or(0).saturating_add(1);
+        let mut combined: Vec<(u64, u64)> = buckets_ms
+            .iter()
+            .copied()
+            .zip(series.values.iter().copied())
+            .collect();
+        combined.sort_by_key(|(sec, _)| *sec);
+
+        let x_min = combined.first().map(|(sec, _)| *sec).unwrap_or(0);
+        let x_max = combined
+            .last()
+            .map(|(sec, _)| *sec)
+            .unwrap_or(0)
+            .saturating_add(1);
+        let y_max = combined
+            .iter()
+            .map(|(_, value)| *value)
+            .max()
+            .unwrap_or(1)
+            .saturating_add(1);
 
         let mut chart = ChartBuilder::on(&root)
             .caption(series.title, ("sans-serif", 30))
             .margin(10)
             .x_label_area_size(30)
             .y_label_area_size(50)
-            .build_cartesian_2d(x_min..x_max, 0u64..series.y_max)?;
+            .build_cartesian_2d(x_min..x_max, 0u64..y_max)?;
 
         chart
             .configure_mesh()
-            .x_desc("Elapsed Time (s)")
+            .x_desc("Elapsed Time (ms)")
             .y_desc("Latency (ms)")
             .draw()?;
 
-        let points: Vec<(u64, u64)> = seconds
-            .iter()
-            .copied()
-            .zip(series.values.iter().copied())
-            .collect();
-        let ok_points: Vec<(u64, u64)> = seconds
-            .iter()
-            .copied()
-            .zip(series.ok_values.iter().copied())
-            .collect();
-        chart
-            .draw_series(LineSeries::new(points, series.color))?
-            .label("All")
-            .legend(|(x, y)| {
-                PathElement::new(vec![(x, y), (x.saturating_add(20), y)], series.color)
-            });
-        chart
-            .draw_series(LineSeries::new(ok_points, BLACK))?
-            .label("OK")
-            .legend(|(x, y)| PathElement::new(vec![(x, y), (x.saturating_add(20), y)], BLACK));
+        let mut segments: Vec<Vec<(u64, u64)>> = Vec::new();
+        let mut current: Vec<(u64, u64)> = Vec::new();
+        let max_gap = bucket_ms.max(1);
+        let mut last_x: Option<u64> = None;
+
+        for (x, y) in combined.iter().copied() {
+            if let Some(prev_x) = last_x
+                && x.saturating_sub(prev_x) > max_gap
+                && !current.is_empty()
+            {
+                segments.push(std::mem::take(&mut current));
+            }
+            current.push((x, y));
+            last_x = Some(x);
+        }
+        if !current.is_empty() {
+            segments.push(current);
+        }
+
+        if let Some((first, rest)) = segments.split_first() {
+            chart
+                .draw_series(LineSeries::new(first.clone(), series.color))?
+                .label("Latency")
+                .legend(|(x, y)| {
+                    PathElement::new(vec![(x, y), (x.saturating_add(20), y)], series.color)
+                });
+            for segment in rest {
+                chart.draw_series(LineSeries::new(segment.clone(), series.color))?;
+            }
+        }
 
         chart
             .configure_series_labels()
@@ -658,33 +663,45 @@ pub fn plot_latency_percentiles_series(
 
     let chart_series = [
         LatencySeries {
-            title: "Latency P50 (All vs OK)",
+            title: "Latency P50 (All)",
             values: series.p50,
-            ok_values: series.p50_ok,
             color: BLUE,
-            file_path: format!("{}_P50.png", base_path),
-            y_max: y_max_p50,
+            file_path: format!("{}_P50_all.png", base_path),
         },
         LatencySeries {
-            title: "Latency P90 (All vs OK)",
+            title: "Latency P50 (OK)",
+            values: series.p50_ok,
+            color: BLACK,
+            file_path: format!("{}_P50_ok.png", base_path),
+        },
+        LatencySeries {
+            title: "Latency P90 (All)",
             values: series.p90,
-            ok_values: series.p90_ok,
             color: GREEN,
-            file_path: format!("{}_P90.png", base_path),
-            y_max: y_max_p90,
+            file_path: format!("{}_P90_all.png", base_path),
         },
         LatencySeries {
-            title: "Latency P99 (All vs OK)",
+            title: "Latency P90 (OK)",
+            values: series.p90_ok,
+            color: BLACK,
+            file_path: format!("{}_P90_ok.png", base_path),
+        },
+        LatencySeries {
+            title: "Latency P99 (All)",
             values: series.p99,
-            ok_values: series.p99_ok,
             color: RED,
-            file_path: format!("{}_P99.png", base_path),
-            y_max: y_max_p99,
+            file_path: format!("{}_P99_all.png", base_path),
+        },
+        LatencySeries {
+            title: "Latency P99 (OK)",
+            values: series.p99_ok,
+            color: BLACK,
+            file_path: format!("{}_P99_ok.png", base_path),
         },
     ];
 
     for item in &chart_series {
-        draw_chart(series.seconds, item)?;
+        draw_chart(series.buckets_ms, item, series.bucket_ms)?;
     }
 
     Ok(())

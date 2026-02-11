@@ -1,4 +1,5 @@
 use super::*;
+use crate::args::parsers::parse_bool_env;
 use clap::Parser;
 use std::time::Duration;
 use tempfile::tempdir;
@@ -112,6 +113,12 @@ fn parse_args_defaults() -> Result<(), String> {
     }
     if args.no_charts {
         return Err("Expected no_charts to be false".to_owned());
+    }
+    if args.charts_latency_bucket_ms.get() != 100 {
+        return Err(format!(
+            "Unexpected charts_latency_bucket_ms: {}",
+            args.charts_latency_bucket_ms.get()
+        ));
     }
     if args.no_ua {
         return Err("Expected no_ua to be false".to_owned());
@@ -270,8 +277,12 @@ fn parse_args_defaults() -> Result<(), String> {
     if args.no_pre_lookup {
         return Err("Expected no_pre_lookup to be false".to_owned());
     }
-    if args.no_color {
-        return Err("Expected no_color to be false".to_owned());
+    let expected_no_color = std::env::var("NO_COLOR")
+        .ok()
+        .and_then(|value| parse_bool_env(&value).ok())
+        .unwrap_or(false);
+    if args.no_color != expected_no_color {
+        return Err(format!("Unexpected no_color default: {}", args.no_color));
     }
     if args.ui_fps != 16 {
         return Err(format!("Unexpected ui_fps: {}", args.ui_fps));

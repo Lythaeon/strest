@@ -318,6 +318,35 @@ fn percentile(values: &mut [u64], percentile: u64) -> u64 {
     *values.get(idx).unwrap_or(&0)
 }
 
+struct PercentileSeries<'series> {
+    latency_seconds: &'series mut Vec<u64>,
+    p50: &'series mut Vec<u64>,
+    p90: &'series mut Vec<u64>,
+    p99: &'series mut Vec<u64>,
+    p50_ok: &'series mut Vec<u64>,
+    p90_ok: &'series mut Vec<u64>,
+    p99_ok: &'series mut Vec<u64>,
+}
+
+impl<'series> PercentileSeries<'series> {
+    fn push_percentiles_for_sec(
+        &mut self,
+        sec: u64,
+        values: &mut Vec<u64>,
+        values_ok: &mut Vec<u64>,
+    ) {
+        let mut values = std::mem::take(values);
+        let mut values_ok = std::mem::take(values_ok);
+        self.latency_seconds.push(sec);
+        self.p50.push(percentile(&mut values, 50));
+        self.p90.push(percentile(&mut values, 90));
+        self.p99.push(percentile(&mut values, 99));
+        self.p50_ok.push(percentile(&mut values_ok, 50));
+        self.p90_ok.push(percentile(&mut values_ok, 90));
+        self.p99_ok.push(percentile(&mut values_ok, 99));
+    }
+}
+
 fn ensure_len(vec: &mut Vec<u32>, len: usize) {
     if vec.len() < len {
         vec.resize(len, 0);
@@ -334,6 +363,7 @@ pub(crate) async fn load_chart_data_streaming(
     paths: &[PathBuf],
     expected_status_code: u16,
     metrics_range: &Option<metrics::MetricsRange>,
+    latency_bucket_ms: u64,
 ) -> Result<metrics::StreamingChartData, String> {
     let mut cursors: Vec<LogCursor> = Vec::with_capacity(paths.len());
     for path in paths {
@@ -374,7 +404,7 @@ pub(crate) async fn load_chart_data_streaming(
     let mut status_other: Vec<u32> = Vec::new();
     let mut inflight_deltas: Vec<i64> = Vec::new();
 
-    let mut latency_seconds: Vec<u64> = Vec::new();
+    let mut latency_buckets_ms: Vec<u64> = Vec::new();
     let mut p50: Vec<u64> = Vec::new();
     let mut p90: Vec<u64> = Vec::new();
     let mut p99: Vec<u64> = Vec::new();
@@ -382,13 +412,24 @@ pub(crate) async fn load_chart_data_streaming(
     let mut p90_ok: Vec<u64> = Vec::new();
     let mut p99_ok: Vec<u64> = Vec::new();
 
-    let mut current_sec: Option<u64> = None;
+    let bucket_ms = latency_bucket_ms.max(1);
+    let mut current_bucket: Option<u64> = None;
     let mut latencies: Vec<u64> = Vec::new();
     let mut latencies_ok: Vec<u64> = Vec::new();
+    let mut series = PercentileSeries {
+        latency_seconds: &mut latency_buckets_ms,
+        p50: &mut p50,
+        p90: &mut p90,
+        p99: &mut p99,
+        p50_ok: &mut p50_ok,
+        p90_ok: &mut p90_ok,
+        p99_ok: &mut p99_ok,
+    };
 
     while let Some(std::cmp::Reverse(item)) = heap.pop() {
         let record = item.record;
         let sec = record.elapsed_ms / 1000;
+        let bucket = record.elapsed_ms.checked_div(bucket_ms).unwrap_or(0);
 
         if let Some(metrics::MetricsRange(range)) = metrics_range.as_ref()
             && !range.contains(&sec)
@@ -405,20 +446,16 @@ pub(crate) async fn load_chart_data_streaming(
             continue;
         }
 
-        match current_sec {
-            Some(active) if sec != active => {
-                let mut values = std::mem::take(&mut latencies);
-                let mut values_ok = std::mem::take(&mut latencies_ok);
-                latency_seconds.push(active);
-                p50.push(percentile(&mut values, 50));
-                p90.push(percentile(&mut values, 90));
-                p99.push(percentile(&mut values, 99));
-                p50_ok.push(percentile(&mut values_ok, 50));
-                p90_ok.push(percentile(&mut values_ok, 90));
-                p99_ok.push(percentile(&mut values_ok, 99));
-                current_sec = Some(sec);
+        match current_bucket {
+            Some(active) if bucket != active => {
+                series.push_percentiles_for_sec(
+                    active.saturating_mul(bucket_ms),
+                    &mut latencies,
+                    &mut latencies_ok,
+                );
+                current_bucket = Some(bucket);
             }
-            None => current_sec = Some(sec),
+            None => current_bucket = Some(bucket),
             _ => {}
         }
 
@@ -503,16 +540,12 @@ pub(crate) async fn load_chart_data_streaming(
         }
     }
 
-    if let Some(active) = current_sec {
-        let mut values = std::mem::take(&mut latencies);
-        let mut values_ok = std::mem::take(&mut latencies_ok);
-        latency_seconds.push(active);
-        p50.push(percentile(&mut values, 50));
-        p90.push(percentile(&mut values, 90));
-        p99.push(percentile(&mut values, 99));
-        p50_ok.push(percentile(&mut values_ok, 50));
-        p90_ok.push(percentile(&mut values_ok, 90));
-        p99_ok.push(percentile(&mut values_ok, 99));
+    if let Some(active) = current_bucket {
+        series.push_percentiles_for_sec(
+            active.saturating_mul(bucket_ms),
+            &mut latencies,
+            &mut latencies_ok,
+        );
     }
 
     let mut inflight: Vec<u32> = Vec::with_capacity(inflight_deltas.len());
@@ -537,7 +570,8 @@ pub(crate) async fn load_chart_data_streaming(
         status_5xx,
         status_other,
         inflight,
-        latency_seconds,
+        latency_buckets_ms,
+        latency_bucket_ms: bucket_ms,
         p50,
         p90,
         p99,
