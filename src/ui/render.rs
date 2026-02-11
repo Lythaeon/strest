@@ -5,7 +5,7 @@ use crossterm::{
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout},
     prelude::{Backend, text},
     style::{Color, Style},
     text::Span,
@@ -13,6 +13,7 @@ use ratatui::{
 };
 use std::error::Error;
 use std::io;
+use std::time::Duration;
 use tokio::sync::{
     broadcast::{self},
     watch,
@@ -42,6 +43,16 @@ pub trait UiActions {
 }
 
 pub struct Ui;
+
+const BANNER_LINES: [&str; 7] = [
+    "███████╗████████╗██████╗ ███████╗███████╗████████╗",
+    "██╔════╝╚══██╔══╝██╔══██╗██╔════╝██╔════╝╚══██╔══╝",
+    "███████╗   ██║   ██████╔╝█████╗  ███████╗   ██║   ",
+    "╚════██║   ██║   ██╔══██╗██╔══╝  ╚════██║   ██║   ",
+    "███████║   ██║   ██║  ██║███████╗███████║   ██║   ",
+    "╚══════╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚══════╝   ╚═╝   ",
+    "                                                   ",
+];
 
 impl UiActions for Ui {
     fn setup_terminal() -> Result<Terminal<CrosstermBackend<std::io::Stdout>>, Box<dyn Error>> {
@@ -386,4 +397,103 @@ pub fn setup_render_ui(
             }
         }
     })
+}
+
+/// Render a short splash screen before the main UI starts.
+///
+/// # Errors
+///
+/// Returns an error if the terminal setup fails.
+pub async fn run_splash_screen(no_color: bool) -> Result<(), Box<dyn Error>> {
+    let mut terminal = Ui::setup_terminal()?;
+    let _guard = TerminalGuard;
+
+    render_splash(&mut terminal, no_color);
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    Ok(())
+}
+
+fn render_splash<B: Backend>(terminal: &mut Terminal<B>, no_color: bool) {
+    if let Err(err) = terminal.draw(|f| {
+        let size = f.size();
+        let banner_height = BANNER_LINES.len().saturating_add(1);
+        let available_height = usize::from(size.height);
+        let top_pad = available_height.saturating_sub(banner_height) / 2;
+
+        let mut lines = Vec::with_capacity(banner_height.saturating_add(top_pad).saturating_add(1));
+        for _ in 0..top_pad {
+            lines.push(text::Line::from(""));
+        }
+        let start_color = (0x80, 0x4c, 0xff);
+        let mid_color = (0xff, 0x5f, 0xc8);
+        let end_color = (0x3a, 0xa9, 0xff);
+
+        let denom = BANNER_LINES.len().saturating_sub(1);
+        for (idx, line) in BANNER_LINES.iter().enumerate() {
+            let color = tri_gradient_color(start_color, mid_color, end_color, idx, denom);
+            let style = style_color(no_color, color);
+            lines.push(text::Line::from(Span::styled((*line).to_owned(), style)));
+        }
+
+        lines.push(text::Line::from(""));
+
+        let description = format!(
+            "strest v{} | {} | stress testing",
+            env!("CARGO_PKG_VERSION"),
+            env!("CARGO_PKG_LICENSE")
+        );
+        lines.push(text::Line::from(Span::styled(
+            description,
+            style_color(no_color, Color::LightMagenta),
+        )));
+
+        let banner = Paragraph::new(lines)
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: false });
+        f.render_widget(banner, size);
+    }) {
+        eprintln!("Failed to render splash screen: {}", err);
+    }
+}
+
+fn gradient_color(start: (u8, u8, u8), end: (u8, u8, u8), idx: usize, denom: usize) -> Color {
+    let denom = denom.max(1) as i32;
+    let idx = idx.min(usize::try_from(denom).unwrap_or(0)) as i32;
+    let lerp = |a: u8, b: u8| -> u8 {
+        let a = i32::from(a);
+        let b = i32::from(b);
+        let value = b
+            .checked_sub(a)
+            .and_then(|delta| delta.checked_mul(idx))
+            .and_then(|scaled| scaled.checked_div(denom))
+            .and_then(|step| a.checked_add(step))
+            .unwrap_or(a);
+        u8::try_from(value.clamp(0, 255)).unwrap_or(0)
+    };
+    Color::Rgb(
+        lerp(start.0, end.0),
+        lerp(start.1, end.1),
+        lerp(start.2, end.2),
+    )
+}
+
+fn tri_gradient_color(
+    start: (u8, u8, u8),
+    mid: (u8, u8, u8),
+    end: (u8, u8, u8),
+    idx: usize,
+    denom: usize,
+) -> Color {
+    let denom = denom.max(1);
+    let half = denom / 2;
+    if idx <= half {
+        gradient_color(start, mid, idx, half)
+    } else {
+        gradient_color(
+            mid,
+            end,
+            idx.saturating_sub(half),
+            denom.saturating_sub(half),
+        )
+    }
 }

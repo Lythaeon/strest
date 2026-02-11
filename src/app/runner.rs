@@ -61,7 +61,6 @@ pub(crate) async fn run_local(
     }
     let charts_enabled = !args.no_charts;
 
-    let run_start = Instant::now();
     let summary_enabled = args.summary || args.no_ui || !ui_enabled;
     let rss_handle = setup_rss_log_task(&shutdown_tx, args.no_ui, args.rss_log_ms.as_ref());
     let alloc_handle = setup_alloc_profiler_task(&shutdown_tx, args.alloc_profiler_ms.as_ref());
@@ -70,6 +69,15 @@ pub(crate) async fn run_local(
         args.alloc_profiler_dump_ms.as_ref(),
         &args.alloc_profiler_dump_path,
     );
+
+    if ui_enabled
+        && !args.no_splash
+        && let Err(err) = crate::ui::render::run_splash_screen(args.no_color).await
+    {
+        warn!("Failed to render splash screen: {}", err);
+    }
+
+    let run_start = Instant::now();
     let logs::LogSetup {
         log_sink,
         handles: log_handles,
@@ -229,6 +237,7 @@ pub(crate) async fn run_local(
             &log_paths,
             args.expected_status_code,
             &args.metrics_range,
+            args.charts_latency_bucket_ms.get(),
         )
         .await
         {

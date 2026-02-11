@@ -55,7 +55,8 @@ fn plot_latency_percentiles_single_second() -> Result<(), String> {
             None => return Err("Failed to convert path to string".to_owned()),
         };
         let series = LatencyPercentilesSeries {
-            seconds: &data.latency_seconds,
+            buckets_ms: &data.latency_buckets_ms,
+            bucket_ms: data.latency_bucket_ms,
             p50: &data.p50,
             p90: &data.p90,
             p99: &data.p99,
@@ -67,18 +68,30 @@ fn plot_latency_percentiles_single_second() -> Result<(), String> {
         super::plot_latency_percentiles_series(&series, base_path_str)
             .map_err(|err| format!("plot_latency_percentiles_series failed: {}", err))?;
 
-        let p50_path = format!("{}_P50.png", base_path_str);
-        let p90_path = format!("{}_P90.png", base_path_str);
-        let p99_path = format!("{}_P99.png", base_path_str);
+        let p50_path = format!("{}_P50_all.png", base_path_str);
+        let p50_ok_path = format!("{}_P50_ok.png", base_path_str);
+        let p90_path = format!("{}_P90_all.png", base_path_str);
+        let p90_ok_path = format!("{}_P90_ok.png", base_path_str);
+        let p99_path = format!("{}_P99_all.png", base_path_str);
+        let p99_ok_path = format!("{}_P99_ok.png", base_path_str);
 
         if std::fs::metadata(p50_path).is_err() {
             return Err("Missing P50 output".to_owned());
         }
+        if std::fs::metadata(p50_ok_path).is_err() {
+            return Err("Missing P50 ok output".to_owned());
+        }
         if std::fs::metadata(p90_path).is_err() {
             return Err("Missing P90 output".to_owned());
         }
+        if std::fs::metadata(p90_ok_path).is_err() {
+            return Err("Missing P90 ok output".to_owned());
+        }
         if std::fs::metadata(p99_path).is_err() {
             return Err("Missing P99 output".to_owned());
+        }
+        if std::fs::metadata(p99_ok_path).is_err() {
+            return Err("Missing P99 ok output".to_owned());
         }
 
         Ok(())
@@ -124,7 +137,8 @@ async fn build_streaming_data(
     file.flush()
         .await
         .map_err(|err| format!("Failed to flush log: {}", err))?;
-    let data = logs::load_chart_data_streaming(&[log_path], expected_status_code, &None).await?;
+    let data =
+        logs::load_chart_data_streaming(&[log_path], expected_status_code, &None, 100).await?;
     Ok((dir, data))
 }
 
@@ -182,6 +196,7 @@ fn plot_metrics_creates_files() -> Result<(), String> {
             connect_timeout: Duration::from_secs(5),
             charts_path: charts_path.clone(),
             no_charts: false,
+            charts_latency_bucket_ms: PositiveU64::try_from(100)?,
             verbose: false,
             config: None,
             tmp_path: "./tmp".to_owned(),
@@ -211,6 +226,7 @@ fn plot_metrics_creates_files() -> Result<(), String> {
             db_url: None,
             log_shards: PositiveUsize::try_from(1)?,
             no_ui: true,
+            no_splash: true,
             ui_window_ms: PositiveU64::try_from(10_000)?,
             summary: false,
             tls_min: None,
@@ -270,9 +286,12 @@ fn plot_metrics_creates_files() -> Result<(), String> {
             "average_response_time.png",
             "cumulative_successful_requests.png",
             "cumulative_error_rate.png",
-            "latency_percentiles_P50.png",
-            "latency_percentiles_P90.png",
-            "latency_percentiles_P99.png",
+            "latency_percentiles_P50_all.png",
+            "latency_percentiles_P50_ok.png",
+            "latency_percentiles_P90_all.png",
+            "latency_percentiles_P90_ok.png",
+            "latency_percentiles_P99_all.png",
+            "latency_percentiles_P99_ok.png",
             "requests_per_second.png",
             "timeouts_per_second.png",
             "error_rate_breakdown.png",

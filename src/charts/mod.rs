@@ -211,7 +211,8 @@ pub async fn plot_streaming_metrics(
 
     info!("Plotting latency percentiles...");
     let percentiles = LatencyPercentilesSeries {
-        seconds: &data.latency_seconds,
+        buckets_ms: &data.latency_buckets_ms,
+        bucket_ms: data.latency_bucket_ms,
         p50: &data.p50,
         p90: &data.p90,
         p99: &data.p99,

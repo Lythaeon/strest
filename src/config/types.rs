@@ -38,6 +38,7 @@ pub struct ConfigFile {
     pub pool_idle_timeout_ms: Option<u64>,
     pub charts_path: Option<String>,
     pub no_charts: Option<bool>,
+    pub charts_latency_bucket_ms: Option<u64>,
     pub no_ua: Option<bool>,
     pub authorized: Option<bool>,
     pub tmp_path: Option<String>,

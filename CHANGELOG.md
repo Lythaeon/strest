@@ -5,6 +5,19 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+- Split README into `docs/USAGE.md` and `docs/ADVANCED.md` and shortened the top-level README.
+
+## 0.1.6
+
+Released: 2026-02-11
+
+- Fixed streaming latency percentile charts to render in chronological order and avoid diagonal artifacts.
+- Accepted `NO_COLOR=1` (and other common boolean values) without CLI parse errors.
+- Split streaming latency percentile charts into separate All vs OK plots for improved readability.
+- Filled missing seconds in streaming percentile series to avoid misleading line interpolation.
+- Switched streaming latency percentile buckets to 100ms with a `--charts-latency-bucket-ms` override.
+- Filled missing buckets using the last observed percentile values for smoother charts.
+
 ## 0.1.5
 
 Released: 2026-02-10

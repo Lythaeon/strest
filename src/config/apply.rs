@@ -222,6 +222,13 @@ pub fn apply_config(
         args.no_charts = no_charts;
     }
 
+    if !is_cli(matches, "charts_latency_bucket_ms")
+        && let Some(bucket_ms) = config.charts_latency_bucket_ms
+    {
+        args.charts_latency_bucket_ms = PositiveU64::try_from(bucket_ms)
+            .map_err(|err| format!("Invalid charts_latency_bucket_ms: {}", err))?;
+    }
+
     if !is_cli(matches, "no_ua")
         && let Some(no_ua) = config.no_ua
     {

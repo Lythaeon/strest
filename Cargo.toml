@@ -1,6 +1,6 @@
 [package]
 name = "strest"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 description = "Blazing-fast async HTTP load tester in Rust - lock-free design, real-time stats, distributed runs, and optional chart exports for high-load API testing."
 license = "Apache-2.0"

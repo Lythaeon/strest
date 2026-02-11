@@ -6,8 +6,8 @@ use crate::sinks::config::SinksConfig;
 
 use super::defaults::{default_charts_path, default_tmp_path};
 use super::parsers::{
-    parse_connect_to, parse_duration_arg, parse_header, parse_positive_u64, parse_positive_usize,
-    parse_tls_version,
+    parse_bool_env, parse_connect_to, parse_duration_arg, parse_header, parse_positive_u64,
+    parse_positive_usize, parse_tls_version,
 };
 use super::types::{
     ConnectToMapping, ControllerMode, HttpMethod, HttpVersion, LoadProfile, OutputFormat,
@@ -233,6 +233,10 @@ pub struct TesterArgs {
     #[arg(long)]
     pub no_charts: bool,
 
+    /// Latency percentile chart bucket size in milliseconds
+    #[arg(long = "charts-latency-bucket-ms", default_value = "100", value_parser = parse_positive_u64)]
+    pub charts_latency_bucket_ms: PositiveU64,
+
     /// Enable verbose logging (sets log level to debug unless overridden by STREST_LOG/RUST_LOG)
     #[arg(long, short = 'v', alias = "debug")]
     pub verbose: bool,
@@ -288,6 +292,10 @@ pub struct TesterArgs {
     /// Disable UI rendering
     #[arg(long = "no-tui", alias = "no-ui")]
     pub no_ui: bool,
+
+    /// Skip the startup splash screen
+    #[arg(long = "no-splash")]
+    pub no_splash: bool,
 
     /// UI chart window length in milliseconds (default: 10000)
     #[arg(
@@ -418,7 +426,7 @@ pub struct TesterArgs {
     pub no_pre_lookup: bool,
 
     /// Disable color output
-    #[arg(long = "no-color", env = "NO_COLOR")]
+    #[arg(long = "no-color", env = "NO_COLOR", value_parser = parse_bool_env)]
     pub no_color: bool,
 
     /// Frame per second for the UI
