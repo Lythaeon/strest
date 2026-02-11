@@ -1,73 +1,86 @@
 use std::time::Duration;
 
 use super::types::{ConnectToMapping, PositiveU64, PositiveUsize, TlsVersion};
+use crate::error::{AppError, AppResult, ConnectToPortKind, ValidationError};
 
-pub(crate) fn parse_header(s: &str) -> Result<(String, String), String> {
+pub(crate) fn parse_header(s: &str) -> Result<(String, String), ValidationError> {
     match s.split_once(':') {
         Some((key, value)) => Ok((key.trim().to_owned(), value.trim().to_owned())),
-        None => Err(format!(
-            "Invalid header format: '{}'. Expected 'Key: Value'",
-            s
-        )),
+        None => Err(ValidationError::InvalidHeaderFormat {
+            value: s.to_owned(),
+        }),
     }
 }
 
-pub(super) fn parse_positive_u64(s: &str) -> Result<PositiveU64, String> {
-    s.parse::<PositiveU64>()
+pub(super) fn parse_positive_u64(s: &str) -> AppResult<PositiveU64> {
+    s.parse::<PositiveU64>().map_err(AppError::from)
 }
 
-pub(super) fn parse_positive_usize(s: &str) -> Result<PositiveUsize, String> {
-    s.parse::<PositiveUsize>()
+pub(super) fn parse_positive_usize(s: &str) -> AppResult<PositiveUsize> {
+    s.parse::<PositiveUsize>().map_err(AppError::from)
 }
 
-pub(super) fn parse_tls_version(s: &str) -> Result<TlsVersion, String> {
+pub(super) fn parse_tls_version(s: &str) -> AppResult<TlsVersion> {
     s.parse::<TlsVersion>()
 }
 
-pub(crate) fn parse_bool_env(s: &str) -> Result<bool, String> {
+pub(crate) fn parse_bool_env(s: &str) -> AppResult<bool> {
     match s.trim().to_ascii_lowercase().as_str() {
         "1" | "true" | "yes" | "y" | "on" => Ok(true),
         "0" | "false" | "no" | "n" | "off" => Ok(false),
-        _ => Err(format!(
-            "Invalid boolean '{}'. Expected true/false, yes/no, on/off, or 1/0.",
-            s
-        )),
+        _ => Err(AppError::validation(ValidationError::InvalidBoolean {
+            value: s.to_owned(),
+        })),
     }
 }
 
-pub(crate) fn parse_connect_to(s: &str) -> Result<ConnectToMapping, String> {
+pub(crate) fn parse_connect_to(s: &str) -> Result<ConnectToMapping, ValidationError> {
     let parts: Vec<&str> = s.split(':').collect();
     if parts.len() != 4 {
-        return Err(format!(
-            "Invalid connect-to '{}'. Expected 'source_host:source_port:target_host:target_port'.",
-            s
-        ));
+        return Err(ValidationError::InvalidConnectToFormat {
+            value: s.to_owned(),
+        });
     }
     let source_host = parts
         .first()
-        .ok_or_else(|| format!("Invalid connect-to '{}'.", s))?
+        .ok_or_else(|| ValidationError::InvalidConnectTo {
+            value: s.to_owned(),
+        })?
         .trim();
     let source_port: u16 = parts
         .get(1)
-        .ok_or_else(|| format!("Invalid connect-to '{}'.", s))?
+        .ok_or_else(|| ValidationError::InvalidConnectTo {
+            value: s.to_owned(),
+        })?
         .trim()
         .parse()
-        .map_err(|err| format!("Invalid source port in '{}': {}", s, err))?;
+        .map_err(|err| ValidationError::InvalidConnectToPort {
+            value: s.to_owned(),
+            kind: ConnectToPortKind::Source,
+            source: err,
+        })?;
     let target_host = parts
         .get(2)
-        .ok_or_else(|| format!("Invalid connect-to '{}'.", s))?
+        .ok_or_else(|| ValidationError::InvalidConnectTo {
+            value: s.to_owned(),
+        })?
         .trim();
     let target_port: u16 = parts
         .get(3)
-        .ok_or_else(|| format!("Invalid connect-to '{}'.", s))?
+        .ok_or_else(|| ValidationError::InvalidConnectTo {
+            value: s.to_owned(),
+        })?
         .trim()
         .parse()
-        .map_err(|err| format!("Invalid target port in '{}': {}", s, err))?;
+        .map_err(|err| ValidationError::InvalidConnectToPort {
+            value: s.to_owned(),
+            kind: ConnectToPortKind::Target,
+            source: err,
+        })?;
     if source_host.is_empty() || target_host.is_empty() {
-        return Err(format!(
-            "Invalid connect-to '{}'. Host must not be empty.",
-            s
-        ));
+        return Err(ValidationError::ConnectToHostEmpty {
+            value: s.to_owned(),
+        });
     }
     Ok(ConnectToMapping {
         source_host: source_host.to_owned(),
@@ -77,10 +90,10 @@ pub(crate) fn parse_connect_to(s: &str) -> Result<ConnectToMapping, String> {
     })
 }
 
-pub(crate) fn parse_duration_arg(s: &str) -> Result<Duration, String> {
+pub(crate) fn parse_duration_arg(s: &str) -> AppResult<Duration> {
     let value = s.trim();
     if value.is_empty() {
-        return Err("Duration must not be empty.".to_owned());
+        return Err(AppError::validation(ValidationError::DurationEmpty));
     }
 
     let mut digits_len = 0usize;
@@ -92,12 +105,19 @@ pub(crate) fn parse_duration_arg(s: &str) -> Result<Duration, String> {
         }
     }
     if digits_len == 0 {
-        return Err(format!("Invalid duration '{}'.", value));
+        return Err(AppError::validation(
+            ValidationError::InvalidDurationFormat {
+                value: value.to_owned(),
+            },
+        ));
     }
     let (num_part, unit_part) = value.split_at(digits_len);
-    let number: u64 = num_part
-        .parse()
-        .map_err(|err| format!("Invalid duration '{}': {}", value, err))?;
+    let number: u64 = num_part.parse().map_err(|err| {
+        AppError::validation(ValidationError::InvalidDurationNumber {
+            value: value.to_owned(),
+            source: err,
+        })
+    })?;
 
     let unit = if unit_part.is_empty() { "s" } else { unit_part };
     let duration = match unit {
@@ -106,21 +126,25 @@ pub(crate) fn parse_duration_arg(s: &str) -> Result<Duration, String> {
         "m" => {
             let secs = number
                 .checked_mul(60)
-                .ok_or_else(|| "Duration overflow.".to_owned())?;
+                .ok_or_else(|| AppError::validation(ValidationError::DurationOverflow))?;
             Duration::from_secs(secs)
         }
         "h" => {
             let secs = number
                 .checked_mul(60)
                 .and_then(|seconds| seconds.checked_mul(60))
-                .ok_or_else(|| "Duration overflow.".to_owned())?;
+                .ok_or_else(|| AppError::validation(ValidationError::DurationOverflow))?;
             Duration::from_secs(secs)
         }
-        _ => return Err(format!("Invalid duration unit '{}'.", unit)),
+        _ => {
+            return Err(AppError::validation(ValidationError::InvalidDurationUnit {
+                unit: unit.to_owned(),
+            }));
+        }
     };
 
     if duration.as_millis() == 0 {
-        return Err("Duration must be > 0.".to_owned());
+        return Err(AppError::validation(ValidationError::DurationZero));
     }
 
     Ok(duration)

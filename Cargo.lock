@@ -2423,6 +2423,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "url",
  "wasmparser",
  "wat",
 ]

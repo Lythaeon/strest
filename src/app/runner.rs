@@ -2,21 +2,44 @@ use std::io::IsTerminal;
 use std::path::Path;
 use std::time::Duration;
 
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 use tracing::{info, warn};
 
+use crate::shutdown::ShutdownSender;
 use crate::{
     args::{OutputFormat, TesterArgs},
     charts,
-    error::{AppError, AppResult},
+    error::AppResult,
     http,
     metrics::{self, Metrics},
     sinks::{config::SinkStats, writers},
     ui::{model::UiData, render::setup_render_ui},
 };
 
+#[cfg(feature = "alloc-profiler")]
+use crate::error::{AppError, MetricsError};
+
 use super::{cleanup, export, logs, progress, summary};
+
+#[cfg(feature = "alloc-profiler")]
+#[derive(Debug)]
+struct JemallocCtlError(jemalloc_ctl::Error);
+
+#[cfg(feature = "alloc-profiler")]
+impl std::fmt::Display for JemallocCtlError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[cfg(feature = "alloc-profiler")]
+impl std::error::Error for JemallocCtlError {}
+
+#[cfg(feature = "alloc-profiler")]
+fn boxed_jemalloc_error(err: jemalloc_ctl::Error) -> Box<dyn std::error::Error + Send + Sync> {
+    Box::new(JemallocCtlError(err))
+}
 
 pub(crate) struct RunOutcome {
     pub summary: metrics::MetricsSummary,
@@ -32,7 +55,7 @@ pub(crate) async fn run_local(
     stream_tx: Option<mpsc::UnboundedSender<metrics::StreamSnapshot>>,
     mut external_shutdown: Option<watch::Receiver<bool>>,
 ) -> AppResult<RunOutcome> {
-    let (shutdown_tx, _) = broadcast::channel::<u16>(1);
+    let (shutdown_tx, _) = crate::shutdown_handlers::shutdown_channel();
     if let Some(mut external_shutdown) = external_shutdown.take() {
         let shutdown_tx = shutdown_tx.clone();
         tokio::spawn(async move {
@@ -41,7 +64,7 @@ pub(crate) async fn run_local(
                     break;
                 }
                 if *external_shutdown.borrow() {
-                    drop(shutdown_tx.send(1));
+                    drop(shutdown_tx.send(()));
                     break;
                 }
             }
@@ -90,17 +113,18 @@ pub(crate) async fn run_local(
             Ok(handle) => handle,
             Err(err) => {
                 eprintln!("Failed to setup request sender: {}", err);
-                return Err(err.into());
+                return Err(err);
             }
         };
     drop(metrics_tx);
 
     let keyboard_shutdown_handle = if ui_enabled {
-        crate::shutdown::setup_keyboard_shutdown_handler(&shutdown_tx)
+        crate::shutdown_handlers::setup_keyboard_shutdown_handler(&shutdown_tx)
     } else {
         tokio::spawn(async {})
     };
-    let signal_shutdown_handle = crate::shutdown::setup_signal_shutdown_handler(&shutdown_tx);
+    let signal_shutdown_handle =
+        crate::shutdown_handlers::setup_signal_shutdown_handler(&shutdown_tx);
     let render_ui_handle = if ui_enabled {
         setup_render_ui(&args, &shutdown_tx, &ui_tx)
     } else {
@@ -171,16 +195,16 @@ pub(crate) async fn run_local(
         success_latency_sum_ms,
         success_histogram,
     ) = if !log_results.is_empty() {
-        logs::merge_log_results(log_results, metrics_max).map_err(AppError::from)?
+        logs::merge_log_results(log_results, metrics_max)?
     } else {
         (
             report.summary,
             Vec::new(),
             false,
-            metrics::LatencyHistogram::new().map_err(AppError::from)?,
+            metrics::LatencyHistogram::new()?,
             0,
             0,
-            metrics::LatencyHistogram::new().map_err(AppError::from)?,
+            metrics::LatencyHistogram::new()?,
         )
     };
     let latency_sum_ms = if latency_sum_ms == 0 && summary.total_requests > 0 {
@@ -373,7 +397,7 @@ async fn export_text_summary(
 }
 
 fn setup_rss_log_task(
-    shutdown_tx: &broadcast::Sender<u16>,
+    shutdown_tx: &ShutdownSender,
     no_ui: bool,
     interval_ms: Option<&crate::args::PositiveU64>,
 ) -> tokio::task::JoinHandle<()> {
@@ -431,7 +455,7 @@ fn read_rss_bytes() -> Option<u64> {
 }
 
 fn setup_alloc_profiler_task(
-    shutdown_tx: &broadcast::Sender<u16>,
+    shutdown_tx: &ShutdownSender,
     interval_ms: Option<&crate::args::PositiveU64>,
 ) -> tokio::task::JoinHandle<()> {
     let Some(interval_ms) = interval_ms.map(|value| value.get()) else {
@@ -442,7 +466,7 @@ fn setup_alloc_profiler_task(
 
 #[cfg(not(feature = "alloc-profiler"))]
 fn setup_alloc_profiler_task_inner(
-    _shutdown_tx: &broadcast::Sender<u16>,
+    _shutdown_tx: &ShutdownSender,
     _interval_ms: u64,
 ) -> tokio::task::JoinHandle<()> {
     warn!("alloc-profiler-ms set but alloc-profiler feature is disabled.");
@@ -451,7 +475,7 @@ fn setup_alloc_profiler_task_inner(
 
 #[cfg(feature = "alloc-profiler")]
 fn setup_alloc_profiler_task_inner(
-    shutdown_tx: &broadcast::Sender<u16>,
+    shutdown_tx: &ShutdownSender,
     interval_ms: u64,
 ) -> tokio::task::JoinHandle<()> {
     let shutdown_tx = shutdown_tx.clone();
@@ -474,7 +498,7 @@ fn setup_alloc_profiler_task_inner(
 }
 
 fn setup_alloc_profiler_dump_task(
-    shutdown_tx: &broadcast::Sender<u16>,
+    shutdown_tx: &ShutdownSender,
     interval_ms: Option<&crate::args::PositiveU64>,
     dump_path: &str,
 ) -> tokio::task::JoinHandle<()> {
@@ -486,7 +510,7 @@ fn setup_alloc_profiler_dump_task(
 
 #[cfg(not(feature = "alloc-profiler"))]
 fn setup_alloc_profiler_dump_task_inner(
-    _shutdown_tx: &broadcast::Sender<u16>,
+    _shutdown_tx: &ShutdownSender,
     _interval_ms: u64,
     _dump_path: &str,
 ) -> tokio::task::JoinHandle<()> {
@@ -496,7 +520,7 @@ fn setup_alloc_profiler_dump_task_inner(
 
 #[cfg(feature = "alloc-profiler")]
 fn setup_alloc_profiler_dump_task_inner(
-    shutdown_tx: &broadcast::Sender<u16>,
+    shutdown_tx: &ShutdownSender,
     interval_ms: u64,
     dump_path: &str,
 ) -> tokio::task::JoinHandle<()> {
@@ -528,18 +552,43 @@ fn setup_alloc_profiler_dump_task_inner(
 }
 
 #[cfg(feature = "alloc-profiler")]
-fn log_alloc_stats() -> Result<(), String> {
-    jemalloc_ctl::epoch::advance().map_err(|err| format!("epoch advance failed: {}", err))?;
-    let allocated = jemalloc_ctl::stats::allocated::read()
-        .map_err(|err| format!("allocated read failed: {}", err))?;
-    let active = jemalloc_ctl::stats::active::read()
-        .map_err(|err| format!("active read failed: {}", err))?;
-    let resident = jemalloc_ctl::stats::resident::read()
-        .map_err(|err| format!("resident read failed: {}", err))?;
-    let mapped = jemalloc_ctl::stats::mapped::read()
-        .map_err(|err| format!("mapped read failed: {}", err))?;
-    let metadata = jemalloc_ctl::stats::metadata::read()
-        .map_err(|err| format!("metadata read failed: {}", err))?;
+fn log_alloc_stats() -> AppResult<()> {
+    jemalloc_ctl::epoch::advance().map_err(|err| {
+        AppError::metrics(MetricsError::External {
+            context: "epoch advance failed",
+            source: boxed_jemalloc_error(err),
+        })
+    })?;
+    let allocated = jemalloc_ctl::stats::allocated::read().map_err(|err| {
+        AppError::metrics(MetricsError::External {
+            context: "allocated read failed",
+            source: boxed_jemalloc_error(err),
+        })
+    })?;
+    let active = jemalloc_ctl::stats::active::read().map_err(|err| {
+        AppError::metrics(MetricsError::External {
+            context: "active read failed",
+            source: boxed_jemalloc_error(err),
+        })
+    })?;
+    let resident = jemalloc_ctl::stats::resident::read().map_err(|err| {
+        AppError::metrics(MetricsError::External {
+            context: "resident read failed",
+            source: boxed_jemalloc_error(err),
+        })
+    })?;
+    let mapped = jemalloc_ctl::stats::mapped::read().map_err(|err| {
+        AppError::metrics(MetricsError::External {
+            context: "mapped read failed",
+            source: boxed_jemalloc_error(err),
+        })
+    })?;
+    let metadata = jemalloc_ctl::stats::metadata::read().map_err(|err| {
+        AppError::metrics(MetricsError::External {
+            context: "metadata read failed",
+            source: boxed_jemalloc_error(err),
+        })
+    })?;
     info!(
         "alloc_bytes={},active_bytes={},resident_bytes={},mapped_bytes={},metadata_bytes={}",
         allocated, active, resident, mapped, metadata
@@ -548,49 +597,85 @@ fn log_alloc_stats() -> Result<(), String> {
 }
 
 #[cfg(feature = "alloc-profiler")]
-fn dump_alloc_profile(dir: &str) -> Result<(), String> {
+fn dump_alloc_profile(dir: &str) -> AppResult<()> {
     use std::ffi::CString;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|err| format!("timestamp error: {}", err))?
+        .map_err(|err| {
+            AppError::metrics(MetricsError::External {
+                context: "timestamp error",
+                source: Box::new(err),
+            })
+        })?
         .as_millis();
     let path = std::path::Path::new(dir).join(format!("heap-{}.prof", stamp));
-    let path_cstr = CString::new(path.to_string_lossy().as_bytes())
-        .map_err(|err| format!("invalid dump path: {}", err))?;
+    let path_cstr = CString::new(path.to_string_lossy().as_bytes()).map_err(|err| {
+        AppError::metrics(MetricsError::External {
+            context: "invalid dump path",
+            source: Box::new(err),
+        })
+    })?;
     ensure_prof_enabled()?;
-    jemalloc_ctl::epoch::advance().map_err(|err| format!("epoch advance failed: {}", err))?;
+    jemalloc_ctl::epoch::advance().map_err(|err| {
+        AppError::metrics(MetricsError::External {
+            context: "epoch advance failed",
+            source: boxed_jemalloc_error(err),
+        })
+    })?;
     // Safety: prof.dump expects a C string pointing to the output file path.
     unsafe {
-        jemalloc_ctl::raw::write(b"prof.dump\0", path_cstr.as_ptr())
-            .map_err(|err| format!("prof dump failed: {}", err))?;
+        jemalloc_ctl::raw::write(b"prof.dump\0", path_cstr.as_ptr()).map_err(|err| {
+            AppError::metrics(MetricsError::External {
+                context: "prof dump failed",
+                source: boxed_jemalloc_error(err),
+            })
+        })?;
     }
     info!("alloc_profiler_dump={}", path.display());
     Ok(())
 }
 
 #[cfg(feature = "alloc-profiler")]
-fn ensure_prof_enabled() -> Result<(), String> {
-    let config_prof = unsafe { jemalloc_ctl::raw::read::<bool>(b"config.prof\0") }
-        .map_err(|err| format!("prof config read failed: {}", err))?;
+fn ensure_prof_enabled() -> AppResult<()> {
+    // Safety: config.prof is a valid NUL-terminated key for jemalloc boolean config.
+    let config_prof =
+        unsafe { jemalloc_ctl::raw::read::<bool>(b"config.prof\0") }.map_err(|err| {
+            AppError::metrics(MetricsError::External {
+                context: "prof config read failed",
+                source: boxed_jemalloc_error(err),
+            })
+        })?;
     if !config_prof {
-        return Err("jemalloc profiling not compiled (config.prof=false)".to_owned());
+        return Err(AppError::metrics(MetricsError::ProfilerNotCompiled));
     }
-    let opt_prof = unsafe { jemalloc_ctl::raw::read::<bool>(b"opt.prof\0") }
-        .map_err(|err| format!("opt.prof read failed: {}", err))?;
+    // Safety: opt.prof is a valid NUL-terminated key for jemalloc boolean config.
+    let opt_prof = unsafe { jemalloc_ctl::raw::read::<bool>(b"opt.prof\0") }.map_err(|err| {
+        AppError::metrics(MetricsError::External {
+            context: "opt.prof read failed",
+            source: boxed_jemalloc_error(err),
+        })
+    })?;
     if !opt_prof {
-        return Err(
-            "jemalloc profiling disabled (opt.prof=false). Set MALLOC_CONF=prof:true".to_owned(),
-        );
+        return Err(AppError::metrics(MetricsError::ProfilerDisabled));
     }
-    let active = unsafe { jemalloc_ctl::raw::read::<bool>(b"prof.active\0") }
-        .map_err(|err| format!("prof.active read failed: {}", err))?;
+    // Safety: prof.active is a valid NUL-terminated key for jemalloc boolean config.
+    let active = unsafe { jemalloc_ctl::raw::read::<bool>(b"prof.active\0") }.map_err(|err| {
+        AppError::metrics(MetricsError::External {
+            context: "prof.active read failed",
+            source: boxed_jemalloc_error(err),
+        })
+    })?;
     if !active {
         // Safety: prof.active expects a boolean value.
         unsafe {
-            jemalloc_ctl::raw::write(b"prof.active\0", true)
-                .map_err(|err| format!("prof.active write failed: {}", err))?;
+            jemalloc_ctl::raw::write(b"prof.active\0", true).map_err(|err| {
+                AppError::metrics(MetricsError::External {
+                    context: "prof.active write failed",
+                    source: boxed_jemalloc_error(err),
+                })
+            })?;
         }
     }
     Ok(())

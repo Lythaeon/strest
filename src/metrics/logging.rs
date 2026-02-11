@@ -11,6 +11,8 @@ use tokio::{
 };
 use tokio_rusqlite::Connection;
 
+use crate::error::{AppError, AppResult, MetricsError};
+
 #[cfg(any(test, feature = "fuzzing"))]
 use std::path::Path;
 #[cfg(any(test, feature = "fuzzing"))]
@@ -90,15 +92,18 @@ pub fn setup_metrics_logger(
     log_path: PathBuf,
     config: MetricsLoggerConfig,
     mut log_rx: mpsc::Receiver<Metrics>,
-) -> JoinHandle<Result<LogResult, String>> {
+) -> JoinHandle<AppResult<LogResult>> {
     tokio::spawn(async move {
         let warmup_ms = config
             .warmup
             .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
             .unwrap_or(0);
-        let file = File::create(&log_path)
-            .await
-            .map_err(|err| format!("Failed to create metrics log: {}", err))?;
+        let file = File::create(&log_path).await.map_err(|err| {
+            AppError::metrics(MetricsError::Io {
+                context: "create metrics log",
+                source: err,
+            })
+        })?;
         const LOG_BUFFER_SIZE: usize = 256 * 1024;
         let mut writer = BufWriter::with_capacity(LOG_BUFFER_SIZE, file);
         let mut buffer = String::with_capacity(LOG_BUFFER_SIZE);
@@ -108,9 +113,12 @@ pub fn setup_metrics_logger(
         let mut histogram = LatencyHistogram::new()?;
         let mut success_histogram = LatencyHistogram::new()?;
         let db_conn = if let Some(db_url) = config.db_url.as_deref() {
-            let conn = Connection::open(db_url)
-                .await
-                .map_err(|err| format!("Failed to open sqlite db {}: {}", db_url, err))?;
+            let conn = Connection::open(db_url).await.map_err(|err| {
+                AppError::metrics(MetricsError::External {
+                    context: "open sqlite db",
+                    source: Box::new(err),
+                })
+            })?;
             conn.call(|conn| {
                 conn.execute_batch(
                     "CREATE TABLE IF NOT EXISTS metrics (
@@ -126,7 +134,12 @@ pub fn setup_metrics_logger(
                 Ok(())
             })
             .await
-            .map_err(|err| format!("Failed to initialize sqlite db: {}", err))?;
+            .map_err(|err| {
+                AppError::metrics(MetricsError::External {
+                    context: "initialize sqlite db",
+                    source: Box::new(err),
+                })
+            })?;
             Some(conn)
         } else {
             None
@@ -159,7 +172,7 @@ pub fn setup_metrics_logger(
             let elapsed_ms = elapsed_ms_raw.saturating_sub(warmup_ms);
             let latency_ms = u64::try_from(msg.response_time.as_millis()).unwrap_or(u64::MAX);
 
-            if writeln!(
+            writeln!(
                 &mut buffer,
                 "{},{},{},{},{}",
                 elapsed_ms,
@@ -168,16 +181,20 @@ pub fn setup_metrics_logger(
                 u8::from(msg.timed_out),
                 u8::from(msg.transport_error)
             )
-            .is_err()
-            {
-                return Err("Failed to format metrics log line".to_owned());
-            }
+            .map_err(|err| {
+                AppError::metrics(MetricsError::External {
+                    context: "format metrics log line",
+                    source: Box::new(err),
+                })
+            })?;
 
             if buffer.len() >= LOG_BUFFER_SIZE {
-                writer
-                    .write_all(buffer.as_bytes())
-                    .await
-                    .map_err(|err| format!("Failed to write metrics log: {}", err))?;
+                writer.write_all(buffer.as_bytes()).await.map_err(|err| {
+                    AppError::metrics(MetricsError::Io {
+                        context: "write metrics log",
+                        source: err,
+                    })
+                })?;
                 buffer.clear();
             }
 
@@ -252,15 +269,19 @@ pub fn setup_metrics_logger(
         }
 
         if !buffer.is_empty() {
-            writer
-                .write_all(buffer.as_bytes())
-                .await
-                .map_err(|err| format!("Failed to write metrics log: {}", err))?;
+            writer.write_all(buffer.as_bytes()).await.map_err(|err| {
+                AppError::metrics(MetricsError::Io {
+                    context: "write metrics log",
+                    source: err,
+                })
+            })?;
         }
-        writer
-            .flush()
-            .await
-            .map_err(|err| format!("Failed to flush metrics log: {}", err))?;
+        writer.flush().await.map_err(|err| {
+            AppError::metrics(MetricsError::Io {
+                context: "flush metrics log",
+                source: err,
+            })
+        })?;
         if let Some(conn) = db_conn.as_ref() {
             flush_db_records(conn, &mut db_buffer).await?;
         }
@@ -324,7 +345,7 @@ pub fn setup_metrics_logger(
     })
 }
 
-async fn flush_db_records(conn: &Connection, buffer: &mut Vec<DbRecord>) -> Result<(), String> {
+async fn flush_db_records(conn: &Connection, buffer: &mut Vec<DbRecord>) -> AppResult<()> {
     if buffer.is_empty() {
         return Ok(());
     }
@@ -351,7 +372,12 @@ async fn flush_db_records(conn: &Connection, buffer: &mut Vec<DbRecord>) -> Resu
         Ok(())
     })
     .await
-    .map_err(|err| format!("Failed to write sqlite metrics: {}", err))?;
+    .map_err(|err| {
+        AppError::metrics(MetricsError::External {
+            context: "write sqlite metrics",
+            source: Box::new(err),
+        })
+    })?;
 
     Ok(())
 }
@@ -373,13 +399,16 @@ pub async fn read_metrics_log(
     metrics_range: &Option<MetricsRange>,
     metrics_max: usize,
     warmup: Option<Duration>,
-) -> Result<LogResult, String> {
+) -> AppResult<LogResult> {
     let warmup_ms = warmup
         .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
         .unwrap_or(0);
-    let file = File::open(log_path)
-        .await
-        .map_err(|err| format!("Failed to open metrics log: {}", err))?;
+    let file = File::open(log_path).await.map_err(|err| {
+        AppError::metrics(MetricsError::Io {
+            context: "open metrics log",
+            source: err,
+        })
+    })?;
     let mut reader = BufReader::new(file);
     let mut line = String::new();
     let mut records = Vec::new();
@@ -403,10 +432,12 @@ pub async fn read_metrics_log(
 
     loop {
         line.clear();
-        let bytes = reader
-            .read_line(&mut line)
-            .await
-            .map_err(|err| format!("Failed to read metrics log: {}", err))?;
+        let bytes = reader.read_line(&mut line).await.map_err(|err| {
+            AppError::metrics(MetricsError::Io {
+                context: "read metrics log",
+                source: err,
+            })
+        })?;
         if bytes == 0 {
             break;
         }

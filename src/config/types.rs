@@ -4,6 +4,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use crate::args::{HttpMethod, OutputFormat};
+use crate::error::{AppResult, ConfigError};
 use crate::sinks::config::SinksConfig;
 
 #[derive(Debug, Default, Deserialize)]
@@ -173,11 +174,11 @@ pub enum DurationValue {
 }
 
 impl DurationValue {
-    pub(crate) fn to_duration(&self) -> Result<Duration, String> {
+    pub(crate) fn to_duration(&self) -> AppResult<Duration> {
         match self {
             DurationValue::Seconds(secs) => {
                 if *secs == 0 {
-                    Err("Duration must be > 0.".to_owned())
+                    Err(crate::error::AppError::config(ConfigError::DurationZero))
                 } else {
                     Ok(Duration::from_secs(*secs))
                 }

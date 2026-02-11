@@ -6,6 +6,17 @@ use tokio::time::interval;
 
 use crate::args::LoadProfile;
 
+/// Seconds per minute for RPM → RPS conversions.
+const SECS_PER_MIN: u64 = 60;
+/// Tick interval for rate control updates.
+const RATE_TICK_INTERVAL: Duration = Duration::from_secs(1);
+/// Minimum stage duration to avoid divide-by-zero.
+const MIN_STAGE_SECS: u64 = 1;
+/// Minimum burst size when using burst mode.
+const MIN_BURST_RATE: usize = 1;
+/// Minimum delay between burst ticks.
+const MIN_BURST_DELAY: Duration = Duration::from_millis(1);
+
 #[derive(Clone)]
 pub(crate) struct RatePlan {
     pub initial_rpm: u64,
@@ -29,8 +40,8 @@ pub(crate) struct RateController {
 impl RateController {
     pub(crate) fn next_tokens(&mut self) -> usize {
         let rpm = self.current_rpm();
-        let (base, rem) = div_mod_u64(rpm, 60);
-        let (carry, new_rem) = div_mod_u64(self.remainder.saturating_add(rem), 60);
+        let (base, rem) = div_mod_u64(rpm, SECS_PER_MIN);
+        let (carry, new_rem) = div_mod_u64(self.remainder.saturating_add(rem), SECS_PER_MIN);
         self.remainder = new_rem;
         let tokens = base.saturating_add(carry);
         usize::try_from(tokens).unwrap_or(usize::MAX)
@@ -42,7 +53,7 @@ impl RateController {
             None => return self.stage_start_rpm,
         };
 
-        let stage_secs = stage.duration_secs.max(1);
+        let stage_secs = stage.duration_secs.max(MIN_STAGE_SECS);
         let elapsed = self.stage_elapsed_secs.min(stage_secs);
 
         let start = i128::from(self.stage_start_rpm);
@@ -105,7 +116,7 @@ fn spawn_fixed_rate_controller(limiter: Arc<Semaphore>, rate: u64) {
     tokio::spawn(async move {
         let rate_per_sec = usize::try_from(rate).unwrap_or(usize::MAX);
         limiter.add_permits(rate_per_sec);
-        let mut rate_tick = interval(Duration::from_secs(1));
+        let mut rate_tick = interval(RATE_TICK_INTERVAL);
         loop {
             rate_tick.tick().await;
             let available = limiter.available_permits();
@@ -129,7 +140,7 @@ fn spawn_rate_controller(limiter: Arc<Semaphore>, plan: RatePlan) {
         let initial = controller.next_tokens();
         limiter.add_permits(initial);
 
-        let mut rate_tick = interval(Duration::from_secs(1));
+        let mut rate_tick = interval(RATE_TICK_INTERVAL);
         loop {
             rate_tick.tick().await;
             let available = limiter.available_permits();
@@ -143,9 +154,9 @@ fn spawn_rate_controller(limiter: Arc<Semaphore>, plan: RatePlan) {
 
 fn spawn_burst_rate_controller(limiter: Arc<Semaphore>, delay: Duration, burst_rate: usize) {
     tokio::spawn(async move {
-        let burst = burst_rate.max(1);
+        let burst = burst_rate.max(MIN_BURST_RATE);
         limiter.add_permits(burst);
-        let mut burst_tick = interval(delay.max(Duration::from_millis(1)));
+        let mut burst_tick = interval(delay.max(MIN_BURST_DELAY));
         loop {
             burst_tick.tick().await;
             let available = limiter.available_permits();
@@ -171,7 +182,7 @@ impl RatePlan {
             .stages
             .iter()
             .map(|stage| RateStage {
-                duration_secs: stage.duration.as_secs().max(1),
+                duration_secs: stage.duration.as_secs().max(MIN_STAGE_SECS),
                 target_rpm: stage.target_rpm,
             })
             .collect();

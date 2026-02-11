@@ -1,7 +1,9 @@
 use std::fmt::Write as _;
 
-pub(super) fn write_line(output: &mut String, line: &str) -> Result<(), String> {
-    writeln!(output, "{}", line).map_err(|err| format!("Failed to write line: {}", err))
+use crate::error::{AppError, AppResult, SinkError};
+
+pub(super) fn write_line(output: &mut String, line: &str) -> AppResult<()> {
+    writeln!(output, "{}", line).map_err(|err| AppError::sink(SinkError::WriteLine { source: err }))
 }
 
 pub(super) fn format_x100(value: u64) -> String {

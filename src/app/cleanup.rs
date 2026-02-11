@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::args::CleanupArgs;
+use crate::error::{AppError, AppResult, ServiceError, ValidationError};
 
 pub(crate) async fn cleanup_tmp(log_path: &Path, tmp_dir: &Path) -> Result<(), std::io::Error> {
     if let Err(err) = tokio::fs::remove_file(log_path).await
@@ -24,7 +25,7 @@ pub(crate) async fn cleanup_tmp(log_path: &Path, tmp_dir: &Path) -> Result<(), s
     Ok(())
 }
 
-pub(crate) async fn run_cleanup(args: &CleanupArgs) -> Result<(), String> {
+pub(crate) async fn run_cleanup(args: &CleanupArgs) -> AppResult<()> {
     let tmp_dir = Path::new(&args.tmp_path);
     let mut entries = match tokio::fs::read_dir(tmp_dir).await {
         Ok(entries) => entries,
@@ -32,14 +33,16 @@ pub(crate) async fn run_cleanup(args: &CleanupArgs) -> Result<(), String> {
             println!("No tmp directory found at {}", tmp_dir.display());
             return Ok(());
         }
-        Err(err) => return Err(format!("Failed to read tmp directory: {}", err)),
+        Err(err) => {
+            return Err(AppError::service(ServiceError::ReadTmpDir { source: err }));
+        }
     };
 
     let cutoff = if let Some(age) = args.older_than {
         Some(
             SystemTime::now()
                 .checked_sub(age)
-                .ok_or_else(|| "Invalid older-than duration.".to_owned())?,
+                .ok_or_else(|| AppError::validation(ValidationError::InvalidOlderThanDuration))?,
         )
     } else {
         None
@@ -49,24 +52,25 @@ pub(crate) async fn run_cleanup(args: &CleanupArgs) -> Result<(), String> {
     while let Some(entry) = entries
         .next_entry()
         .await
-        .map_err(|err| format!("Failed to read tmp entry: {}", err))?
+        .map_err(|err| AppError::service(ServiceError::ReadTmpEntry { source: err }))?
     {
         let path = entry.path();
         let file_name = entry.file_name().to_string_lossy().to_string();
-        let metadata = entry
-            .metadata()
-            .await
-            .map_err(|err| format!("Failed to read metadata for {}: {}", path.display(), err))?;
+        let metadata = entry.metadata().await.map_err(|err| {
+            AppError::service(ServiceError::ReadMetadata {
+                path: path.clone(),
+                source: err,
+            })
+        })?;
         if !is_cleanup_candidate(&file_name, &metadata) {
             continue;
         }
         if let Some(cutoff) = cutoff {
             let modified = metadata.modified().map_err(|err| {
-                format!(
-                    "Failed to read modified time for {}: {}",
-                    path.display(),
-                    err
-                )
+                AppError::service(ServiceError::ReadModifiedTime {
+                    path: path.clone(),
+                    source: err,
+                })
             })?;
             if modified > cutoff {
                 continue;
@@ -131,59 +135,64 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn cleanup_tmp_removes_file_and_empty_dir() -> Result<(), String> {
-        let dir = tempdir().map_err(|err| format!("tempdir failed: {}", err))?;
+    fn cleanup_tmp_removes_file_and_empty_dir() -> AppResult<()> {
+        let dir =
+            tempdir().map_err(|err| AppError::service(ServiceError::TempDir { source: err }))?;
         let tmp_path = dir.path().join("tmp");
         std::fs::create_dir_all(&tmp_path)
-            .map_err(|err| format!("create_dir_all failed: {}", err))?;
+            .map_err(|err| AppError::service(ServiceError::CreateDirAll { source: err }))?;
         let log_path = tmp_path.join("metrics.log");
-        std::fs::write(&log_path, "1,2,200\n").map_err(|err| format!("write failed: {}", err))?;
+        std::fs::write(&log_path, "1,2,200\n")
+            .map_err(|err| AppError::service(ServiceError::WriteFile { source: err }))?;
 
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|err| format!("runtime build failed: {}", err))?;
+            .map_err(|err| AppError::service(ServiceError::RuntimeBuild { source: err }))?;
         runtime
             .block_on(cleanup_tmp(&log_path, &tmp_path))
-            .map_err(|err| format!("cleanup_tmp failed: {}", err))?;
+            .map_err(|err| AppError::service(ServiceError::CleanupTmp { source: err }))?;
 
         if log_path.exists() {
-            return Err("Expected log file removed".to_owned());
+            return Err(AppError::service(ServiceError::ExpectedLogFileRemoved));
         }
         if tmp_path.exists() {
-            return Err("Expected tmp dir removed".to_owned());
+            return Err(AppError::service(ServiceError::ExpectedTmpDirRemoved));
         }
 
         Ok(())
     }
 
     #[test]
-    fn cleanup_tmp_preserves_dir_with_other_files() -> Result<(), String> {
-        let dir = tempdir().map_err(|err| format!("tempdir failed: {}", err))?;
+    fn cleanup_tmp_preserves_dir_with_other_files() -> AppResult<()> {
+        let dir =
+            tempdir().map_err(|err| AppError::service(ServiceError::TempDir { source: err }))?;
         let tmp_path = dir.path().join("tmp");
         std::fs::create_dir_all(&tmp_path)
-            .map_err(|err| format!("create_dir_all failed: {}", err))?;
+            .map_err(|err| AppError::service(ServiceError::CreateDirAll { source: err }))?;
         let log_path = tmp_path.join("metrics.log");
-        std::fs::write(&log_path, "1,2,200\n").map_err(|err| format!("write failed: {}", err))?;
+        std::fs::write(&log_path, "1,2,200\n")
+            .map_err(|err| AppError::service(ServiceError::WriteFile { source: err }))?;
         let other_path = tmp_path.join("keep.log");
-        std::fs::write(&other_path, "x").map_err(|err| format!("write failed: {}", err))?;
+        std::fs::write(&other_path, "x")
+            .map_err(|err| AppError::service(ServiceError::WriteFile { source: err }))?;
 
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|err| format!("runtime build failed: {}", err))?;
+            .map_err(|err| AppError::service(ServiceError::RuntimeBuild { source: err }))?;
         runtime
             .block_on(cleanup_tmp(&log_path, &tmp_path))
-            .map_err(|err| format!("cleanup_tmp failed: {}", err))?;
+            .map_err(|err| AppError::service(ServiceError::CleanupTmp { source: err }))?;
 
         if log_path.exists() {
-            return Err("Expected log file removed".to_owned());
+            return Err(AppError::service(ServiceError::ExpectedLogFileRemoved));
         }
         if !tmp_path.exists() {
-            return Err("Expected tmp dir to remain".to_owned());
+            return Err(AppError::service(ServiceError::ExpectedTmpDirRemain));
         }
         if !other_path.exists() {
-            return Err("Expected other file to remain".to_owned());
+            return Err(AppError::service(ServiceError::ExpectedOtherFileRemain));
         }
 
         Ok(())

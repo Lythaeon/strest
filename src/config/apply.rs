@@ -5,6 +5,7 @@ use crate::args::{
     LoadProfile, LoadStage, PositiveU64, PositiveUsize, Scenario, ScenarioStep, TesterArgs,
     parse_connect_to, parse_header,
 };
+use crate::error::{AppError, AppResult, ConfigError};
 use crate::metrics::MetricsRange;
 
 use super::types::{
@@ -21,22 +22,32 @@ pub fn apply_config(
     args: &mut TesterArgs,
     matches: &ArgMatches,
     config: &ConfigFile,
-) -> Result<(), String> {
+) -> AppResult<()> {
     if config.data.is_some() && (config.data_file.is_some() || config.data_lines.is_some()) {
-        return Err("Config cannot set both 'data' and 'data_file'/'data_lines'.".to_owned());
+        return Err(AppError::config(ConfigError::Conflict {
+            left: "data",
+            right: "data_file/data_lines",
+        }));
     }
     if config.data_file.is_some() && config.data_lines.is_some() {
-        return Err("Config cannot set both 'data_file' and 'data_lines'.".to_owned());
+        return Err(AppError::config(ConfigError::Conflict {
+            left: "data_file",
+            right: "data_lines",
+        }));
     }
     if config.form.is_some()
         && (config.data.is_some() || config.data_file.is_some() || config.data_lines.is_some())
     {
-        return Err(
-            "Config cannot set both 'form' and 'data'/'data_file'/'data_lines'.".to_owned(),
-        );
+        return Err(AppError::config(ConfigError::Conflict {
+            left: "form",
+            right: "data/data_file/data_lines",
+        }));
     }
     if config.load.is_some() && (config.rate.is_some() || config.rpm.is_some()) {
-        return Err("Config cannot set both 'load' and top-level 'rate'/'rpm' options.".to_owned());
+        return Err(AppError::config(ConfigError::Conflict {
+            left: "load",
+            right: "rate/rpm",
+        }));
     }
     if !is_cli(matches, "method")
         && let Some(method) = config.method
@@ -79,7 +90,10 @@ pub fn apply_config(
     {
         let mut parsed = Vec::with_capacity(headers.len());
         for header in headers {
-            parsed.push(parse_header(header)?);
+            parsed.push(
+                parse_header(header)
+                    .map_err(|err| AppError::config(ConfigError::InvalidHeader { source: err }))?,
+            );
         }
         args.headers = parsed;
     }
@@ -225,8 +239,9 @@ pub fn apply_config(
     if !is_cli(matches, "charts_latency_bucket_ms")
         && let Some(bucket_ms) = config.charts_latency_bucket_ms
     {
-        args.charts_latency_bucket_ms = PositiveU64::try_from(bucket_ms)
-            .map_err(|err| format!("Invalid charts_latency_bucket_ms: {}", err))?;
+        args.charts_latency_bucket_ms = PositiveU64::try_from(bucket_ms).map_err(|err| {
+            AppError::config(ConfigError::InvalidChartsLatencyBucket { source: err })
+        })?;
     }
 
     if !is_cli(matches, "no_ua")
@@ -396,7 +411,10 @@ pub fn apply_config(
     {
         let mut parsed = Vec::with_capacity(headers.len());
         for header in headers {
-            parsed.push(parse_header(header)?);
+            parsed.push(
+                parse_header(header)
+                    .map_err(|err| AppError::config(ConfigError::InvalidHeader { source: err }))?,
+            );
         }
         args.proxy_headers = parsed;
     }
@@ -464,7 +482,11 @@ pub fn apply_config(
     {
         let mut parsed = Vec::with_capacity(entries.len());
         for entry in entries {
-            parsed.push(parse_connect_to(entry)?);
+            parsed.push(
+                parse_connect_to(entry).map_err(|err| {
+                    AppError::config(ConfigError::InvalidConnectTo { source: err })
+                })?,
+            );
         }
         args.connect_to = parsed;
     }
@@ -518,13 +540,19 @@ pub fn apply_config(
     }
 
     if args.ipv4_only && args.ipv6_only {
-        return Err("Config cannot set both 'ipv4' and 'ipv6'.".to_owned());
+        return Err(AppError::config(ConfigError::Conflict {
+            left: "ipv4",
+            right: "ipv6",
+        }));
     }
 
     if !is_cli(matches, "metrics_range")
         && let Some(range) = config.metrics_range.as_ref()
     {
-        args.metrics_range = Some(range.parse::<MetricsRange>()?);
+        args.metrics_range =
+            Some(range.parse::<MetricsRange>().map_err(|err| {
+                AppError::config(ConfigError::InvalidMetricsRange { source: err })
+            })?);
     }
 
     if !is_cli(matches, "metrics_max")
@@ -582,7 +610,7 @@ fn apply_distributed_config(
     args: &mut TesterArgs,
     matches: &ArgMatches,
     config: &DistributedConfig,
-) -> Result<(), String> {
+) -> AppResult<()> {
     if !is_cli(matches, "controller_mode")
         && let Some(mode) = config.controller_mode
     {
@@ -613,10 +641,9 @@ fn apply_distributed_config(
             }
         }
         Some(other) => {
-            return Err(format!(
-                "Invalid distributed.role '{}'. Use 'controller' or 'agent'.",
-                other
-            ));
+            return Err(AppError::config(ConfigError::InvalidDistributedRole {
+                value: other.to_owned(),
+            }));
         }
         None => {}
     }
@@ -729,16 +756,25 @@ fn is_cli(matches: &ArgMatches, name: &str) -> bool {
     matches.value_source(name) == Some(ValueSource::CommandLine)
 }
 
-fn ensure_positive_u64(value: u64, field: &str) -> Result<PositiveU64, String> {
-    PositiveU64::try_from(value).map_err(|err| format!("Config '{}' must be >= 1: {}", field, err))
+fn ensure_positive_u64(value: u64, field: &str) -> AppResult<PositiveU64> {
+    PositiveU64::try_from(value).map_err(|err| {
+        AppError::config(ConfigError::FieldMustBePositive {
+            field: field.to_owned(),
+            source: err,
+        })
+    })
 }
 
-fn ensure_positive_usize(value: usize, field: &str) -> Result<PositiveUsize, String> {
-    PositiveUsize::try_from(value)
-        .map_err(|err| format!("Config '{}' must be >= 1: {}", field, err))
+fn ensure_positive_usize(value: usize, field: &str) -> AppResult<PositiveUsize> {
+    PositiveUsize::try_from(value).map_err(|err| {
+        AppError::config(ConfigError::FieldMustBePositive {
+            field: field.to_owned(),
+            source: err,
+        })
+    })
 }
 
-fn parse_load_profile(load: &LoadConfig) -> Result<LoadProfile, String> {
+fn parse_load_profile(load: &LoadConfig) -> AppResult<LoadProfile> {
     let initial_rpm = resolve_rpm(load.rate, load.rpm, "load")?.unwrap_or(0);
 
     let mut stages = Vec::new();
@@ -754,7 +790,9 @@ fn parse_load_profile(load: &LoadConfig) -> Result<LoadProfile, String> {
     }
 
     if initial_rpm == 0 && stages.is_empty() {
-        return Err("Load profile requires a rate/rpm or at least one stage.".to_owned());
+        return Err(AppError::config(
+            ConfigError::LoadProfileMissingRateOrStages,
+        ));
     }
 
     Ok(LoadProfile {
@@ -763,10 +801,10 @@ fn parse_load_profile(load: &LoadConfig) -> Result<LoadProfile, String> {
     })
 }
 
-fn parse_simple_load(rate: Option<u64>, rpm: Option<u64>) -> Result<LoadProfile, String> {
+fn parse_simple_load(rate: Option<u64>, rpm: Option<u64>) -> AppResult<LoadProfile> {
     let initial_rpm = resolve_rpm(rate, rpm, "rate/rpm")?.unwrap_or(0);
     if initial_rpm == 0 {
-        return Err("Config rate/rpm must be >= 1.".to_owned());
+        return Err(AppError::config(ConfigError::RateRpmMustBePositive));
     }
 
     Ok(LoadProfile {
@@ -775,7 +813,7 @@ fn parse_simple_load(rate: Option<u64>, rpm: Option<u64>) -> Result<LoadProfile,
     })
 }
 
-fn resolve_stage_rpm(stage: &LoadStageConfig, idx: usize) -> Result<u64, String> {
+fn resolve_stage_rpm(stage: &LoadStageConfig, idx: usize) -> AppResult<u64> {
     let mut configured = 0u8;
     if stage.target.is_some() {
         configured = configured.saturating_add(1);
@@ -789,15 +827,13 @@ fn resolve_stage_rpm(stage: &LoadStageConfig, idx: usize) -> Result<u64, String>
 
     let stage_index = idx.saturating_add(1);
     if configured == 0 {
-        return Err(format!(
-            "Stage {} must define one of target, rate, or rpm.",
-            stage_index
-        ));
+        return Err(AppError::config(ConfigError::StageMissingTargetRateRpm {
+            index: stage_index,
+        }));
     }
     if configured > 1 {
-        return Err(format!(
-            "Stage {} cannot combine target, rate, and rpm.",
-            stage_index
+        return Err(AppError::config(
+            ConfigError::StageConflictingTargetRateRpm { index: stage_index },
         ));
     }
 
@@ -809,12 +845,11 @@ fn resolve_stage_rpm(stage: &LoadStageConfig, idx: usize) -> Result<u64, String>
     Ok(rate.saturating_mul(60))
 }
 
-fn resolve_rpm(rate: Option<u64>, rpm: Option<u64>, context: &str) -> Result<Option<u64>, String> {
+fn resolve_rpm(rate: Option<u64>, rpm: Option<u64>, context: &str) -> AppResult<Option<u64>> {
     if rate.is_some() && rpm.is_some() {
-        return Err(format!(
-            "Config '{}' cannot define both rate and rpm.",
-            context
-        ));
+        return Err(AppError::config(ConfigError::RateRpmConflict {
+            context: context.to_owned(),
+        }));
     }
     if let Some(rpm) = rpm {
         return Ok(Some(rpm));
@@ -825,21 +860,17 @@ fn resolve_rpm(rate: Option<u64>, rpm: Option<u64>, context: &str) -> Result<Opt
     Ok(None)
 }
 
-pub(crate) fn parse_scenario(
-    config: &ScenarioConfig,
-    args: &TesterArgs,
-) -> Result<Scenario, String> {
+pub(crate) fn parse_scenario(config: &ScenarioConfig, args: &TesterArgs) -> AppResult<Scenario> {
     if let Some(schema_version) = config.schema_version
         && schema_version != SCENARIO_SCHEMA_VERSION
     {
-        return Err(format!(
-            "Unsupported scenario schema_version {}.",
-            schema_version
-        ));
+        return Err(AppError::config(ConfigError::UnsupportedScenarioSchema {
+            version: schema_version,
+        }));
     }
 
     if config.steps.is_empty() {
-        return Err("Scenario must include at least one step.".to_owned());
+        return Err(AppError::config(ConfigError::ScenarioMissingSteps));
     }
 
     let base_url = config.base_url.clone().or_else(|| args.url.clone());
@@ -849,7 +880,10 @@ pub(crate) fn parse_scenario(
     let default_headers = if let Some(headers) = config.headers.as_ref() {
         let mut parsed = Vec::with_capacity(headers.len());
         for header in headers {
-            parsed.push(parse_header(header)?);
+            parsed.push(
+                parse_header(header)
+                    .map_err(|err| AppError::config(ConfigError::InvalidHeader { source: err }))?,
+            );
         }
         parsed
     } else {
@@ -864,7 +898,11 @@ pub(crate) fn parse_scenario(
         let mut headers = default_headers.clone();
         if let Some(step_headers) = step.headers.as_ref() {
             for header in step_headers {
-                headers.push(parse_header(header)?);
+                headers.push(
+                    parse_header(header).map_err(|err| {
+                        AppError::config(ConfigError::InvalidHeader { source: err })
+                    })?,
+                );
             }
         }
 
@@ -876,9 +914,10 @@ pub(crate) fn parse_scenario(
         let url = step.url.clone();
         let path = step.path.clone();
         if url.is_none() && path.is_none() && base_url.is_none() {
-            return Err(format!(
-                "Scenario step {} must define url/path or set scenario.base_url.",
-                idx.saturating_add(1)
+            return Err(AppError::config(
+                ConfigError::ScenarioStepMissingUrlOrPath {
+                    index: idx.saturating_add(1),
+                },
             ));
         }
 

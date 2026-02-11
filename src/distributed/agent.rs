@@ -7,6 +7,7 @@ use tokio::time::MissedTickBehavior;
 use tracing::{debug, info, warn};
 
 use crate::args::TesterArgs;
+use crate::error::{AppError, AppResult, DistributedError};
 use crate::metrics::StreamSnapshot;
 
 use super::protocol::{
@@ -20,8 +21,8 @@ enum AgentCommand {
     Config(Box<ConfigMessage>),
     Start(StartMessage),
     Stop(StopMessage),
-    Error(String),
-    Disconnected(String),
+    Error(AppError),
+    Disconnected(AppError),
 }
 
 /// Runs the distributed agent loop.
@@ -29,7 +30,7 @@ enum AgentCommand {
 /// # Errors
 ///
 /// Returns an error if the agent cannot connect, negotiate, or execute a run.
-pub async fn run_agent(args: TesterArgs) -> Result<(), String> {
+pub async fn run_agent(args: TesterArgs) -> AppResult<()> {
     let standby = args.agent_standby;
     let reconnect_delay = Duration::from_millis(args.agent_reconnect_ms.get());
     info!(
@@ -57,16 +58,20 @@ pub async fn run_agent(args: TesterArgs) -> Result<(), String> {
     }
 }
 
-async fn run_agent_session(base_args: &TesterArgs) -> Result<(), String> {
-    let join = base_args
-        .agent_join
-        .as_deref()
-        .ok_or_else(|| "Missing --agent-join.".to_owned())?;
+async fn run_agent_session(base_args: &TesterArgs) -> AppResult<()> {
+    let join = base_args.agent_join.as_deref().ok_or_else(|| {
+        AppError::distributed(DistributedError::MissingOption {
+            option: "--agent-join",
+        })
+    })?;
 
     info!("Connecting to controller {}", join);
-    let stream = TcpStream::connect(join)
-        .await
-        .map_err(|err| format!("Failed to connect to controller {}: {}", join, err))?;
+    let stream = TcpStream::connect(join).await.map_err(|err| {
+        AppError::distributed(DistributedError::Connection {
+            addr: join.to_owned(),
+            source: err,
+        })
+    })?;
     info!("Connected to controller {}", join);
     let (read_half, mut write_half) = stream.into_split();
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<WireMessage>();
@@ -96,10 +101,16 @@ async fn run_agent_session(base_args: &TesterArgs) -> Result<(), String> {
                 WireMessage::Config(message) => AgentCommand::Config(message),
                 WireMessage::Start(message) => AgentCommand::Start(message),
                 WireMessage::Stop(message) => AgentCommand::Stop(message),
-                WireMessage::Error(message) => AgentCommand::Error(message.message),
+                WireMessage::Error(message) => {
+                    AgentCommand::Error(AppError::distributed(DistributedError::Remote {
+                        message: message.message,
+                    }))
+                }
                 WireMessage::Heartbeat(_) => continue,
                 WireMessage::Hello(_) | WireMessage::Stream(_) | WireMessage::Report(_) => {
-                    AgentCommand::Error("Unexpected message from controller.".to_owned())
+                    AgentCommand::Error(AppError::distributed(
+                        DistributedError::UnexpectedMessageFromController,
+                    ))
                 }
             };
 
@@ -145,7 +156,10 @@ async fn run_agent_session(base_args: &TesterArgs) -> Result<(), String> {
         );
 
         if start.run_id != config.run_id {
-            break Err("Start run_id did not match config.".to_owned());
+            break Err(AppError::distributed(DistributedError::RunIdMismatch {
+                expected: config.run_id.clone(),
+                actual: start.run_id.clone(),
+            }));
         }
 
         if start.start_after_ms > 0 {
@@ -178,7 +192,7 @@ async fn run_agent_session(base_args: &TesterArgs) -> Result<(), String> {
 
 async fn wait_for_config(
     cmd_rx: &mut mpsc::UnboundedReceiver<AgentCommand>,
-) -> Result<ConfigMessage, String> {
+) -> AppResult<ConfigMessage> {
     while let Some(command) = cmd_rx.recv().await {
         match command {
             AgentCommand::Config(config) => return Ok(*config),
@@ -186,38 +200,47 @@ async fn wait_for_config(
             AgentCommand::Error(err) => return Err(err),
             AgentCommand::Stop(_) => continue,
             AgentCommand::Start(_) => {
-                return Err("Received start before config.".to_owned());
+                return Err(AppError::distributed(DistributedError::StartBeforeConfig));
             }
         }
     }
-    Err("Controller connection closed.".to_owned())
+    Err(AppError::distributed(
+        DistributedError::ControllerConnectionClosed,
+    ))
 }
 
 async fn wait_for_start(
     cmd_rx: &mut mpsc::UnboundedReceiver<AgentCommand>,
     run_id: &str,
-) -> Result<StartMessage, String> {
+) -> AppResult<StartMessage> {
     while let Some(command) = cmd_rx.recv().await {
         match command {
             AgentCommand::Start(start) => {
                 if start.run_id != run_id {
-                    return Err("Start run_id did not match config.".to_owned());
+                    return Err(AppError::distributed(DistributedError::RunIdMismatch {
+                        expected: run_id.to_owned(),
+                        actual: start.run_id,
+                    }));
                 }
                 return Ok(start);
             }
             AgentCommand::Stop(stop) => {
                 if stop.run_id == run_id {
-                    return Err("Received stop before start.".to_owned());
+                    return Err(AppError::distributed(DistributedError::StopBeforeStart));
                 }
             }
             AgentCommand::Config(_) => {
-                return Err("Received config while waiting for start.".to_owned());
+                return Err(AppError::distributed(
+                    DistributedError::ConfigWhileWaitingForStart,
+                ));
             }
             AgentCommand::Disconnected(err) => return Err(err),
             AgentCommand::Error(err) => return Err(err),
         }
     }
-    Err("Controller connection closed.".to_owned())
+    Err(AppError::distributed(
+        DistributedError::ControllerConnectionClosed,
+    ))
 }
 
 async fn run_agent_run(
@@ -226,7 +249,7 @@ async fn run_agent_run(
     agent_id: String,
     out_tx: &mpsc::UnboundedSender<WireMessage>,
     cmd_rx: &mut mpsc::UnboundedReceiver<AgentCommand>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let ConfigMessage { run_id, args } = config;
     let mut run_args = base_args.clone();
     if let Err(err) = apply_wire_args(&mut run_args, args) {
@@ -250,12 +273,12 @@ async fn run_agent_run(
     };
 
     let mut run_future = Box::pin(crate::app::run_local(run_args, stream_tx, Some(stop_rx)));
-    let mut abort_reason: Option<String> = None;
+    let mut abort_reason: Option<AppError> = None;
 
     let run_outcome = loop {
         tokio::select! {
             result = &mut run_future => {
-                break result.map_err(|err| err.to_string());
+                break result;
             }
             command = cmd_rx.recv() => {
                 match command {
@@ -280,14 +303,18 @@ async fn run_agent_run(
                             }
                         }
                         AgentCommand::Config(_) | AgentCommand::Start(_) => {
-                            abort_reason = Some("Unexpected controller message while running.".to_owned());
+                            abort_reason = Some(AppError::distributed(
+                                DistributedError::UnexpectedControllerMessageWhileRunning,
+                            ));
                             match stop_tx.send(true) {
                                 Ok(()) | Err(_) => {}
                             }
                         }
                     },
                     None => {
-                        abort_reason = Some("Controller connection closed.".to_owned());
+                        abort_reason = Some(AppError::distributed(
+                            DistributedError::ControllerConnectionClosed,
+                        ));
                         match stop_tx.send(true) {
                             Ok(()) | Err(_) => {}
                         }
@@ -310,7 +337,9 @@ async fn run_agent_run(
                         success_histogram_b64: None,
                     }));
                     if send_wire(out_tx, message).is_err() {
-                        return Err("Controller connection closed.".to_owned());
+                        return Err(AppError::distributed(
+                            DistributedError::ControllerConnectionClosed,
+                        ));
                     }
                 }
             }
@@ -369,15 +398,17 @@ async fn run_agent_run(
     };
     debug!("Sending report for run {}", report.run_id);
     if send_wire(out_tx, WireMessage::Report(Box::new(report))).is_err() {
-        return Err("Controller connection closed.".to_owned());
+        return Err(AppError::distributed(
+            DistributedError::ControllerConnectionClosed,
+        ));
     }
 
     Ok(())
 }
 
-fn send_wire(tx: &mpsc::UnboundedSender<WireMessage>, message: WireMessage) -> Result<(), String> {
+fn send_wire(tx: &mpsc::UnboundedSender<WireMessage>, message: WireMessage) -> AppResult<()> {
     tx.send(message)
-        .map_err(|err| format!("Controller connection closed: {}", err))
+        .map_err(|_err| AppError::distributed(DistributedError::ControllerConnectionClosed))
 }
 
 fn snapshot_to_wire_summary(snapshot: &StreamSnapshot) -> WireSummary {

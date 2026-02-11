@@ -6,20 +6,39 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{Clear, ClearType},
 };
-use tokio::sync::broadcast;
 use tokio::time::Instant;
 
 use crate::args::TesterArgs;
+use crate::shutdown::ShutdownSender;
+
+/// Width of the progress bar in characters.
+const PROGRESS_BAR_WIDTH: usize = 30;
+/// Refresh cadence for the progress indicator.
+const PROGRESS_TICK_INTERVAL: Duration = Duration::from_millis(250);
+/// Minimum target duration to avoid divide-by-zero.
+const MIN_TARGET_SECS: u64 = 1;
+/// Minimum progress units for bar sizing.
+const MIN_PROGRESS_UNITS: usize = 1;
+/// Milliseconds per second for time math.
+const MS_PER_SEC: u128 = 1000;
+/// Milliseconds per tenth-second.
+const TENTH_MS: u128 = 100;
+/// Number of tenths in a second.
+const TENTHS_PER_SEC: u128 = 10;
+/// Percent scaling factor (x100 = 10_000).
+const PERCENT_SCALE: u128 = 10_000;
+/// Percent divisor to format x100 values.
+const PERCENT_DIVISOR: u128 = 100;
 
 pub(crate) fn setup_progress_indicator(
     args: &TesterArgs,
     run_start: Instant,
-    shutdown_tx: &broadcast::Sender<u16>,
+    shutdown_tx: &ShutdownSender,
 ) -> tokio::task::JoinHandle<()> {
     let mut shutdown_rx = shutdown_tx.subscribe();
     let target_secs = args.target_duration.get();
-    let goal = usize::try_from(target_secs.max(1)).unwrap_or(1);
-    let style = ProgressStyle::new(30);
+    let goal = usize::try_from(target_secs.max(MIN_TARGET_SECS)).unwrap_or(MIN_PROGRESS_UNITS);
+    let style = ProgressStyle::new(PROGRESS_BAR_WIDTH);
     let no_color = args.no_color;
 
     tokio::spawn(async move {
@@ -27,12 +46,12 @@ pub(crate) fn setup_progress_indicator(
             return;
         }
 
-        let mut ticker = tokio::time::interval(Duration::from_millis(250));
+        let mut ticker = tokio::time::interval(PROGRESS_TICK_INTERVAL);
 
         loop {
             tokio::select! {
                 _ = shutdown_rx.recv() => {
-                    let elapsed_ms = u128::from(target_secs).saturating_mul(1000);
+                    let elapsed_ms = u128::from(target_secs).saturating_mul(MS_PER_SEC);
                     if render_progress_line(&style, goal, elapsed_ms, no_color).is_err() {
                         break;
                     }
@@ -58,7 +77,7 @@ fn render_progress_line(
     elapsed_ms: u128,
     no_color: bool,
 ) -> Result<(), std::io::Error> {
-    let elapsed_secs = elapsed_ms.checked_div(1000).unwrap_or(0);
+    let elapsed_secs = elapsed_ms.checked_div(MS_PER_SEC).unwrap_or(0);
     let current = usize::try_from(elapsed_secs).unwrap_or(goal);
     let current = current.min(goal);
     let line = build_progress_line(style, current, goal, elapsed_ms, no_color);
@@ -97,8 +116,8 @@ fn build_progress_line(
     elapsed_ms: u128,
     no_color: bool,
 ) -> Vec<ProgressSegment> {
-    let size = style.size.max(1);
-    let goal = goal.max(1);
+    let size = style.size.max(MIN_PROGRESS_UNITS);
+    let goal = goal.max(MIN_PROGRESS_UNITS);
     let current = current.min(goal);
 
     let current_u128 = u128::from(u64::try_from(current).unwrap_or(u64::MAX));
@@ -113,16 +132,16 @@ fn build_progress_line(
     let incomplete_size = size.saturating_sub(complete_size);
 
     let percent_x100 = current_u128
-        .saturating_mul(10_000)
+        .saturating_mul(PERCENT_SCALE)
         .checked_div(goal_u128)
         .unwrap_or(0);
-    let percent_whole = percent_x100.checked_div(100).unwrap_or(0);
-    let percent_frac = percent_x100.checked_rem(100).unwrap_or(0);
+    let percent_whole = percent_x100.checked_div(PERCENT_DIVISOR).unwrap_or(0);
+    let percent_frac = percent_x100.checked_rem(PERCENT_DIVISOR).unwrap_or(0);
     let percent_text = format!(" {}.{:02}%", percent_whole, percent_frac);
 
-    let elapsed_tenths = elapsed_ms.checked_div(100).unwrap_or(0);
-    let secs = elapsed_tenths.checked_div(10).unwrap_or(0);
-    let tenths = elapsed_tenths.checked_rem(10).unwrap_or(0);
+    let elapsed_tenths = elapsed_ms.checked_div(TENTH_MS).unwrap_or(0);
+    let secs = elapsed_tenths.checked_div(TENTHS_PER_SEC).unwrap_or(0);
+    let tenths = elapsed_tenths.checked_rem(TENTHS_PER_SEC).unwrap_or(0);
     let time_text = format!(" | {}.{}s / {}s", secs, tenths, goal);
 
     let progress_bar = format!(
