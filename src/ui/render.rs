@@ -11,15 +11,13 @@ use ratatui::{
     text::Span,
     widgets::{Block, Borders, Paragraph, Wrap},
 };
-use std::error::Error;
 use std::io;
 use std::time::Duration;
-use tokio::sync::{
-    broadcast::{self},
-    watch,
-};
+use tokio::sync::watch;
 
 use crate::args::TesterArgs;
+use crate::error::AppResult;
+use crate::shutdown::ShutdownSender;
 
 use super::model::{UiData, UiRenderData};
 
@@ -37,7 +35,7 @@ pub trait UiActions {
     /// # Errors
     ///
     /// Returns an error when terminal setup fails.
-    fn setup_terminal() -> Result<Terminal<CrosstermBackend<std::io::Stdout>>, Box<dyn Error>>;
+    fn setup_terminal() -> AppResult<Terminal<CrosstermBackend<std::io::Stdout>>>;
     fn cleanup();
     fn render<B: Backend>(terminal: &mut Terminal<B>, data: &UiRenderData);
 }
@@ -53,9 +51,45 @@ const BANNER_LINES: [&str; 7] = [
     "╚══════╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚══════╝   ╚═╝   ",
     "                                                   ",
 ];
+/// Outer margin for the full UI layout.
+const UI_MARGIN: u16 = 1;
+/// Fixed height for the summary row.
+const SUMMARY_HEIGHT: u16 = 7;
+/// Minimum height for the chart area to avoid rendering errors.
+const CHART_MIN_HEIGHT: u16 = 10;
+/// Column width percentages for summary panels.
+const SUMMARY_COL_LEFT: u16 = 34;
+const SUMMARY_COL_MID: u16 = 33;
+const SUMMARY_COL_RIGHT: u16 = 33;
+/// Scale factor for percent values (x100 = 10_000).
+const SUCCESS_RATE_SCALE: u128 = 10_000;
+/// Percent divisor to format x100 values as `xx.yy`.
+const PERCENT_DIVISOR: u64 = 100;
+/// Milliseconds per second for UI time math.
+const MS_PER_SEC: u64 = 1_000;
+/// Divisor for centiseconds in `ss.cc` formatting.
+const CENTIS_DIVISOR: u64 = 10;
+/// Divisor for tenths of a second in `ss.t` formatting.
+const TENTHS_DIVISOR: u64 = 100;
+/// Smallest allowed latency value in charts.
+const MIN_LATENCY_MS: u64 = 1;
+/// Minimum Y-axis max to avoid a flat chart.
+const MIN_Y_MAX: u64 = 10;
+/// Minimum window length for chart rendering.
+const MIN_WINDOW_MS: u64 = 1;
+/// Splash screen display duration.
+const SPLASH_DURATION_SECS: u64 = 3;
+/// Extra empty line padding around the banner.
+const BANNER_PADDING_LINES: usize = 1;
+/// Gradient start color for the banner.
+const COLOR_START: (u8, u8, u8) = (0x80, 0x4c, 0xff);
+/// Gradient midpoint color for the banner.
+const COLOR_MID: (u8, u8, u8) = (0xff, 0x5f, 0xc8);
+/// Gradient end color for the banner.
+const COLOR_END: (u8, u8, u8) = (0x3a, 0xa9, 0xff);
 
 impl UiActions for Ui {
-    fn setup_terminal() -> Result<Terminal<CrosstermBackend<std::io::Stdout>>, Box<dyn Error>> {
+    fn setup_terminal() -> AppResult<Terminal<CrosstermBackend<std::io::Stdout>>> {
         enable_raw_mode()?;
         if let Err(err) = execute!(io::stdout(), EnterAlternateScreen) {
             disable_raw_mode().ok();
@@ -83,8 +117,11 @@ impl UiActions for Ui {
 
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .margin(1)
-                .constraints([Constraint::Length(7), Constraint::Min(10)])
+                .margin(UI_MARGIN)
+                .constraints([
+                    Constraint::Length(SUMMARY_HEIGHT),
+                    Constraint::Min(CHART_MIN_HEIGHT),
+                ])
                 .split(size);
 
             let (summary_chunk, chart_chunk) = match chunks.as_ref() {
@@ -95,9 +132,9 @@ impl UiActions for Ui {
             let summary_chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([
-                    Constraint::Percentage(34),
-                    Constraint::Percentage(33),
-                    Constraint::Percentage(33),
+                    Constraint::Percentage(SUMMARY_COL_LEFT),
+                    Constraint::Percentage(SUMMARY_COL_MID),
+                    Constraint::Percentage(SUMMARY_COL_RIGHT),
                 ])
                 .split(*summary_chunk);
 
@@ -111,7 +148,7 @@ impl UiActions for Ui {
             let error_requests = total_requests.saturating_sub(success_requests);
             let success_rate_x100 = if total_requests > 0 {
                 let scaled = u128::from(success_requests)
-                    .saturating_mul(10_000)
+                    .saturating_mul(SUCCESS_RATE_SCALE)
                     .checked_div(u128::from(total_requests))
                     .unwrap_or(0);
                 u64::try_from(scaled).unwrap_or(u64::MAX)
@@ -137,8 +174,8 @@ impl UiActions for Ui {
                     Span::styled(
                         format!(
                             "{}.{:02}%",
-                            success_rate_x100 / 100,
-                            success_rate_x100 % 100
+                            success_rate_x100 / PERCENT_DIVISOR,
+                            success_rate_x100 % PERCENT_DIVISOR
                         ),
                         style_color(data.no_color, Color::Cyan),
                     ),
@@ -147,8 +184,8 @@ impl UiActions for Ui {
 
             if let Some(replay) = data.replay.as_ref() {
                 let fmt_ms = |value: u64| {
-                    let secs = value / 1000;
-                    let centis = (value % 1000) / 10;
+                    let secs = value / MS_PER_SEC;
+                    let centis = (value % MS_PER_SEC) / CENTIS_DIVISOR;
                     format!("{}.{:02}s", secs, centis)
                 };
                 let status = if replay.playing { "playing" } else { "paused" };
@@ -290,22 +327,27 @@ impl UiActions for Ui {
             let y_max = data
                 .latencies
                 .iter()
-                .map(|(_, latency)| (*latency).max(1))
-                .fold(1, u64::max)
-                .max(10);
-            let window_ms = data.ui_window_ms.max(1);
+                .map(|(_, latency)| (*latency).max(MIN_LATENCY_MS))
+                .fold(MIN_LATENCY_MS, u64::max)
+                .max(MIN_Y_MAX);
+            let window_ms = data.ui_window_ms.max(MIN_WINDOW_MS);
             let x_max = data_points.last().map(|(x, _)| *x).unwrap_or(0);
             let x_start = x_max.saturating_sub(window_ms);
-            let x_span = x_max.saturating_sub(x_start).max(1);
+            let x_span = x_max.saturating_sub(x_start).max(MIN_WINDOW_MS);
 
             let chart_points: Vec<(f64, f64)> = data_points
                 .iter()
                 .filter(|(x, _)| *x >= x_start)
-                .map(|(x, y)| (x.saturating_sub(x_start) as f64, (*y).max(1) as f64))
+                .map(|(x, y)| {
+                    (
+                        x.saturating_sub(x_start) as f64,
+                        (*y).max(MIN_LATENCY_MS) as f64,
+                    )
+                })
                 .collect();
             let fmt_secs = |ms: u64| {
-                let secs = ms / 1000;
-                let tenths = (ms % 1000) / 100;
+                let secs = ms / MS_PER_SEC;
+                let tenths = (ms % MS_PER_SEC) / TENTHS_DIVISOR;
                 format!("{}.{:01}s", secs, tenths)
             };
             let label_left = x_start;
@@ -367,7 +409,7 @@ impl Drop for TerminalGuard {
 #[must_use]
 pub fn setup_render_ui(
     _args: &TesterArgs,
-    shutdown_tx: &broadcast::Sender<u16>,
+    shutdown_tx: &ShutdownSender,
     ui_tx: &watch::Sender<UiData>,
 ) -> tokio::task::JoinHandle<()> {
     let mut ui_rx = ui_tx.subscribe();
@@ -404,19 +446,19 @@ pub fn setup_render_ui(
 /// # Errors
 ///
 /// Returns an error if the terminal setup fails.
-pub async fn run_splash_screen(no_color: bool) -> Result<(), Box<dyn Error>> {
+pub async fn run_splash_screen(no_color: bool) -> AppResult<()> {
     let mut terminal = Ui::setup_terminal()?;
     let _guard = TerminalGuard;
 
     render_splash(&mut terminal, no_color);
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    tokio::time::sleep(Duration::from_secs(SPLASH_DURATION_SECS)).await;
     Ok(())
 }
 
 fn render_splash<B: Backend>(terminal: &mut Terminal<B>, no_color: bool) {
     if let Err(err) = terminal.draw(|f| {
         let size = f.size();
-        let banner_height = BANNER_LINES.len().saturating_add(1);
+        let banner_height = BANNER_LINES.len().saturating_add(BANNER_PADDING_LINES);
         let available_height = usize::from(size.height);
         let top_pad = available_height.saturating_sub(banner_height) / 2;
 
@@ -424,13 +466,10 @@ fn render_splash<B: Backend>(terminal: &mut Terminal<B>, no_color: bool) {
         for _ in 0..top_pad {
             lines.push(text::Line::from(""));
         }
-        let start_color = (0x80, 0x4c, 0xff);
-        let mid_color = (0xff, 0x5f, 0xc8);
-        let end_color = (0x3a, 0xa9, 0xff);
 
         let denom = BANNER_LINES.len().saturating_sub(1);
         for (idx, line) in BANNER_LINES.iter().enumerate() {
-            let color = tri_gradient_color(start_color, mid_color, end_color, idx, denom);
+            let color = tri_gradient_color(COLOR_START, COLOR_MID, COLOR_END, idx, denom);
             let style = style_color(no_color, color);
             lines.push(text::Line::from(Span::styled((*line).to_owned(), style)));
         }

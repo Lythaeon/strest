@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::args::{LoadProfile, PositiveU64, PositiveUsize, Scenario, ScenarioStep, TesterArgs};
+use crate::error::{AppError, AppResult, DistributedError, WireValueField};
 use crate::metrics::MetricsRange;
 
 use super::protocol::{WireArgs, WireLoadProfile, WireLoadStage, WireScenario, WireScenarioStep};
@@ -49,13 +50,17 @@ pub(super) fn build_wire_args(args: &TesterArgs) -> WireArgs {
     }
 }
 
-pub(super) fn apply_wire_args(args: &mut TesterArgs, wire: WireArgs) -> Result<(), String> {
+pub(super) fn apply_wire_args(args: &mut TesterArgs, wire: WireArgs) -> AppResult<()> {
     args.method = wire.method;
     args.url = wire.url;
     args.headers = wire.headers;
     args.data = wire.data;
-    args.target_duration = PositiveU64::try_from(wire.target_duration)
-        .map_err(|err| format!("Wire target_duration must be >= 1: {}", err))?;
+    args.target_duration = PositiveU64::try_from(wire.target_duration).map_err(|err| {
+        AppError::distributed(DistributedError::WireValueTooSmall {
+            field: WireValueField::TargetDuration,
+            source: err,
+        })
+    })?;
     args.expected_status_code = wire.expected_status_code;
     args.request_timeout = Duration::from_millis(wire.request_timeout_ms);
     args.charts_path = wire.charts_path;
@@ -66,30 +71,53 @@ pub(super) fn apply_wire_args(args: &mut TesterArgs, wire: WireArgs) -> Result<(
     args.warmup = wire.warmup_ms.map(Duration::from_millis);
     args.export_csv = wire.export_csv;
     args.export_json = wire.export_json;
-    args.log_shards = PositiveUsize::try_from(wire.log_shards)
-        .map_err(|err| format!("Wire log_shards must be >= 1: {}", err))?;
+    args.log_shards = PositiveUsize::try_from(wire.log_shards).map_err(|err| {
+        AppError::distributed(DistributedError::WireValueTooSmall {
+            field: WireValueField::LogShards,
+            source: err,
+        })
+    })?;
     args.no_ui = wire.no_ui;
     args.summary = wire.summary;
     args.proxy_url = wire.proxy_url;
-    args.max_tasks = PositiveUsize::try_from(wire.max_tasks)
-        .map_err(|err| format!("Wire max_tasks must be >= 1: {}", err))?;
-    args.spawn_rate_per_tick = PositiveUsize::try_from(wire.spawn_rate_per_tick)
-        .map_err(|err| format!("Wire spawn_rate_per_tick must be >= 1: {}", err))?;
-    args.tick_interval = PositiveU64::try_from(wire.tick_interval)
-        .map_err(|err| format!("Wire tick_interval must be >= 1: {}", err))?;
+    args.max_tasks = PositiveUsize::try_from(wire.max_tasks).map_err(|err| {
+        AppError::distributed(DistributedError::WireValueTooSmall {
+            field: WireValueField::MaxTasks,
+            source: err,
+        })
+    })?;
+    args.spawn_rate_per_tick =
+        PositiveUsize::try_from(wire.spawn_rate_per_tick).map_err(|err| {
+            AppError::distributed(DistributedError::WireValueTooSmall {
+                field: WireValueField::SpawnRatePerTick,
+                source: err,
+            })
+        })?;
+    args.tick_interval = PositiveU64::try_from(wire.tick_interval).map_err(|err| {
+        AppError::distributed(DistributedError::WireValueTooSmall {
+            field: WireValueField::TickInterval,
+            source: err,
+        })
+    })?;
     args.rate_limit = match wire.rate_limit {
-        Some(value) => Some(
-            PositiveU64::try_from(value)
-                .map_err(|err| format!("Wire rate_limit must be >= 1: {}", err))?,
-        ),
+        Some(value) => Some(PositiveU64::try_from(value).map_err(|err| {
+            AppError::distributed(DistributedError::WireValueTooSmall {
+                field: WireValueField::RateLimit,
+                source: err,
+            })
+        })?),
         None => None,
     };
     args.load_profile = wire.load_profile.map(from_wire_load_profile);
     args.metrics_range = wire
         .metrics_range
         .map(|(start, end)| MetricsRange(start..=end));
-    args.metrics_max = PositiveUsize::try_from(wire.metrics_max)
-        .map_err(|err| format!("Wire metrics_max must be >= 1: {}", err))?;
+    args.metrics_max = PositiveUsize::try_from(wire.metrics_max).map_err(|err| {
+        AppError::distributed(DistributedError::WireValueTooSmall {
+            field: WireValueField::MetricsMax,
+            source: err,
+        })
+    })?;
     args.scenario = wire.scenario.map(from_wire_scenario);
     args.tls_min = wire.tls_min;
     args.tls_max = wire.tls_max;
@@ -98,10 +126,12 @@ pub(super) fn apply_wire_args(args: &mut TesterArgs, wire: WireArgs) -> Result<(
     args.alpn = wire.alpn;
     args.distributed_stream_summaries = wire.stream_summaries;
     args.distributed_stream_interval_ms = match wire.stream_interval_ms {
-        Some(value) => Some(
-            PositiveU64::try_from(value)
-                .map_err(|err| format!("Wire stream_interval_ms must be >= 1: {}", err))?,
-        ),
+        Some(value) => Some(PositiveU64::try_from(value).map_err(|err| {
+            AppError::distributed(DistributedError::WireValueTooSmall {
+                field: WireValueField::StreamIntervalMs,
+                source: err,
+            })
+        })?),
         None => None,
     };
     Ok(())

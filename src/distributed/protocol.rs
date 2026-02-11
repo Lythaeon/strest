@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use crate::args::{HttpMethod, TlsVersion};
+use crate::error::{AppError, AppResult, DistributedError};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -226,20 +227,23 @@ mod serde_u128 {
 
 pub(super) async fn read_message(
     reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
-) -> Result<WireMessage, String> {
+) -> AppResult<WireMessage> {
     const MAX_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
     let mut buffer: Vec<u8> = Vec::with_capacity(1024);
-    let bytes = reader
-        .read_until(b'\n', &mut buffer)
-        .await
-        .map_err(|err| format!("Failed to read message: {}", err))?;
+    let bytes = reader.read_until(b'\n', &mut buffer).await.map_err(|err| {
+        AppError::distributed(DistributedError::Io {
+            context: "read wire message",
+            source: err,
+        })
+    })?;
     if bytes == 0 {
-        return Err("Connection closed.".to_owned());
+        return Err(AppError::distributed(DistributedError::ConnectionClosed));
     }
     if buffer.len() > MAX_MESSAGE_BYTES {
-        return Err(format!(
-            "Message exceeded max size ({} bytes).",
-            MAX_MESSAGE_BYTES
+        return Err(AppError::distributed(
+            DistributedError::WireMessageTooLarge {
+                max_bytes: MAX_MESSAGE_BYTES,
+            },
         ));
     }
     if buffer.ends_with(b"\n") {
@@ -248,20 +252,32 @@ pub(super) async fn read_message(
             buffer.pop();
         }
     }
-    let line =
-        std::str::from_utf8(&buffer).map_err(|err| format!("Invalid UTF-8 message: {}", err))?;
-    serde_json::from_str::<WireMessage>(line).map_err(|err| format!("Invalid message: {}", err))
+    let line = std::str::from_utf8(&buffer).map_err(|err| {
+        AppError::distributed(DistributedError::WireMessageInvalidUtf8 { source: err })
+    })?;
+    serde_json::from_str::<WireMessage>(line).map_err(|err| {
+        AppError::distributed(DistributedError::Deserialize {
+            context: "wire message",
+            source: err,
+        })
+    })
 }
 
 pub(super) async fn send_message(
     writer: &mut tokio::net::tcp::OwnedWriteHalf,
     message: &WireMessage,
-) -> Result<(), String> {
-    let mut payload =
-        serde_json::to_string(message).map_err(|err| format!("Encode failed: {}", err))?;
+) -> AppResult<()> {
+    let mut payload = serde_json::to_string(message).map_err(|err| {
+        AppError::distributed(DistributedError::Serialize {
+            context: "wire message",
+            source: err,
+        })
+    })?;
     payload.push('\n');
-    writer
-        .write_all(payload.as_bytes())
-        .await
-        .map_err(|err| format!("Failed to send message: {}", err))
+    writer.write_all(payload.as_bytes()).await.map_err(|err| {
+        AppError::distributed(DistributedError::Io {
+            context: "send wire message",
+            source: err,
+        })
+    })
 }

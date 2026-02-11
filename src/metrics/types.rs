@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 use std::ops::RangeInclusive;
+
+use crate::error::ValidationError;
 use std::time::Duration;
 
 use tokio::time::Instant;
@@ -117,20 +119,20 @@ pub struct StreamingChartData {
 }
 
 impl std::str::FromStr for MetricsRange {
-    type Err = String;
+    type Err = ValidationError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (start_str, end_str) = s
             .split_once('-')
-            .ok_or_else(|| "Expected format start-end (e.g., 10-30)".to_owned())?;
+            .ok_or(ValidationError::MetricsRangeFormat)?;
         let start: u64 = start_str
             .parse()
-            .map_err(|err| format!("Invalid start value: {}", err))?;
+            .map_err(|err| ValidationError::MetricsRangeInvalidStart { source: err })?;
         let end: u64 = end_str
             .parse()
-            .map_err(|err| format!("Invalid end value: {}", err))?;
+            .map_err(|err| ValidationError::MetricsRangeInvalidEnd { source: err })?;
         if start > end {
-            return Err("Start must be <= end".to_owned());
+            return Err(ValidationError::MetricsRangeStartAfterEnd);
         }
         Ok(MetricsRange(start..=end))
     }

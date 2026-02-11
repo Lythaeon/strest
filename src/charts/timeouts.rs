@@ -1,11 +1,9 @@
 use plotters::prelude::*;
 
+use crate::error::AppResult;
 use crate::metrics::MetricRecord;
 
-pub fn plot_timeouts_per_second(
-    metrics: &[MetricRecord],
-    path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn plot_timeouts_per_second(metrics: &[MetricRecord], path: &str) -> AppResult<()> {
     if metrics.is_empty() {
         return Ok(());
     }

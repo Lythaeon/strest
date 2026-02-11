@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::time::Duration;
 
+use crate::error::{AppError, ValidationError};
+
 #[derive(Debug, Clone, Copy, ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum HttpMethod {
@@ -34,7 +36,7 @@ pub enum HttpVersion {
 }
 
 impl std::str::FromStr for HttpVersion {
-    type Err = String;
+    type Err = AppError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let normalized = s.trim();
@@ -44,10 +46,9 @@ impl std::str::FromStr for HttpVersion {
             "1.1" => Ok(HttpVersion::V1_1),
             "2" => Ok(HttpVersion::V2),
             "3" => Ok(HttpVersion::V3),
-            _ => Err(format!(
-                "Invalid HTTP version '{}'. Use 0.9, 1.0, 1.1, 2, or 3.",
-                s
-            )),
+            _ => Err(AppError::validation(ValidationError::InvalidHttpVersion {
+                value: s.to_owned(),
+            })),
         }
     }
 }
@@ -81,16 +82,17 @@ pub enum ControllerMode {
 }
 
 impl std::str::FromStr for ControllerMode {
-    type Err = String;
+    type Err = AppError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let normalized = s.trim().to_ascii_lowercase();
         match normalized.as_str() {
             "auto" => Ok(ControllerMode::Auto),
             "manual" => Ok(ControllerMode::Manual),
-            _ => Err(format!(
-                "Invalid controller mode '{}'. Use auto or manual.",
-                s
+            _ => Err(AppError::validation(
+                ValidationError::InvalidControllerMode {
+                    value: s.to_owned(),
+                },
             )),
         }
     }
@@ -105,7 +107,7 @@ pub enum TlsVersion {
 }
 
 impl std::str::FromStr for TlsVersion {
-    type Err = String;
+    type Err = AppError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let normalized = s.trim().to_ascii_lowercase();
@@ -114,10 +116,9 @@ impl std::str::FromStr for TlsVersion {
             "1.1" | "tls1.1" | "v1.1" => Ok(TlsVersion::V1_1),
             "1.2" | "tls1.2" | "v1.2" => Ok(TlsVersion::V1_2),
             "1.3" | "tls1.3" | "v1.3" => Ok(TlsVersion::V1_3),
-            _ => Err(format!(
-                "Invalid TLS version '{}'. Use 1.0, 1.1, 1.2, or 1.3.",
-                s
-            )),
+            _ => Err(AppError::validation(ValidationError::InvalidTlsVersion {
+                value: s.to_owned(),
+            })),
         }
     }
 }
@@ -160,20 +161,22 @@ impl PositiveU64 {
 }
 
 impl TryFrom<u64> for PositiveU64 {
-    type Error = String;
+    type Error = ValidationError;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         NonZeroU64::new(value)
             .map(PositiveU64)
-            .ok_or_else(|| "Value must be >= 1".to_owned())
+            .ok_or_else(|| ValidationError::ValueTooSmall { min: 1 })
     }
 }
 
 impl std::str::FromStr for PositiveU64 {
-    type Err = String;
+    type Err = ValidationError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let value: u64 = s.parse().map_err(|err| format!("Invalid value: {}", err))?;
+        let value: u64 = s
+            .parse()
+            .map_err(|err| ValidationError::InvalidNumber { source: err })?;
         PositiveU64::try_from(value)
     }
 }
@@ -195,20 +198,22 @@ impl PositiveUsize {
 }
 
 impl TryFrom<usize> for PositiveUsize {
-    type Error = String;
+    type Error = ValidationError;
 
     fn try_from(value: usize) -> Result<Self, Self::Error> {
         NonZeroUsize::new(value)
             .map(PositiveUsize)
-            .ok_or_else(|| "Value must be >= 1".to_owned())
+            .ok_or_else(|| ValidationError::ValueTooSmall { min: 1 })
     }
 }
 
 impl std::str::FromStr for PositiveUsize {
-    type Err = String;
+    type Err = ValidationError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let value: usize = s.parse().map_err(|err| format!("Invalid value: {}", err))?;
+        let value: usize = s
+            .parse()
+            .map_err(|err| ValidationError::InvalidNumber { source: err })?;
         PositiveUsize::try_from(value)
     }
 }

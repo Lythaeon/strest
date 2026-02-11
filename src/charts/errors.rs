@@ -1,12 +1,13 @@
 use plotters::prelude::*;
 
+use crate::error::AppResult;
 use crate::metrics::MetricRecord;
 
 pub fn plot_error_rate_breakdown(
     metrics: &[MetricRecord],
     expected_status_code: u16,
     path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if metrics.is_empty() {
         return Ok(());
     }

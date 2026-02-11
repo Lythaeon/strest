@@ -1,9 +1,11 @@
 use std::time::Duration;
 
-pub(crate) fn parse_duration_value(value: &str) -> Result<Duration, String> {
+use crate::error::{AppError, AppResult, ConfigError};
+
+pub(crate) fn parse_duration_value(value: &str) -> AppResult<Duration> {
     let value = value.trim();
     if value.is_empty() {
-        return Err("Duration must not be empty.".to_owned());
+        return Err(AppError::config(ConfigError::DurationEmpty));
     }
 
     let mut digits_len = 0usize;
@@ -15,12 +17,17 @@ pub(crate) fn parse_duration_value(value: &str) -> Result<Duration, String> {
         }
     }
     if digits_len == 0 {
-        return Err(format!("Invalid duration '{}'.", value));
+        return Err(AppError::config(ConfigError::InvalidDurationFormat {
+            value: value.to_owned(),
+        }));
     }
     let (num_part, unit_part) = value.split_at(digits_len);
-    let number: u64 = num_part
-        .parse()
-        .map_err(|err| format!("Invalid duration '{}': {}", value, err))?;
+    let number: u64 = num_part.parse().map_err(|err| {
+        AppError::config(ConfigError::InvalidDurationNumber {
+            value: value.to_owned(),
+            source: err,
+        })
+    })?;
 
     let unit = if unit_part.is_empty() { "s" } else { unit_part };
     let duration = match unit {
@@ -29,21 +36,25 @@ pub(crate) fn parse_duration_value(value: &str) -> Result<Duration, String> {
         "m" => {
             let secs = number
                 .checked_mul(60)
-                .ok_or_else(|| "Duration overflow.".to_owned())?;
+                .ok_or_else(|| AppError::config(ConfigError::DurationOverflow))?;
             Duration::from_secs(secs)
         }
         "h" => {
             let secs = number
                 .checked_mul(60)
                 .and_then(|seconds| seconds.checked_mul(60))
-                .ok_or_else(|| "Duration overflow.".to_owned())?;
+                .ok_or_else(|| AppError::config(ConfigError::DurationOverflow))?;
             Duration::from_secs(secs)
         }
-        _ => return Err(format!("Invalid duration unit '{}'.", unit)),
+        _ => {
+            return Err(AppError::config(ConfigError::InvalidDurationUnit {
+                unit: unit.to_owned(),
+            }));
+        }
     };
 
     if duration.as_millis() == 0 {
-        return Err("Duration must be > 0.".to_owned());
+        return Err(AppError::config(ConfigError::DurationZero));
     }
 
     Ok(duration)

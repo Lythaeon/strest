@@ -2,11 +2,12 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use tokio::{
-    sync::{broadcast, mpsc, watch},
+    sync::{mpsc, watch},
     task::JoinHandle,
     time::{Instant, MissedTickBehavior},
 };
 
+use crate::shutdown::ShutdownSender;
 use crate::{
     args::{PositiveU64, TesterArgs},
     sinks::{
@@ -84,7 +85,7 @@ impl UiAggregationState {
 pub fn setup_metrics_collector(
     args: &TesterArgs,
     run_start: Instant,
-    shutdown_tx: &broadcast::Sender<u16>,
+    shutdown_tx: &ShutdownSender,
     mut metrics_rx: mpsc::Receiver<Metrics>,
     ui_tx: &watch::Sender<UiData>,
     stream_tx: Option<mpsc::UnboundedSender<StreamSnapshot>>,
@@ -146,7 +147,7 @@ pub fn setup_metrics_collector(
         loop {
             tokio::select! {
                 () = &mut shutdown_timer => {
-                    drop(shutdown_tx_main.send(1));
+                    drop(shutdown_tx_main.send(()));
                     break;
                 },
                 _ = shutdown_rx_inner.recv() => break,
@@ -154,7 +155,7 @@ pub fn setup_metrics_collector(
                     let msg = match maybe_msg {
                         Some(msg) => msg,
                         None => {
-                            drop(shutdown_tx_main.send(1));
+                            drop(shutdown_tx_main.send(()));
                             break;
                         }
                     };
@@ -232,9 +233,10 @@ pub fn setup_metrics_collector(
                                 last_sink_error = None;
                             }
                             Err(err) => {
-                                if last_sink_error.as_deref() != Some(err.as_str()) {
+                                let err_message = err.to_string();
+                                if last_sink_error.as_deref() != Some(err_message.as_str()) {
                                     tracing::warn!("Failed to write sinks: {}", err);
-                                    last_sink_error = Some(err);
+                                    last_sink_error = Some(err_message);
                                 }
                             }
                         }

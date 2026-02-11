@@ -1,19 +1,23 @@
 use super::workload::{RequestLimiter, render_template};
 use super::*;
 use crate::args::{HttpMethod, PositiveU64, PositiveUsize, TesterArgs};
+use crate::error::{AppError, AppResult};
 use crate::metrics::Metrics;
 use std::future::Future;
 use std::time::Duration;
+use tokio::sync::broadcast;
 
-fn positive_u64(value: u64) -> Result<PositiveU64, String> {
-    PositiveU64::try_from(value)
+const SHUTDOWN_CHANNEL_CAPACITY: usize = 1;
+
+fn positive_u64(value: u64) -> AppResult<PositiveU64> {
+    Ok(PositiveU64::try_from(value)?)
 }
 
-fn positive_usize(value: usize) -> Result<PositiveUsize, String> {
-    PositiveUsize::try_from(value)
+fn positive_usize(value: usize) -> AppResult<PositiveUsize> {
+    Ok(PositiveUsize::try_from(value)?)
 }
 
-fn base_args(url: String) -> Result<TesterArgs, String> {
+fn base_args(url: String) -> AppResult<TesterArgs> {
     Ok(TesterArgs {
         command: None,
         replay: false,
@@ -138,51 +142,51 @@ fn base_args(url: String) -> Result<TesterArgs, String> {
     })
 }
 
-fn run_async_test<F>(future: F) -> Result<(), String>
+fn run_async_test<F>(future: F) -> AppResult<()>
 where
-    F: Future<Output = Result<(), String>>,
+    F: Future<Output = AppResult<()>>,
 {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|err| format!("Failed to build runtime: {}", err))?;
+        .map_err(|err| AppError::validation(format!("Failed to build runtime: {}", err)))?;
     runtime.block_on(future)
 }
 
 #[test]
-fn invalid_proxy_sends_shutdown() -> Result<(), String> {
+fn invalid_proxy_sends_shutdown() -> AppResult<()> {
     run_async_test(async {
         let mut args = base_args("http://localhost".to_owned())?;
         args.proxy_url = Some("not a url".to_owned());
-        let (shutdown_tx, _) = tokio::sync::broadcast::channel::<u16>(1);
+        let (shutdown_tx, _) = broadcast::channel::<()>(SHUTDOWN_CHANNEL_CAPACITY);
         let (metrics_tx, _metrics_rx) = tokio::sync::mpsc::channel::<Metrics>(1);
 
         let result = setup_request_sender(&args, &shutdown_tx, &metrics_tx, None);
         if result.is_ok() {
-            return Err("Expected error for invalid proxy".to_owned());
+            return Err(AppError::validation("Expected error for invalid proxy"));
         }
         Ok(())
     })
 }
 
 #[test]
-fn invalid_url_sends_shutdown() -> Result<(), String> {
+fn invalid_url_sends_shutdown() -> AppResult<()> {
     run_async_test(async {
         let args = base_args("http://".to_owned())?;
 
-        let (shutdown_tx, _) = tokio::sync::broadcast::channel::<u16>(1);
+        let (shutdown_tx, _) = broadcast::channel::<()>(SHUTDOWN_CHANNEL_CAPACITY);
         let (metrics_tx, _metrics_rx) = tokio::sync::mpsc::channel::<Metrics>(10);
 
         let result = setup_request_sender(&args, &shutdown_tx, &metrics_tx, None);
         if result.is_ok() {
-            return Err("Expected error for invalid URL".to_owned());
+            return Err(AppError::validation("Expected error for invalid URL"));
         }
         Ok(())
     })
 }
 
 #[test]
-fn rate_controller_ramps_tokens() -> Result<(), String> {
+fn rate_controller_ramps_tokens() -> AppResult<()> {
     let plan = RatePlan {
         initial_rpm: 600,
         stages: vec![RateStage {
@@ -203,60 +207,73 @@ fn rate_controller_ramps_tokens() -> Result<(), String> {
     let third = controller.next_tokens();
 
     if first != 10 {
-        return Err(format!("Expected 10 tokens, got {}", first));
+        return Err(AppError::validation(format!(
+            "Expected 10 tokens, got {}",
+            first
+        )));
     }
     if second != 15 {
-        return Err(format!("Expected 15 tokens, got {}", second));
+        return Err(AppError::validation(format!(
+            "Expected 15 tokens, got {}",
+            second
+        )));
     }
     if third != 20 {
-        return Err(format!("Expected 20 tokens, got {}", third));
+        return Err(AppError::validation(format!(
+            "Expected 20 tokens, got {}",
+            third
+        )));
     }
 
     Ok(())
 }
 
 #[test]
-fn render_template_substitutes_vars() -> Result<(), String> {
+fn render_template_substitutes_vars() -> AppResult<()> {
     let vars = std::collections::BTreeMap::from([
         ("user".to_owned(), "alice".to_owned()),
         ("seq".to_owned(), "42".to_owned()),
     ]);
     let rendered = render_template("{{user}}-{{seq}}", &vars);
     if rendered != "alice-42" {
-        return Err(format!("Unexpected render: {}", rendered));
+        return Err(AppError::validation(format!(
+            "Unexpected render: {}",
+            rendered
+        )));
     }
     Ok(())
 }
 
 #[test]
-fn resolve_alpn_detects_http2_only() -> Result<(), String> {
+fn resolve_alpn_detects_http2_only() -> AppResult<()> {
     let selection = resolve_alpn(&["h2".to_owned()])?;
     if !matches!(selection.choice, AlpnChoice::Http2Only) {
-        return Err("Expected Http2Only".to_owned());
+        return Err(AppError::validation("Expected Http2Only"));
     }
     if selection.has_h3 {
-        return Err("Expected has_h3 to be false".to_owned());
+        return Err(AppError::validation("Expected has_h3 to be false"));
     }
     Ok(())
 }
 
 #[test]
-fn request_limiter_stops_at_limit() -> Result<(), String> {
-    let limiter = RequestLimiter::new(Some(2)).ok_or_else(|| "Missing limiter".to_owned())?;
-    let (shutdown_tx, _) = tokio::sync::broadcast::channel::<u16>(1);
+fn request_limiter_stops_at_limit() -> AppResult<()> {
+    let limiter =
+        RequestLimiter::new(Some(2)).ok_or_else(|| AppError::validation("Missing limiter"))?;
+    let (shutdown_tx, _) = broadcast::channel::<()>(SHUTDOWN_CHANNEL_CAPACITY);
     let mut shutdown_rx = shutdown_tx.subscribe();
 
     if !limiter.try_reserve(&shutdown_tx) {
-        return Err("Expected first reserve to succeed".to_owned());
+        return Err(AppError::validation("Expected first reserve to succeed"));
     }
     if !limiter.try_reserve(&shutdown_tx) {
-        return Err("Expected second reserve to succeed".to_owned());
+        return Err(AppError::validation("Expected second reserve to succeed"));
     }
     if limiter.try_reserve(&shutdown_tx) {
-        return Err("Expected third reserve to fail".to_owned());
+        return Err(AppError::validation("Expected third reserve to fail"));
     }
     if shutdown_rx.try_recv().is_err() {
-        return Err("Expected shutdown signal".to_owned());
+        return Err(AppError::validation("Expected shutdown signal"));
     }
 
     Ok(())

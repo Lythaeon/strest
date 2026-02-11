@@ -7,11 +7,12 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
+use crate::error::{AppError, AppResult, MetricsError};
 use crate::{args::TesterArgs, metrics};
 
 pub(crate) struct LogSetup {
     pub(crate) log_sink: Option<Arc<metrics::LogSink>>,
-    pub(crate) handles: Vec<tokio::task::JoinHandle<Result<metrics::LogResult, String>>>,
+    pub(crate) handles: Vec<tokio::task::JoinHandle<AppResult<metrics::LogResult>>>,
     pub(crate) paths: Vec<PathBuf>,
 }
 
@@ -30,7 +31,7 @@ pub(crate) async fn setup_log_sinks(
     run_start: Instant,
     charts_enabled: bool,
     summary_enabled: bool,
-) -> Result<LogSetup, Box<dyn std::error::Error>> {
+) -> AppResult<LogSetup> {
     let log_enabled = charts_enabled
         || summary_enabled
         || args.export_csv.is_some()
@@ -88,7 +89,7 @@ pub(crate) async fn setup_log_sinks(
 pub(crate) fn merge_log_results(
     results: Vec<metrics::LogResult>,
     metrics_max: usize,
-) -> Result<LogMergeResult, String> {
+) -> AppResult<LogMergeResult> {
     let mut total_requests: u64 = 0;
     let mut successful_requests: u64 = 0;
     let mut timeout_requests: u64 = 0;
@@ -257,14 +258,19 @@ fn parse_log_line(line: &str) -> Option<LogRecord> {
     })
 }
 
-async fn read_next_record(cursor: &mut LogCursor) -> Result<Option<LogRecord>, String> {
+async fn read_next_record(cursor: &mut LogCursor) -> AppResult<Option<LogRecord>> {
     loop {
         cursor.line.clear();
         let bytes = cursor
             .reader
             .read_line(&mut cursor.line)
             .await
-            .map_err(|err| format!("Failed to read metrics log: {}", err))?;
+            .map_err(|err| {
+                AppError::metrics(MetricsError::Io {
+                    context: "read metrics log",
+                    source: err,
+                })
+            })?;
         if bytes == 0 {
             return Ok(None);
         }
@@ -364,12 +370,15 @@ pub(crate) async fn load_chart_data_streaming(
     expected_status_code: u16,
     metrics_range: &Option<metrics::MetricsRange>,
     latency_bucket_ms: u64,
-) -> Result<metrics::StreamingChartData, String> {
+) -> AppResult<metrics::StreamingChartData> {
     let mut cursors: Vec<LogCursor> = Vec::with_capacity(paths.len());
     for path in paths {
-        let file = tokio::fs::File::open(path)
-            .await
-            .map_err(|err| format!("Failed to open metrics log {}: {}", path.display(), err))?;
+        let file = tokio::fs::File::open(path).await.map_err(|err| {
+            AppError::metrics(MetricsError::Io {
+                context: "open metrics log",
+                source: err,
+            })
+        })?;
         cursors.push(LogCursor {
             reader: BufReader::new(file),
             line: String::new(),
@@ -585,23 +594,28 @@ pub(crate) async fn load_log_records(
     paths: &[PathBuf],
     metrics_range: &Option<metrics::MetricsRange>,
     metrics_max: usize,
-) -> Result<(Vec<metrics::MetricRecord>, bool), String> {
+) -> AppResult<(Vec<metrics::MetricRecord>, bool)> {
     let mut records: Vec<metrics::MetricRecord> = Vec::new();
     let mut metrics_truncated = false;
 
     for path in paths {
-        let file = tokio::fs::File::open(path)
-            .await
-            .map_err(|err| format!("Failed to open metrics log {}: {}", path.display(), err))?;
+        let file = tokio::fs::File::open(path).await.map_err(|err| {
+            AppError::metrics(MetricsError::Io {
+                context: "open metrics log",
+                source: err,
+            })
+        })?;
         let mut reader = BufReader::new(file);
         let mut line = String::new();
 
         loop {
             line.clear();
-            let bytes = reader
-                .read_line(&mut line)
-                .await
-                .map_err(|err| format!("Failed to read metrics log {}: {}", path.display(), err))?;
+            let bytes = reader.read_line(&mut line).await.map_err(|err| {
+                AppError::metrics(MetricsError::Io {
+                    context: "read metrics log",
+                    source: err,
+                })
+            })?;
             if bytes == 0 {
                 break;
             }

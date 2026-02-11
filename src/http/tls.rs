@@ -1,6 +1,7 @@
 use reqwest::ClientBuilder;
 
 use crate::args::{HttpVersion, TesterArgs, TlsVersion};
+use crate::error::{AppError, AppResult, ValidationError};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum AlpnChoice {
@@ -18,11 +19,11 @@ pub(crate) struct AlpnSelection {
 pub(super) fn apply_tls_settings(
     mut builder: ClientBuilder,
     args: &TesterArgs,
-) -> Result<ClientBuilder, String> {
+) -> AppResult<ClientBuilder> {
     if let (Some(min), Some(max)) = (args.tls_min, args.tls_max)
         && tls_version_rank(min) > tls_version_rank(max)
     {
-        return Err("tls-min must be <= tls-max.".to_owned());
+        return Err(AppError::validation(ValidationError::TlsMinGreaterThanMax));
     }
 
     if let Some(min) = args.tls_min {
@@ -35,22 +36,32 @@ pub(super) fn apply_tls_settings(
     let alpn = resolve_alpn(&args.alpn)?;
 
     if let Some(version) = args.http_version {
-        builder = apply_explicit_http_version(builder, version)?;
-        return Ok(builder);
+        #[cfg(feature = "http3")]
+        {
+            builder = apply_explicit_http_version(builder, version);
+            return Ok(builder);
+        }
+        #[cfg(not(feature = "http3"))]
+        {
+            builder = apply_explicit_http_version(builder, version)?;
+            return Ok(builder);
+        }
     }
 
     if alpn.has_h3 && !args.http3 {
-        return Err("ALPN includes h3, but http3 is not enabled.".to_owned());
+        return Err(AppError::validation(ValidationError::AlpnH3WithoutHttp3));
     }
     if args.http2 && args.http3 {
-        return Err("Cannot enable http2 and http3 at the same time.".to_owned());
+        return Err(AppError::validation(ValidationError::Http2Http3Conflict));
     }
     if args.http3 {
         if matches!(alpn.choice, AlpnChoice::Http1Only) {
-            return Err("Cannot enable http3 while ALPN is restricted to http/1.1.".to_owned());
+            return Err(AppError::validation(
+                ValidationError::Http3WithHttp1OnlyAlpn,
+            ));
         }
         if matches!(alpn.choice, AlpnChoice::Http2Only) && !alpn.has_h3 {
-            return Err("Cannot enable http3 while ALPN is restricted to h2.".to_owned());
+            return Err(AppError::validation(ValidationError::Http3WithH2OnlyAlpn));
         }
         #[cfg(feature = "http3")]
         {
@@ -59,15 +70,13 @@ pub(super) fn apply_tls_settings(
         }
         #[cfg(not(feature = "http3"))]
         {
-            return Err(
-                "HTTP/3 support is not enabled in this build. Rebuild with --features http3 \
-and set RUSTFLAGS=\"--cfg reqwest_unstable\"."
-                    .to_owned(),
-            );
+            return Err(AppError::validation(ValidationError::Http3NotEnabled));
         }
     }
     if args.http2 && matches!(alpn.choice, AlpnChoice::Http1Only) {
-        return Err("Cannot enable http2 while ALPN is set to http/1.1 only.".to_owned());
+        return Err(AppError::validation(
+            ValidationError::Http2WithHttp1OnlyAlpn,
+        ));
     }
 
     builder = match alpn.choice {
@@ -85,10 +94,8 @@ and set RUSTFLAGS=\"--cfg reqwest_unstable\"."
     Ok(builder)
 }
 
-fn apply_explicit_http_version(
-    mut builder: ClientBuilder,
-    version: HttpVersion,
-) -> Result<ClientBuilder, String> {
+#[cfg(feature = "http3")]
+fn apply_explicit_http_version(mut builder: ClientBuilder, version: HttpVersion) -> ClientBuilder {
     match version {
         HttpVersion::V0_9 | HttpVersion::V1_0 | HttpVersion::V1_1 => {
             builder = builder.http1_only();
@@ -97,18 +104,26 @@ fn apply_explicit_http_version(
             builder = builder.http2_prior_knowledge();
         }
         HttpVersion::V3 => {
-            #[cfg(feature = "http3")]
-            {
-                builder = builder.http3_prior_knowledge();
-            }
-            #[cfg(not(feature = "http3"))]
-            {
-                return Err(
-                    "HTTP/3 support is not enabled in this build. Rebuild with --features http3 \
-and set RUSTFLAGS=\"--cfg reqwest_unstable\"."
-                        .to_owned(),
-                );
-            }
+            builder = builder.http3_prior_knowledge();
+        }
+    }
+    builder
+}
+
+#[cfg(not(feature = "http3"))]
+fn apply_explicit_http_version(
+    mut builder: ClientBuilder,
+    version: HttpVersion,
+) -> AppResult<ClientBuilder> {
+    match version {
+        HttpVersion::V0_9 | HttpVersion::V1_0 | HttpVersion::V1_1 => {
+            builder = builder.http1_only();
+        }
+        HttpVersion::V2 => {
+            builder = builder.http2_prior_knowledge();
+        }
+        HttpVersion::V3 => {
+            return Err(AppError::validation(ValidationError::Http3NotEnabled));
         }
     }
     Ok(builder)
@@ -132,7 +147,7 @@ const fn tls_version_rank(version: TlsVersion) -> u8 {
     }
 }
 
-pub(crate) fn resolve_alpn(alpn: &[String]) -> Result<AlpnSelection, String> {
+pub(crate) fn resolve_alpn(alpn: &[String]) -> AppResult<AlpnSelection> {
     if alpn.is_empty() {
         return Ok(AlpnSelection {
             choice: AlpnChoice::Default,
@@ -154,9 +169,10 @@ pub(crate) fn resolve_alpn(alpn: &[String]) -> Result<AlpnSelection, String> {
             }
             "" => {}
             _ => {
-                return Err(format!(
-                    "Unsupported ALPN protocol '{}'. Use h2, http/1.1, or h3.",
-                    proto
+                return Err(AppError::validation(
+                    ValidationError::UnsupportedAlpnProtocol {
+                        protocol: proto.to_owned(),
+                    },
                 ));
             }
         }

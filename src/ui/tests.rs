@@ -1,16 +1,20 @@
 use super::model::{UiData, UiRenderData};
 use super::render::{Ui, UiActions};
+use crate::error::{AppError, AppResult};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use std::time::Duration;
 
 #[test]
-fn ui_render_does_not_panic() -> Result<(), String> {
+fn ui_render_does_not_panic() -> AppResult<()> {
     let backend = TestBackend::new(80, 24);
     let mut terminal = match Terminal::new(backend) {
         Ok(term) => term,
         Err(err) => {
-            return Err(format!("Failed to create TestBackend terminal: {}", err));
+            return Err(AppError::validation(format!(
+                "Failed to create TestBackend terminal: {}",
+                err
+            )));
         }
     };
 
@@ -41,7 +45,7 @@ fn ui_render_does_not_panic() -> Result<(), String> {
 }
 
 #[test]
-fn ui_render_data_from_ui_data() -> Result<(), String> {
+fn ui_render_data_from_ui_data() -> AppResult<()> {
     let ui_data = UiData {
         elapsed_time: Duration::from_secs(3),
         target_duration: Duration::from_secs(9),
@@ -66,58 +70,58 @@ fn ui_render_data_from_ui_data() -> Result<(), String> {
 
     let render_data = UiRenderData::from(&ui_data);
     if render_data.elapsed_time != ui_data.elapsed_time {
-        return Err("elapsed_time mismatch".to_owned());
+        return Err(AppError::validation("elapsed_time mismatch"));
     }
     if render_data.target_duration != ui_data.target_duration {
-        return Err("target_duration mismatch".to_owned());
+        return Err(AppError::validation("target_duration mismatch"));
     }
     if render_data.current_request != ui_data.current_requests {
-        return Err("current_request mismatch".to_owned());
+        return Err(AppError::validation("current_request mismatch"));
     }
     if render_data.successful_requests != ui_data.successful_requests {
-        return Err("successful_requests mismatch".to_owned());
+        return Err(AppError::validation("successful_requests mismatch"));
     }
     if render_data.latencies != ui_data.latencies {
-        return Err("latencies mismatch".to_owned());
+        return Err(AppError::validation("latencies mismatch"));
     }
     if render_data.p50 != ui_data.p50 {
-        return Err("p50 mismatch".to_owned());
+        return Err(AppError::validation("p50 mismatch"));
     }
     if render_data.p90 != ui_data.p90 {
-        return Err("p90 mismatch".to_owned());
+        return Err(AppError::validation("p90 mismatch"));
     }
     if render_data.p99 != ui_data.p99 {
-        return Err("p99 mismatch".to_owned());
+        return Err(AppError::validation("p99 mismatch"));
     }
     if render_data.rps != ui_data.rps {
-        return Err("rps mismatch".to_owned());
+        return Err(AppError::validation("rps mismatch"));
     }
     if render_data.rpm != ui_data.rpm {
-        return Err("rpm mismatch".to_owned());
+        return Err(AppError::validation("rpm mismatch"));
     }
     if render_data.timeout_requests != ui_data.timeout_requests {
-        return Err("timeout_requests mismatch".to_owned());
+        return Err(AppError::validation("timeout_requests mismatch"));
     }
     if render_data.transport_errors != ui_data.transport_errors {
-        return Err("transport_errors mismatch".to_owned());
+        return Err(AppError::validation("transport_errors mismatch"));
     }
     if render_data.non_expected_status != ui_data.non_expected_status {
-        return Err("non_expected_status mismatch".to_owned());
+        return Err(AppError::validation("non_expected_status mismatch"));
     }
     if render_data.ui_window_ms != ui_data.ui_window_ms {
-        return Err("ui_window_ms mismatch".to_owned());
+        return Err(AppError::validation("ui_window_ms mismatch"));
     }
     if render_data.p50_ok != ui_data.p50_ok {
-        return Err("p50_ok mismatch".to_owned());
+        return Err(AppError::validation("p50_ok mismatch"));
     }
     if render_data.p90_ok != ui_data.p90_ok {
-        return Err("p90_ok mismatch".to_owned());
+        return Err(AppError::validation("p90_ok mismatch"));
     }
     if render_data.p99_ok != ui_data.p99_ok {
-        return Err("p99_ok mismatch".to_owned());
+        return Err(AppError::validation("p99_ok mismatch"));
     }
     if render_data.replay.is_some() {
-        return Err("replay mismatch".to_owned());
+        return Err(AppError::validation("replay mismatch"));
     }
 
     Ok(())

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use plotters::prelude::*;
 
+use crate::error::AppResult;
 use crate::metrics::AggregatedMetricSample;
 
 fn sorted_samples(samples: &[AggregatedMetricSample]) -> Vec<AggregatedMetricSample> {
@@ -59,7 +60,7 @@ fn compute_rps_series(samples: &[AggregatedMetricSample]) -> Vec<(u64, u64)> {
 pub fn plot_aggregated_average_response_time(
     samples: &[AggregatedMetricSample],
     path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if samples.is_empty() {
         return Ok(());
     }
@@ -100,7 +101,7 @@ pub fn plot_aggregated_average_response_time(
 pub fn plot_aggregated_cumulative_successful_requests(
     samples: &[AggregatedMetricSample],
     path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if samples.is_empty() {
         return Ok(());
     }
@@ -135,7 +136,7 @@ pub fn plot_aggregated_cumulative_successful_requests(
 pub fn plot_aggregated_cumulative_error_rate(
     samples: &[AggregatedMetricSample],
     path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if samples.is_empty() {
         return Ok(());
     }
@@ -170,7 +171,7 @@ pub fn plot_aggregated_cumulative_error_rate(
 pub fn plot_aggregated_cumulative_total_requests(
     samples: &[AggregatedMetricSample],
     path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if samples.is_empty() {
         return Ok(());
     }
@@ -205,7 +206,7 @@ pub fn plot_aggregated_cumulative_total_requests(
 pub fn plot_aggregated_latency_percentiles(
     samples: &[AggregatedMetricSample],
     base_path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if samples.is_empty() {
         return Ok(());
     }
@@ -244,7 +245,7 @@ pub fn plot_aggregated_latency_percentiles(
                       color: RGBColor,
                       file_path: &str,
                       y_max: u64|
-     -> Result<(), Box<dyn std::error::Error>> {
+     -> AppResult<()> {
         let root = BitMapBackend::new(file_path, (1600, 600)).into_drawing_area();
         root.fill(&WHITE)?;
 
@@ -294,7 +295,7 @@ pub fn plot_aggregated_latency_percentiles(
 pub fn plot_aggregated_requests_per_second(
     samples: &[AggregatedMetricSample],
     path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     let data = compute_rps_series(samples);
     if data.is_empty() {
         return Ok(());

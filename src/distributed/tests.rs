@@ -2,21 +2,22 @@ use super::protocol::WireArgs;
 use super::wire::{apply_wire_args, build_wire_args};
 use super::{run_agent, run_controller};
 use crate::args::{HttpMethod, PositiveU64, PositiveUsize, TesterArgs};
+use crate::error::{AppError, AppResult};
 use crate::sinks::config::{PrometheusSinkConfig, SinksConfig};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 
-fn positive_u64(value: u64) -> Result<PositiveU64, String> {
-    PositiveU64::try_from(value)
+fn positive_u64(value: u64) -> AppResult<PositiveU64> {
+    Ok(PositiveU64::try_from(value)?)
 }
 
-fn positive_usize(value: usize) -> Result<PositiveUsize, String> {
-    PositiveUsize::try_from(value)
+fn positive_usize(value: usize) -> AppResult<PositiveUsize> {
+    Ok(PositiveUsize::try_from(value)?)
 }
 
-fn base_args(url: String, tmp_path: String) -> Result<TesterArgs, String> {
+fn base_args(url: String, tmp_path: String) -> AppResult<TesterArgs> {
     Ok(TesterArgs {
         command: None,
         replay: false,
@@ -141,34 +142,34 @@ fn base_args(url: String, tmp_path: String) -> Result<TesterArgs, String> {
     })
 }
 
-fn run_async_test<F>(future: F) -> Result<(), String>
+fn run_async_test<F>(future: F) -> AppResult<()>
 where
-    F: std::future::Future<Output = Result<(), String>>,
+    F: std::future::Future<Output = AppResult<()>>,
 {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|err| format!("Failed to build runtime: {}", err))?;
+        .map_err(|err| AppError::distributed(format!("Failed to build runtime: {}", err)))?;
     runtime.block_on(future)
 }
 
-fn allocate_port() -> Result<u16, String> {
+fn allocate_port() -> AppResult<u16> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")
-        .map_err(|err| format!("Failed to bind port: {}", err))?;
+        .map_err(|err| AppError::distributed(format!("Failed to bind port: {}", err)))?;
     let port = listener
         .local_addr()
-        .map_err(|err| format!("Failed to read local addr: {}", err))?
+        .map_err(|err| AppError::distributed(format!("Failed to read local addr: {}", err)))?
         .port();
     Ok(port)
 }
 
-async fn spawn_http_server() -> Result<(String, watch::Sender<bool>), String> {
+async fn spawn_http_server() -> AppResult<(String, watch::Sender<bool>)> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
-        .map_err(|err| format!("Failed to bind test server: {}", err))?;
+        .map_err(|err| AppError::distributed(format!("Failed to bind test server: {}", err)))?;
     let addr = listener
         .local_addr()
-        .map_err(|err| format!("Failed to read server addr: {}", err))?;
+        .map_err(|err| AppError::distributed(format!("Failed to read server addr: {}", err)))?;
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
 
     tokio::spawn(async move {
@@ -196,10 +197,10 @@ async fn spawn_http_server() -> Result<(String, watch::Sender<bool>), String> {
     Ok((format!("http://{}", addr), shutdown_tx))
 }
 
-async fn spawn_http_server_or_skip() -> Result<Option<(String, watch::Sender<bool>)>, String> {
+async fn spawn_http_server_or_skip() -> AppResult<Option<(String, watch::Sender<bool>)>> {
     match spawn_http_server().await {
         Ok(result) => Ok(Some(result)),
-        Err(err) if err.contains("Operation not permitted") => {
+        Err(err) if err.to_string().contains("Operation not permitted") => {
             eprintln!("Skipping distributed test: {}", err);
             Ok(None)
         }
@@ -222,24 +223,21 @@ async fn handle_http(mut socket: TcpStream) {
     let _shutdown_result = socket.shutdown().await;
 }
 
-async fn run_distributed(
-    controller_args: TesterArgs,
-    agent_args: TesterArgs,
-) -> Result<(), String> {
+async fn run_distributed(controller_args: TesterArgs, agent_args: TesterArgs) -> AppResult<()> {
     let controller_handle =
         tokio::spawn(async move { run_controller(&controller_args, None).await });
     tokio::time::sleep(Duration::from_millis(200)).await;
     let agent_result = run_agent(agent_args).await;
     let controller_result = controller_handle
         .await
-        .map_err(|err| format!("Controller task join failed: {}", err))?;
+        .map_err(|err| AppError::distributed(format!("Controller task join failed: {}", err)))?;
     agent_result?;
     controller_result?;
     Ok(())
 }
 
 #[test]
-fn wire_args_roundtrip_preserves_stream_settings() -> Result<(), String> {
+fn wire_args_roundtrip_preserves_stream_settings() -> AppResult<()> {
     let tmp_path = "./tmp".to_owned();
     let mut args = base_args("http://localhost".to_owned(), tmp_path.clone())?;
     args.distributed_stream_summaries = true;
@@ -250,57 +248,70 @@ fn wire_args_roundtrip_preserves_stream_settings() -> Result<(), String> {
     apply_wire_args(&mut applied, wire)?;
 
     if !applied.distributed_stream_summaries {
-        return Err("Expected stream summaries to be true".to_owned());
+        return Err(AppError::distributed(
+            "Expected stream summaries to be true",
+        ));
     }
     let interval = match applied.distributed_stream_interval_ms {
         Some(value) => value.get(),
-        None => return Err("Expected stream interval to be set".to_owned()),
+        None => {
+            return Err(AppError::distributed("Expected stream interval to be set"));
+        }
     };
     if interval != 150 {
-        return Err(format!("Unexpected stream interval: {}", interval));
+        return Err(AppError::distributed(format!(
+            "Unexpected stream interval: {}",
+            interval
+        )));
     }
     Ok(())
 }
 
 #[test]
-fn wire_args_deserialize_missing_stream_interval() -> Result<(), String> {
+fn wire_args_deserialize_missing_stream_interval() -> AppResult<()> {
     let args = base_args("http://localhost".to_owned(), "./tmp".to_owned())?;
     let wire = build_wire_args(&args);
-    let mut value =
-        serde_json::to_value(&wire).map_err(|err| format!("Serialize failed: {}", err))?;
+    let mut value = serde_json::to_value(&wire)
+        .map_err(|err| AppError::distributed(format!("Serialize failed: {}", err)))?;
     match value.as_object_mut() {
         Some(map) => {
             map.remove("stream_interval_ms");
         }
-        None => return Err("Expected wire args to serialize to object".to_owned()),
+        None => {
+            return Err(AppError::distributed(
+                "Expected wire args to serialize to object",
+            ));
+        }
     }
-    let decoded: WireArgs =
-        serde_json::from_value(value).map_err(|err| format!("Deserialize failed: {}", err))?;
+    let decoded: WireArgs = serde_json::from_value(value)
+        .map_err(|err| AppError::distributed(format!("Deserialize failed: {}", err)))?;
     if decoded.stream_interval_ms.is_some() {
-        return Err("Expected stream_interval_ms to default to None".to_owned());
+        return Err(AppError::distributed(
+            "Expected stream_interval_ms to default to None",
+        ));
     }
     Ok(())
 }
 
 #[test]
-fn tcp_streaming_controller_writes_sink() -> Result<(), String> {
+fn tcp_streaming_controller_writes_sink() -> AppResult<()> {
     run_async_test(async {
         let Some((url, shutdown_tx)) = spawn_http_server_or_skip().await? else {
             return Ok(());
         };
         let controller_port = allocate_port()?;
         let controller_addr = format!("127.0.0.1:{}", controller_port);
-        let tmp_dir =
-            tempfile::tempdir().map_err(|err| format!("Failed to create temp dir: {}", err))?;
+        let tmp_dir = tempfile::tempdir()
+            .map_err(|err| AppError::distributed(format!("Failed to create temp dir: {}", err)))?;
         let tmp_path = tmp_dir
             .path()
             .to_str()
-            .ok_or_else(|| "Failed to convert tmp path".to_owned())?
+            .ok_or_else(|| AppError::distributed("Failed to convert tmp path"))?
             .to_owned();
         let sink_path = tmp_dir.path().join("controller.prom");
         let sink_path_str = sink_path
             .to_str()
-            .ok_or_else(|| "Failed to convert sink path".to_owned())?
+            .ok_or_else(|| AppError::distributed("Failed to convert sink path"))?
             .to_owned();
 
         let mut controller_args = base_args(url.clone(), tmp_path.clone())?;
@@ -324,47 +335,51 @@ fn tcp_streaming_controller_writes_sink() -> Result<(), String> {
             run_distributed(controller_args, agent_args),
         )
         .await
-        .map_err(|err| format!("Timed out waiting for distributed run: {}", err))?;
+        .map_err(|err| {
+            AppError::distributed(format!("Timed out waiting for distributed run: {}", err))
+        })?;
         run_result?;
 
         shutdown_tx
             .send(true)
-            .map_err(|err| format!("Failed to shutdown server: {}", err))?;
+            .map_err(|err| AppError::distributed(format!("Failed to shutdown server: {}", err)))?;
 
         let metadata = tokio::fs::metadata(&sink_path_str)
             .await
-            .map_err(|err| format!("Missing controller sink: {}", err))?;
+            .map_err(|err| AppError::distributed(format!("Missing controller sink: {}", err)))?;
         if metadata.len() == 0 {
-            return Err("Expected controller sink to be non-empty".to_owned());
+            return Err(AppError::distributed(
+                "Expected controller sink to be non-empty",
+            ));
         }
         Ok(())
     })
 }
 
 #[test]
-fn tcp_non_streaming_writes_agent_and_controller_sinks() -> Result<(), String> {
+fn tcp_non_streaming_writes_agent_and_controller_sinks() -> AppResult<()> {
     run_async_test(async {
         let Some((url, shutdown_tx)) = spawn_http_server_or_skip().await? else {
             return Ok(());
         };
         let controller_port = allocate_port()?;
         let controller_addr = format!("127.0.0.1:{}", controller_port);
-        let tmp_dir =
-            tempfile::tempdir().map_err(|err| format!("Failed to create temp dir: {}", err))?;
+        let tmp_dir = tempfile::tempdir()
+            .map_err(|err| AppError::distributed(format!("Failed to create temp dir: {}", err)))?;
         let tmp_path = tmp_dir
             .path()
             .to_str()
-            .ok_or_else(|| "Failed to convert tmp path".to_owned())?
+            .ok_or_else(|| AppError::distributed("Failed to convert tmp path"))?
             .to_owned();
         let controller_sink = tmp_dir.path().join("controller.prom");
         let controller_sink_str = controller_sink
             .to_str()
-            .ok_or_else(|| "Failed to convert controller sink path".to_owned())?
+            .ok_or_else(|| AppError::distributed("Failed to convert controller sink path"))?
             .to_owned();
         let agent_sink = tmp_dir.path().join("agent.prom");
         let agent_sink_str = agent_sink
             .to_str()
-            .ok_or_else(|| "Failed to convert agent sink path".to_owned())?
+            .ok_or_else(|| AppError::distributed("Failed to convert agent sink path"))?
             .to_owned();
 
         let mut controller_args = base_args(url.clone(), tmp_path.clone())?;
@@ -394,24 +409,28 @@ fn tcp_non_streaming_writes_agent_and_controller_sinks() -> Result<(), String> {
             run_distributed(controller_args, agent_args),
         )
         .await
-        .map_err(|err| format!("Timed out waiting for distributed run: {}", err))?;
+        .map_err(|err| {
+            AppError::distributed(format!("Timed out waiting for distributed run: {}", err))
+        })?;
         run_result?;
 
         shutdown_tx
             .send(true)
-            .map_err(|err| format!("Failed to shutdown server: {}", err))?;
+            .map_err(|err| AppError::distributed(format!("Failed to shutdown server: {}", err)))?;
 
         let controller_meta = tokio::fs::metadata(&controller_sink_str)
             .await
-            .map_err(|err| format!("Missing controller sink: {}", err))?;
+            .map_err(|err| AppError::distributed(format!("Missing controller sink: {}", err)))?;
         if controller_meta.len() == 0 {
-            return Err("Expected controller sink to be non-empty".to_owned());
+            return Err(AppError::distributed(
+                "Expected controller sink to be non-empty",
+            ));
         }
         let agent_meta = tokio::fs::metadata(&agent_sink_str)
             .await
-            .map_err(|err| format!("Missing agent sink: {}", err))?;
+            .map_err(|err| AppError::distributed(format!("Missing agent sink: {}", err)))?;
         if agent_meta.len() == 0 {
-            return Err("Expected agent sink to be non-empty".to_owned());
+            return Err(AppError::distributed("Expected agent sink to be non-empty"));
         }
         Ok(())
     })

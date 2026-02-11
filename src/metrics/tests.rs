@@ -1,20 +1,23 @@
 use super::*;
 use crate::args::{HttpMethod, PositiveU64, PositiveUsize, TesterArgs};
+use crate::error::{AppError, AppResult};
 use crate::ui::model::UiData;
 use std::future::Future;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::watch;
+use tokio::sync::{broadcast, watch};
 
-fn positive_u64(value: u64) -> Result<PositiveU64, String> {
-    PositiveU64::try_from(value)
+const SHUTDOWN_CHANNEL_CAPACITY: usize = 1;
+
+fn positive_u64(value: u64) -> AppResult<PositiveU64> {
+    Ok(PositiveU64::try_from(value)?)
 }
 
-fn positive_usize(value: usize) -> Result<PositiveUsize, String> {
-    PositiveUsize::try_from(value)
+fn positive_usize(value: usize) -> AppResult<PositiveUsize> {
+    Ok(PositiveUsize::try_from(value)?)
 }
 
-fn base_args() -> Result<TesterArgs, String> {
+fn base_args() -> AppResult<TesterArgs> {
     Ok(TesterArgs {
         command: None,
         replay: false,
@@ -139,22 +142,22 @@ fn base_args() -> Result<TesterArgs, String> {
     })
 }
 
-fn run_async_test<F>(future: F) -> Result<(), String>
+fn run_async_test<F>(future: F) -> AppResult<()>
 where
-    F: Future<Output = Result<(), String>>,
+    F: Future<Output = AppResult<()>>,
 {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|err| format!("Failed to build runtime: {}", err))?;
+        .map_err(|err| AppError::metrics(format!("Failed to build runtime: {}", err)))?;
     runtime.block_on(future)
 }
 
 #[test]
-fn shuts_down_on_timer_without_metrics() -> Result<(), String> {
+fn shuts_down_on_timer_without_metrics() -> AppResult<()> {
     run_async_test(async {
         let args = base_args()?;
-        let (shutdown_tx, _) = tokio::sync::broadcast::channel::<u16>(1);
+        let (shutdown_tx, _) = broadcast::channel::<()>(SHUTDOWN_CHANNEL_CAPACITY);
         let (_ui_tx, _ui_rx) = watch::channel(UiData::default());
         let (metrics_tx, metrics_rx) = tokio::sync::mpsc::channel::<Metrics>(10);
 
@@ -172,34 +175,40 @@ fn shuts_down_on_timer_without_metrics() -> Result<(), String> {
 
         let report = tokio::time::timeout(Duration::from_secs(2), handle)
             .await
-            .map_err(|err| format!("Timed out waiting for collector to finish: {}", err))?
-            .map_err(|err| format!("Collector join error: {}", err))?;
+            .map_err(|err| {
+                AppError::metrics(format!(
+                    "Timed out waiting for collector to finish: {}",
+                    err
+                ))
+            })?
+            .map_err(|err| AppError::metrics(format!("Collector join error: {}", err)))?;
 
         if report.summary.total_requests == 0 {
             Ok(())
         } else {
-            Err(format!(
+            Err(AppError::metrics(format!(
                 "Expected no metrics, got {}",
                 report.summary.total_requests
-            ))
+            )))
         }
     })
 }
 
 #[test]
-fn read_metrics_log_respects_range() -> Result<(), String> {
+fn read_metrics_log_respects_range() -> AppResult<()> {
     run_async_test(async {
-        let dir = tempfile::tempdir().map_err(|err| format!("tempdir failed: {}", err))?;
+        let dir = tempfile::tempdir()
+            .map_err(|err| AppError::metrics(format!("tempdir failed: {}", err)))?;
         let log_path = dir.path().join("metrics.log");
         let mut file = tokio::fs::File::create(&log_path)
             .await
-            .map_err(|err| format!("Failed to create log: {}", err))?;
+            .map_err(|err| AppError::metrics(format!("Failed to create log: {}", err)))?;
         file.write_all(b"500,5,200\n1500,9,200\n")
             .await
-            .map_err(|err| format!("Failed to write log: {}", err))?;
+            .map_err(|err| AppError::metrics(format!("Failed to write log: {}", err)))?;
         file.flush()
             .await
-            .map_err(|err| format!("Failed to flush log: {}", err))?;
+            .map_err(|err| AppError::metrics(format!("Failed to flush log: {}", err)))?;
 
         let range = Some(MetricsRange(0..=0));
         let result = read_metrics_log(&log_path, 200, &range, 10, None).await?;
@@ -207,22 +216,22 @@ fn read_metrics_log_respects_range() -> Result<(), String> {
         if result.records.len() == 1 && result.summary.total_requests == 2 {
             Ok(())
         } else {
-            Err(format!(
+            Err(AppError::metrics(format!(
                 "Expected 1 record and 2 total requests, got {} and {}",
                 result.records.len(),
                 result.summary.total_requests
-            ))
+            )))
         }
     })
 }
 
 #[test]
-fn updates_ui_data_on_tick() -> Result<(), String> {
+fn updates_ui_data_on_tick() -> AppResult<()> {
     run_async_test(async {
         let mut args = base_args()?;
         args.target_duration = positive_u64(5)?;
 
-        let (shutdown_tx, _) = tokio::sync::broadcast::channel::<u16>(1);
+        let (shutdown_tx, _) = broadcast::channel::<()>(SHUTDOWN_CHANNEL_CAPACITY);
         let (ui_tx, mut ui_rx) = watch::channel(UiData::default());
         let (metrics_tx, metrics_rx) = tokio::sync::mpsc::channel::<Metrics>(10);
 
@@ -244,123 +253,141 @@ fn updates_ui_data_on_tick() -> Result<(), String> {
             transport_error: false,
         }) {
             Ok(()) => {}
-            Err(err) => return Err(format!("Failed to send metric: {}", err)),
+            Err(err) => {
+                return Err(AppError::metrics(format!("Failed to send metric: {}", err)));
+            }
         }
 
         tokio::time::sleep(Duration::from_millis(200)).await;
         match ui_rx.changed().await {
             Ok(()) => {}
-            Err(err) => return Err(format!("UI channel closed: {}", err)),
+            Err(err) => {
+                return Err(AppError::metrics(format!("UI channel closed: {}", err)));
+            }
         }
         let ui_snapshot = ui_rx.borrow().clone();
         if ui_snapshot.current_requests < 1 {
-            return Err("Expected at least one request".to_owned());
+            return Err(AppError::metrics("Expected at least one request"));
         }
         if ui_snapshot.rps > ui_snapshot.current_requests {
-            return Err("RPS should not exceed total requests".to_owned());
+            return Err(AppError::metrics("RPS should not exceed total requests"));
         }
 
-        if shutdown_tx.send(1).is_err() {
-            return Err("Failed to send shutdown".to_owned());
+        if shutdown_tx.send(()).is_err() {
+            return Err(AppError::metrics("Failed to send shutdown"));
         }
         drop(metrics_tx);
 
         tokio::time::timeout(Duration::from_secs(2), handle)
             .await
-            .map_err(|err| format!("Timed out waiting for collector to finish: {}", err))?
-            .map_err(|err| format!("Collector join error: {}", err))?;
+            .map_err(|err| {
+                AppError::metrics(format!(
+                    "Timed out waiting for collector to finish: {}",
+                    err
+                ))
+            })?
+            .map_err(|err| AppError::metrics(format!("Collector join error: {}", err)))?;
         Ok(())
     })
 }
 
 #[test]
-fn read_metrics_log_respects_metrics_max() -> Result<(), String> {
+fn read_metrics_log_respects_metrics_max() -> AppResult<()> {
     run_async_test(async {
-        let dir = tempfile::tempdir().map_err(|err| format!("tempdir failed: {}", err))?;
+        let dir = tempfile::tempdir()
+            .map_err(|err| AppError::metrics(format!("tempdir failed: {}", err)))?;
         let log_path = dir.path().join("metrics.log");
         let mut file = tokio::fs::File::create(&log_path)
             .await
-            .map_err(|err| format!("Failed to create log: {}", err))?;
+            .map_err(|err| AppError::metrics(format!("Failed to create log: {}", err)))?;
         file.write_all(b"0,5,200\n1,6,200\n")
             .await
-            .map_err(|err| format!("Failed to write log: {}", err))?;
+            .map_err(|err| AppError::metrics(format!("Failed to write log: {}", err)))?;
         file.flush()
             .await
-            .map_err(|err| format!("Failed to flush log: {}", err))?;
+            .map_err(|err| AppError::metrics(format!("Failed to flush log: {}", err)))?;
 
         let result = read_metrics_log(&log_path, 200, &None, 0, None).await?;
         if !result.records.is_empty() {
-            return Err("Expected no records when metrics_max is 0".to_owned());
+            return Err(AppError::metrics(
+                "Expected no records when metrics_max is 0",
+            ));
         }
         if result.summary.total_requests != 2 {
-            return Err(format!(
+            return Err(AppError::metrics(format!(
                 "Expected total_requests 2, got {}",
                 result.summary.total_requests
-            ));
+            )));
         }
         Ok(())
     })
 }
 
 #[test]
-fn read_metrics_log_marks_truncated() -> Result<(), String> {
+fn read_metrics_log_marks_truncated() -> AppResult<()> {
     run_async_test(async {
-        let dir = tempfile::tempdir().map_err(|err| format!("tempdir failed: {}", err))?;
+        let dir = tempfile::tempdir()
+            .map_err(|err| AppError::metrics(format!("tempdir failed: {}", err)))?;
         let log_path = dir.path().join("metrics.log");
         let mut file = tokio::fs::File::create(&log_path)
             .await
-            .map_err(|err| format!("Failed to create log: {}", err))?;
+            .map_err(|err| AppError::metrics(format!("Failed to create log: {}", err)))?;
         file.write_all(b"0,5,200\n1,6,200\n2,7,500\n")
             .await
-            .map_err(|err| format!("Failed to write log: {}", err))?;
+            .map_err(|err| AppError::metrics(format!("Failed to write log: {}", err)))?;
         file.flush()
             .await
-            .map_err(|err| format!("Failed to flush log: {}", err))?;
+            .map_err(|err| AppError::metrics(format!("Failed to flush log: {}", err)))?;
 
         let result = read_metrics_log(&log_path, 200, &None, 2, None).await?;
         if !result.metrics_truncated {
-            return Err("Expected metrics_truncated to be true".to_owned());
+            return Err(AppError::metrics("Expected metrics_truncated to be true"));
         }
         if result.records.len() != 2 {
-            return Err(format!("Expected 2 records, got {}", result.records.len()));
+            return Err(AppError::metrics(format!(
+                "Expected 2 records, got {}",
+                result.records.len()
+            )));
         }
         if result.summary.total_requests != 3 {
-            return Err(format!(
+            return Err(AppError::metrics(format!(
                 "Expected total_requests 3, got {}",
                 result.summary.total_requests
-            ));
+            )));
         }
         Ok(())
     })
 }
 
 #[test]
-fn read_metrics_log_empty_file() -> Result<(), String> {
+fn read_metrics_log_empty_file() -> AppResult<()> {
     run_async_test(async {
-        let dir = tempfile::tempdir().map_err(|err| format!("tempdir failed: {}", err))?;
+        let dir = tempfile::tempdir()
+            .map_err(|err| AppError::metrics(format!("tempdir failed: {}", err)))?;
         let log_path = dir.path().join("metrics.log");
         tokio::fs::File::create(&log_path)
             .await
-            .map_err(|err| format!("Failed to create log: {}", err))?;
+            .map_err(|err| AppError::metrics(format!("Failed to create log: {}", err)))?;
 
         let result = read_metrics_log(&log_path, 200, &None, 10, None).await?;
         if !result.records.is_empty() {
-            return Err("Expected no records".to_owned());
+            return Err(AppError::metrics("Expected no records"));
         }
         if result.summary.total_requests != 0 {
-            return Err(format!(
+            return Err(AppError::metrics(format!(
                 "Expected total_requests 0, got {}",
                 result.summary.total_requests
-            ));
+            )));
         }
         Ok(())
     })
 }
 
 #[test]
-fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
+fn metrics_logger_summarizes_and_limits_records() -> AppResult<()> {
     run_async_test(async {
-        let dir = tempfile::tempdir().map_err(|err| format!("tempdir failed: {}", err))?;
+        let dir = tempfile::tempdir()
+            .map_err(|err| AppError::metrics(format!("tempdir failed: {}", err)))?;
         let log_path = dir.path().join("metrics.log");
         let db_path = dir.path().join("metrics.db");
         let (tx, rx) = tokio::sync::mpsc::channel(8);
@@ -384,7 +411,7 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
         };
         let second_start = run_start
             .checked_add(Duration::from_millis(10))
-            .ok_or_else(|| "Failed to add duration".to_owned())?;
+            .ok_or_else(|| AppError::metrics("Failed to add duration"))?;
         let second = Metrics {
             start: second_start,
             response_time: Duration::from_millis(7),
@@ -394,49 +421,52 @@ fn metrics_logger_summarizes_and_limits_records() -> Result<(), String> {
         };
 
         if tx.send(first).await.is_err() {
-            return Err("Failed to send first metric".to_owned());
+            return Err(AppError::metrics("Failed to send first metric"));
         }
         if tx.send(second).await.is_err() {
-            return Err("Failed to send second metric".to_owned());
+            return Err(AppError::metrics("Failed to send second metric"));
         }
         drop(tx);
 
         let result = handle
             .await
-            .map_err(|err| format!("Log join error: {}", err))?
-            .map_err(|err| format!("Log error: {}", err))?;
+            .map_err(|err| AppError::metrics(format!("Log join error: {}", err)))?
+            .map_err(|err| AppError::metrics(format!("Log error: {}", err)))?;
 
         if result.summary.total_requests != 2 {
-            return Err(format!(
+            return Err(AppError::metrics(format!(
                 "Expected 2 total requests, got {}",
                 result.summary.total_requests
-            ));
+            )));
         }
         if result.summary.successful_requests != 1 {
-            return Err(format!(
+            return Err(AppError::metrics(format!(
                 "Expected 1 successful request, got {}",
                 result.summary.successful_requests
-            ));
+            )));
         }
         if result.summary.timeout_requests != 1 {
-            return Err(format!(
+            return Err(AppError::metrics(format!(
                 "Expected 1 timeout request, got {}",
                 result.summary.timeout_requests
-            ));
+            )));
         }
         if result.records.len() != 1 {
-            return Err(format!(
+            return Err(AppError::metrics(format!(
                 "Expected 1 record due to metrics_max, got {}",
                 result.records.len()
-            ));
+            )));
         }
         let conn = rusqlite::Connection::open(&db_path)
-            .map_err(|err| format!("Failed to open db: {}", err))?;
+            .map_err(|err| AppError::metrics(format!("Failed to open db: {}", err)))?;
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM metrics", [], |row| row.get(0))
-            .map_err(|err| format!("Failed to query db: {}", err))?;
+            .map_err(|err| AppError::metrics(format!("Failed to query db: {}", err)))?;
         if count != 2 {
-            return Err(format!("Expected 2 db rows, got {}", count));
+            return Err(AppError::metrics(format!(
+                "Expected 2 db rows, got {}",
+                count
+            )));
         }
         Ok(())
     })

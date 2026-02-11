@@ -2,10 +2,11 @@ use std::collections::BTreeMap;
 
 use plotters::prelude::*;
 
+use crate::error::AppResult;
 pub fn plot_average_response_time_from_buckets(
     buckets: &BTreeMap<u64, (u128, u64)>,
     path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if buckets.is_empty() {
         return Ok(());
     }
@@ -55,7 +56,7 @@ pub fn plot_average_response_time_from_buckets(
 pub fn plot_cumulative_successful_requests_from_buckets(
     success_buckets: &BTreeMap<u64, u64>,
     path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if success_buckets.is_empty() {
         return Ok(());
     }
@@ -100,7 +101,7 @@ pub fn plot_cumulative_successful_requests_from_buckets(
 pub fn plot_cumulative_error_rate_from_buckets(
     error_buckets: &BTreeMap<u64, u64>,
     path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if error_buckets.is_empty() {
         return Ok(());
     }
@@ -145,7 +146,7 @@ pub fn plot_cumulative_error_rate_from_buckets(
 pub fn plot_cumulative_total_requests_from_buckets(
     total_buckets: &BTreeMap<u64, u64>,
     path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if total_buckets.is_empty() {
         return Ok(());
     }
@@ -187,10 +188,7 @@ pub fn plot_cumulative_total_requests_from_buckets(
     Ok(())
 }
 
-pub fn plot_requests_per_second_from_counts(
-    counts: &[u32],
-    path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn plot_requests_per_second_from_counts(counts: &[u32], path: &str) -> AppResult<()> {
     if counts.is_empty() {
         return Ok(());
     }
@@ -228,10 +226,7 @@ pub fn plot_requests_per_second_from_counts(
     Ok(())
 }
 
-pub fn plot_timeouts_per_second_from_counts(
-    counts: &[u32],
-    path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn plot_timeouts_per_second_from_counts(counts: &[u32], path: &str) -> AppResult<()> {
     if counts.is_empty() {
         return Ok(());
     }
@@ -274,7 +269,7 @@ pub fn plot_error_rate_breakdown_from_counts(
     transports: &[u32],
     non_expected: &[u32],
     path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if timeouts.is_empty() && transports.is_empty() && non_expected.is_empty() {
         return Ok(());
     }
@@ -369,7 +364,7 @@ pub fn plot_status_code_distribution_from_counts(
     counts_5xx: &[u32],
     counts_other: &[u32],
     path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     let len = counts_2xx
         .len()
         .max(counts_3xx.len())
@@ -512,10 +507,7 @@ pub fn plot_status_code_distribution_from_counts(
     Ok(())
 }
 
-pub fn plot_inflight_requests_from_counts(
-    inflight: &[u32],
-    path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn plot_inflight_requests_from_counts(inflight: &[u32], path: &str) -> AppResult<()> {
     if inflight.is_empty() {
         return Ok(());
     }
@@ -567,7 +559,7 @@ pub struct LatencyPercentilesSeries<'series> {
 pub fn plot_latency_percentiles_series(
     series: &LatencyPercentilesSeries<'_>,
     base_path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if series.buckets_ms.is_empty() {
         return Ok(());
     }
@@ -579,11 +571,7 @@ pub fn plot_latency_percentiles_series(
         file_path: String,
     }
 
-    fn draw_chart(
-        buckets_ms: &[u64],
-        series: &LatencySeries<'_>,
-        bucket_ms: u64,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn draw_chart(buckets_ms: &[u64], series: &LatencySeries<'_>, bucket_ms: u64) -> AppResult<()> {
         let root = BitMapBackend::new(&series.file_path, (1600, 600)).into_drawing_area();
         root.fill(&WHITE)?;
 

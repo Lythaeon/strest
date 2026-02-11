@@ -1,6 +1,37 @@
 use crate::args::TimeUnit;
 use crate::{args::TesterArgs, metrics};
 
+/// Minimum non-zero duration used to avoid divide-by-zero.
+const MIN_DURATION_MS: u128 = 1;
+/// Percent scale for success rate (x100 = 10_000).
+const SUCCESS_RATE_SCALE: u128 = 10_000;
+/// Scale for average RPS in hundredths.
+const RPS_SCALE: u128 = 100_000;
+/// Divisor to format x100 values as `xx.yy`.
+const PERCENT_DIVISOR: u64 = 100;
+/// RPM conversion factor from RPS.
+const RPM_PER_RPS: u64 = 60;
+/// Milliseconds per second.
+const MS_PER_SEC_U64: u64 = 1_000;
+/// Microseconds per millisecond.
+const US_PER_MS: u128 = 1_000;
+/// Nanoseconds per millisecond.
+const NS_PER_MS: u128 = 1_000_000;
+/// Milliseconds per minute.
+const MS_PER_MIN: u64 = 60_000;
+/// Milliseconds per hour.
+const MS_PER_HOUR: u64 = 3_600_000;
+/// Minimum unit divisor to avoid divide-by-zero.
+const MIN_UNIT_MS: u64 = 1;
+/// Fraction scale for formatted durations.
+const FRACTION_SCALE: u64 = 1_000;
+/// Standard percentile labels.
+const PERCENTILE_P50: u64 = 50;
+const PERCENTILE_P90: u64 = 90;
+const PERCENTILE_P99: u64 = 99;
+/// Rounding offset for percentile selection.
+const PERCENTILE_ROUNDING: u64 = 50;
+
 pub(crate) struct SummaryExtras {
     pub(crate) metrics_truncated: bool,
     pub(crate) charts_enabled: bool,
@@ -19,13 +50,13 @@ pub(crate) struct SummaryStats {
 }
 
 pub(crate) fn compute_summary_stats(summary: &metrics::MetricsSummary) -> SummaryStats {
-    let duration_ms = summary.duration.as_millis().max(1);
+    let duration_ms = summary.duration.as_millis().max(MIN_DURATION_MS);
     let total = summary.total_requests;
     let success = summary.successful_requests;
 
     let success_rate_x100 = if total > 0 {
         let scaled = u128::from(success)
-            .saturating_mul(10_000)
+            .saturating_mul(SUCCESS_RATE_SCALE)
             .checked_div(u128::from(total))
             .unwrap_or(0);
         u64::try_from(scaled).map_or(u64::MAX, |value| value)
@@ -35,14 +66,14 @@ pub(crate) fn compute_summary_stats(summary: &metrics::MetricsSummary) -> Summar
 
     let avg_rps_x100 = if total > 0 {
         let scaled = u128::from(total)
-            .saturating_mul(100_000)
+            .saturating_mul(RPS_SCALE)
             .checked_div(duration_ms)
             .unwrap_or(0);
         u64::try_from(scaled).map_or(u64::MAX, |value| value)
     } else {
         0
     };
-    let avg_rpm_x100 = avg_rps_x100.saturating_mul(60);
+    let avg_rpm_x100 = avg_rps_x100.saturating_mul(RPM_PER_RPS);
 
     SummaryStats {
         success_rate_x100,
@@ -84,8 +115,8 @@ pub(crate) fn summary_lines(
         lines.push(format!(
             "Successful: {} ({}.{:02}%)",
             success,
-            stats.success_rate_x100 / 100,
-            stats.success_rate_x100 % 100
+            stats.success_rate_x100 / PERCENT_DIVISOR,
+            stats.success_rate_x100 % PERCENT_DIVISOR
         ));
         lines.push(format!("Errors: {}", errors));
         lines.push(format!("Timeouts: {}", summary.timeout_requests));
@@ -130,8 +161,8 @@ pub(crate) fn summary_lines(
         lines.push(format!(
             "Successful: {} ({}.{:02}%)",
             success,
-            stats.success_rate_x100 / 100,
-            stats.success_rate_x100 % 100
+            stats.success_rate_x100 / PERCENT_DIVISOR,
+            stats.success_rate_x100 % PERCENT_DIVISOR
         ));
         lines.push(format!("Errors: {}", errors));
         lines.push(format!("Timeouts: {}", summary.timeout_requests));
@@ -165,13 +196,13 @@ pub(crate) fn summary_lines(
 
     lines.push(format!(
         "Avg RPS: {}.{:02}",
-        stats.avg_rps_x100 / 100,
-        stats.avg_rps_x100 % 100
+        stats.avg_rps_x100 / PERCENT_DIVISOR,
+        stats.avg_rps_x100 % PERCENT_DIVISOR
     ));
     lines.push(format!(
         "Avg RPM: {}.{:02}",
-        stats.avg_rpm_x100 / 100,
-        stats.avg_rpm_x100 % 100
+        stats.avg_rpm_x100 / PERCENT_DIVISOR,
+        stats.avg_rpm_x100 % PERCENT_DIVISOR
     ));
 
     if !extras.charts_enabled {
@@ -190,21 +221,21 @@ pub(crate) fn summary_lines(
 
 fn format_duration_ms(value_ms: u64, unit: TimeUnit) -> String {
     match unit {
-        TimeUnit::Ns => format!("{}ns", u128::from(value_ms).saturating_mul(1_000_000)),
-        TimeUnit::Us => format!("{}us", u128::from(value_ms).saturating_mul(1_000)),
+        TimeUnit::Ns => format!("{}ns", u128::from(value_ms).saturating_mul(NS_PER_MS)),
+        TimeUnit::Us => format!("{}us", u128::from(value_ms).saturating_mul(US_PER_MS)),
         TimeUnit::Ms => format!("{}ms", value_ms),
-        TimeUnit::S => format_fraction_ms(value_ms, 1_000, "s"),
-        TimeUnit::M => format_fraction_ms(value_ms, 60_000, "m"),
-        TimeUnit::H => format_fraction_ms(value_ms, 3_600_000, "h"),
+        TimeUnit::S => format_fraction_ms(value_ms, MS_PER_SEC_U64, "s"),
+        TimeUnit::M => format_fraction_ms(value_ms, MS_PER_MIN, "m"),
+        TimeUnit::H => format_fraction_ms(value_ms, MS_PER_HOUR, "h"),
     }
 }
 
 fn format_fraction_ms(value_ms: u64, unit_ms: u64, suffix: &str) -> String {
-    let unit_ms = unit_ms.max(1);
+    let unit_ms = unit_ms.max(MIN_UNIT_MS);
     let whole = value_ms.checked_div(unit_ms).unwrap_or(0);
     let remainder = value_ms.checked_rem(unit_ms).unwrap_or(0);
     let thousandths = remainder
-        .checked_mul(1000)
+        .checked_mul(FRACTION_SCALE)
         .and_then(|value| value.checked_div(unit_ms))
         .unwrap_or(0);
     format!("{}.{:03}{}", whole, thousandths, suffix)
@@ -217,9 +248,9 @@ pub(crate) fn compute_percentiles(records: &[metrics::MetricRecord]) -> (u64, u6
     let mut latencies: Vec<u64> = records.iter().map(|record| record.latency_ms).collect();
     latencies.sort_unstable();
 
-    let p50 = percentile(&latencies, 50);
-    let p90 = percentile(&latencies, 90);
-    let p99 = percentile(&latencies, 99);
+    let p50 = percentile(&latencies, PERCENTILE_P50);
+    let p90 = percentile(&latencies, PERCENTILE_P90);
+    let p99 = percentile(&latencies, PERCENTILE_P99);
 
     (p50, p90, p99)
 }
@@ -231,8 +262,8 @@ fn percentile(values: &[u64], percentile: u64) -> u64 {
     let count = values.len().saturating_sub(1) as u64;
     let index = percentile
         .saturating_mul(count)
-        .saturating_add(50)
-        .checked_div(100)
+        .saturating_add(PERCENTILE_ROUNDING)
+        .checked_div(PERCENT_DIVISOR)
         .unwrap_or(0);
     let idx = usize::try_from(index).unwrap_or_else(|_| values.len().saturating_sub(1));
     *values.get(idx).unwrap_or(&0)

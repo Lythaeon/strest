@@ -2,13 +2,14 @@ use std::collections::BTreeMap;
 
 use plotters::prelude::*;
 
+use crate::error::AppResult;
 use crate::metrics::MetricRecord;
 
 pub fn plot_latency_percentiles(
     metrics: &[MetricRecord],
     expected_status_code: u16,
     base_path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     if metrics.is_empty() {
         return Ok(());
     }
@@ -60,10 +61,7 @@ pub fn plot_latency_percentiles(
         y_max: u64,
     }
 
-    fn draw_chart(
-        seconds: &[u64],
-        series: &LatencySeries,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn draw_chart(seconds: &[u64], series: &LatencySeries) -> AppResult<()> {
         let root = BitMapBackend::new(&series.file_path, (1600, 600)).into_drawing_area();
         root.fill(&WHITE)?;
 

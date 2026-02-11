@@ -8,6 +8,7 @@ use tokio::io::AsyncWriteExt;
 use super::{LatencyPercentilesSeries, plot_streaming_metrics};
 use crate::app::logs;
 use crate::args::{HttpMethod, PositiveU64, PositiveUsize, TesterArgs};
+use crate::error::{AppError, AppResult};
 use crate::metrics::{MetricRecord, StreamingChartData};
 
 fn sample_metrics() -> Vec<MetricRecord> {
@@ -44,7 +45,7 @@ fn sample_metrics() -> Vec<MetricRecord> {
 }
 
 #[test]
-fn plot_latency_percentiles_single_second() -> Result<(), String> {
+fn plot_latency_percentiles_single_second() -> AppResult<()> {
     run_async_test(async {
         let metrics = sample_metrics();
         let (dir, data) = build_streaming_data(&metrics, 200).await?;
@@ -52,7 +53,7 @@ fn plot_latency_percentiles_single_second() -> Result<(), String> {
         let base_path = dir.path().join("latency_percentiles");
         let base_path_str = match base_path.to_str() {
             Some(path) => path,
-            None => return Err("Failed to convert path to string".to_owned()),
+            None => return Err(AppError::metrics("Failed to convert path to string")),
         };
         let series = LatencyPercentilesSeries {
             buckets_ms: &data.latency_buckets_ms,
@@ -65,8 +66,9 @@ fn plot_latency_percentiles_single_second() -> Result<(), String> {
             p99_ok: &data.p99_ok,
         };
 
-        super::plot_latency_percentiles_series(&series, base_path_str)
-            .map_err(|err| format!("plot_latency_percentiles_series failed: {}", err))?;
+        super::plot_latency_percentiles_series(&series, base_path_str).map_err(|err| {
+            AppError::metrics(format!("plot_latency_percentiles_series failed: {}", err))
+        })?;
 
         let p50_path = format!("{}_P50_all.png", base_path_str);
         let p50_ok_path = format!("{}_P50_ok.png", base_path_str);
@@ -76,48 +78,49 @@ fn plot_latency_percentiles_single_second() -> Result<(), String> {
         let p99_ok_path = format!("{}_P99_ok.png", base_path_str);
 
         if std::fs::metadata(p50_path).is_err() {
-            return Err("Missing P50 output".to_owned());
+            return Err(AppError::metrics("Missing P50 output"));
         }
         if std::fs::metadata(p50_ok_path).is_err() {
-            return Err("Missing P50 ok output".to_owned());
+            return Err(AppError::metrics("Missing P50 ok output"));
         }
         if std::fs::metadata(p90_path).is_err() {
-            return Err("Missing P90 output".to_owned());
+            return Err(AppError::metrics("Missing P90 output"));
         }
         if std::fs::metadata(p90_ok_path).is_err() {
-            return Err("Missing P90 ok output".to_owned());
+            return Err(AppError::metrics("Missing P90 ok output"));
         }
         if std::fs::metadata(p99_path).is_err() {
-            return Err("Missing P99 output".to_owned());
+            return Err(AppError::metrics("Missing P99 output"));
         }
         if std::fs::metadata(p99_ok_path).is_err() {
-            return Err("Missing P99 ok output".to_owned());
+            return Err(AppError::metrics("Missing P99 ok output"));
         }
 
         Ok(())
     })
 }
 
-fn run_async_test<F>(future: F) -> Result<(), String>
+fn run_async_test<F>(future: F) -> AppResult<()>
 where
-    F: Future<Output = Result<(), String>>,
+    F: Future<Output = AppResult<()>>,
 {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|err| format!("Failed to build runtime: {}", err))?;
+        .map_err(|err| AppError::metrics(format!("Failed to build runtime: {}", err)))?;
     runtime.block_on(future)
 }
 
 async fn build_streaming_data(
     metrics: &[MetricRecord],
     expected_status_code: u16,
-) -> Result<(tempfile::TempDir, StreamingChartData), String> {
-    let dir = tempdir().map_err(|err| format!("Failed to create temp dir: {}", err))?;
+) -> AppResult<(tempfile::TempDir, StreamingChartData)> {
+    let dir = tempdir()
+        .map_err(|err| AppError::metrics(format!("Failed to create temp dir: {}", err)))?;
     let log_path = dir.path().join("metrics.log");
     let mut file = tokio::fs::File::create(&log_path)
         .await
-        .map_err(|err| format!("Failed to create log: {}", err))?;
+        .map_err(|err| AppError::metrics(format!("Failed to create log: {}", err)))?;
     let mut content = String::new();
     for metric in metrics {
         writeln!(
@@ -129,28 +132,29 @@ async fn build_streaming_data(
             u8::from(metric.timed_out),
             u8::from(metric.transport_error)
         )
-        .map_err(|err| format!("Failed to format log line: {}", err))?;
+        .map_err(|err| AppError::metrics(format!("Failed to format log line: {}", err)))?;
     }
     file.write_all(content.as_bytes())
         .await
-        .map_err(|err| format!("Failed to write log: {}", err))?;
+        .map_err(|err| AppError::metrics(format!("Failed to write log: {}", err)))?;
     file.flush()
         .await
-        .map_err(|err| format!("Failed to flush log: {}", err))?;
+        .map_err(|err| AppError::metrics(format!("Failed to flush log: {}", err)))?;
     let data =
         logs::load_chart_data_streaming(&[log_path], expected_status_code, &None, 100).await?;
     Ok((dir, data))
 }
 
 #[test]
-fn plot_metrics_creates_files() -> Result<(), String> {
+fn plot_metrics_creates_files() -> AppResult<()> {
     run_async_test(async {
         let metrics = sample_metrics();
-        let dir = tempdir().map_err(|err| format!("Failed to create temp dir: {}", err))?;
+        let dir = tempdir()
+            .map_err(|err| AppError::metrics(format!("Failed to create temp dir: {}", err)))?;
 
         let charts_path = match dir.path().to_str() {
             Some(path) => path.to_owned(),
-            None => return Err("Failed to convert path to string".to_owned()),
+            None => return Err(AppError::metrics("Failed to convert path to string")),
         };
 
         let args = TesterArgs {
@@ -280,7 +284,7 @@ fn plot_metrics_creates_files() -> Result<(), String> {
 
         plot_streaming_metrics(&data, &args)
             .await
-            .map_err(|err| format!("plot_streaming_metrics failed: {}", err))?;
+            .map_err(|err| AppError::metrics(format!("plot_streaming_metrics failed: {}", err)))?;
 
         let expected = vec![
             "average_response_time.png",
@@ -302,8 +306,9 @@ fn plot_metrics_creates_files() -> Result<(), String> {
 
         for file in expected {
             let path = dir.path().join(file);
-            std::fs::metadata(path)
-                .map_err(|err| format!("Missing chart output: {} ({})", file, err))?;
+            std::fs::metadata(path).map_err(|err| {
+                AppError::metrics(format!("Missing chart output: {} ({})", file, err))
+            })?;
         }
 
         Ok(())

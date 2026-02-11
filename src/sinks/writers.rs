@@ -2,13 +2,14 @@ use super::config::{
     InfluxSinkConfig, OtelSinkConfig, PrometheusSinkConfig, SinkStats, SinksConfig,
 };
 use super::format::{format_x100, write_line};
+use crate::error::{AppError, AppResult, SinkError};
 
 /// Write configured sink outputs to their destinations.
 ///
 /// # Errors
 ///
 /// Returns an error if any sink output fails to serialize or write.
-pub async fn write_sinks(config: &SinksConfig, stats: &SinkStats) -> Result<(), String> {
+pub async fn write_sinks(config: &SinksConfig, stats: &SinkStats) -> AppResult<()> {
     if let Some(prom) = config.prometheus.as_ref() {
         write_prometheus(prom, stats).await?;
     }
@@ -21,7 +22,7 @@ pub async fn write_sinks(config: &SinksConfig, stats: &SinkStats) -> Result<(), 
     Ok(())
 }
 
-async fn write_prometheus(config: &PrometheusSinkConfig, stats: &SinkStats) -> Result<(), String> {
+async fn write_prometheus(config: &PrometheusSinkConfig, stats: &SinkStats) -> AppResult<()> {
     let mut output = String::new();
 
     write_line(
@@ -151,11 +152,11 @@ async fn write_prometheus(config: &PrometheusSinkConfig, stats: &SinkStats) -> R
 
     tokio::fs::write(&config.path, output)
         .await
-        .map_err(|err| format!("Failed to write Prometheus sink: {}", err))?;
+        .map_err(|err| AppError::sink(SinkError::WritePrometheus { source: err }))?;
     Ok(())
 }
 
-async fn write_otel(config: &OtelSinkConfig, stats: &SinkStats) -> Result<(), String> {
+async fn write_otel(config: &OtelSinkConfig, stats: &SinkStats) -> AppResult<()> {
     let payload = serde_json::json!({
         "resource": {
             "service.name": "strest"
@@ -179,14 +180,14 @@ async fn write_otel(config: &OtelSinkConfig, stats: &SinkStats) -> Result<(), St
     });
 
     let json = serde_json::to_vec_pretty(&payload)
-        .map_err(|err| format!("Failed to serialize OTel sink: {}", err))?;
+        .map_err(|err| AppError::sink(SinkError::SerializeOtel { source: err }))?;
     tokio::fs::write(&config.path, json)
         .await
-        .map_err(|err| format!("Failed to write OTel sink: {}", err))?;
+        .map_err(|err| AppError::sink(SinkError::WriteOtel { source: err }))?;
     Ok(())
 }
 
-async fn write_influx(config: &InfluxSinkConfig, stats: &SinkStats) -> Result<(), String> {
+async fn write_influx(config: &InfluxSinkConfig, stats: &SinkStats) -> AppResult<()> {
     let line = format!(
         "strest_summary duration_ms={}i,total_requests={}i,successful_requests={}i,error_requests={}i,timeout_requests={}i,min_latency_ms={}i,max_latency_ms={}i,avg_latency_ms={}i,p50_latency_ms={}i,p90_latency_ms={}i,p99_latency_ms={}i,success_rate={},avg_rps={},avg_rpm={}\n",
         stats.duration.as_millis(),
@@ -207,6 +208,6 @@ async fn write_influx(config: &InfluxSinkConfig, stats: &SinkStats) -> Result<()
 
     tokio::fs::write(&config.path, line)
         .await
-        .map_err(|err| format!("Failed to write Influx sink: {}", err))?;
+        .map_err(|err| AppError::sink(SinkError::WriteInflux { source: err }))?;
     Ok(())
 }

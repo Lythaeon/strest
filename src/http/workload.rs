@@ -12,7 +12,7 @@ use rand_regex::Regex as RandRegex;
 use reqwest::{Client, Request, RequestBuilder, Url};
 use tokio::sync::Semaphore;
 use tokio::{
-    sync::{broadcast, mpsc},
+    sync::mpsc,
     time::{Instant, sleep},
 };
 use tracing::error;
@@ -25,9 +25,12 @@ use base64::Engine as _;
 
 use crate::{
     args::{ConnectToMapping, HttpMethod, Scenario, ScenarioStep},
+    error::{AppError, AppResult, HttpError},
     metrics::{LogSink, Metrics},
+    shutdown::{ShutdownReceiver, ShutdownSender},
 };
 
+/// Synthetic status used when an assert fails before a real HTTP response.
 const ASSERT_FAILED_STATUS: u16 = 0;
 
 #[derive(Clone)]
@@ -60,29 +63,29 @@ pub(crate) enum AuthConfig {
 #[derive(Debug)]
 pub(super) struct RequestLimiter {
     limit: Option<u64>,
-    counter: Arc<AtomicU64>,
+    counter: AtomicU64,
 }
 
 impl RequestLimiter {
     pub(super) fn new(limit: Option<u64>) -> Option<Self> {
         limit.map(|limit| RequestLimiter {
             limit: Some(limit),
-            counter: Arc::new(AtomicU64::new(0)),
+            counter: AtomicU64::new(0),
         })
     }
 
-    pub(super) fn try_reserve(&self, shutdown_tx: &broadcast::Sender<u16>) -> bool {
+    pub(super) fn try_reserve(&self, shutdown_tx: &ShutdownSender) -> bool {
         let Some(limit) = self.limit else {
             return true;
         };
         loop {
             let current = self.counter.load(Ordering::Relaxed);
             if current >= limit {
-                drop(shutdown_tx.send(1));
+                drop(shutdown_tx.send(()));
                 return false;
             }
             let Some(next) = current.checked_add(1) else {
-                drop(shutdown_tx.send(1));
+                drop(shutdown_tx.send(()));
                 return false;
             };
             if self
@@ -96,34 +99,63 @@ impl RequestLimiter {
     }
 }
 
+#[derive(Debug)]
+pub(super) struct IndexedList {
+    items: Vec<String>,
+    cursor: AtomicUsize,
+}
+
+impl IndexedList {
+    const fn new(items: Vec<String>) -> Self {
+        Self {
+            items,
+            cursor: AtomicUsize::new(0),
+        }
+    }
+
+    fn next(&self) -> Option<String> {
+        if self.items.is_empty() {
+            return None;
+        }
+        let idx = self.cursor.fetch_add(1, Ordering::Relaxed);
+        let len = self.items.len();
+        let selected = idx.rem_euclid(len);
+        self.items.get(selected).cloned()
+    }
+}
+
 #[derive(Clone)]
 pub(super) enum BodySource {
     Static(String),
-    Lines(Arc<Vec<String>>, Arc<AtomicUsize>),
+    Lines(Arc<IndexedList>),
+}
+
+impl BodySource {
+    pub(super) fn from_lines(lines: Vec<String>) -> Self {
+        Self::Lines(Arc::new(IndexedList::new(lines)))
+    }
 }
 
 #[derive(Clone)]
 pub(super) enum UrlSource {
     Static(String),
-    List(Arc<Vec<String>>, Arc<AtomicUsize>),
+    List(Arc<IndexedList>),
     Regex(Arc<RandRegex>),
 }
 
 impl UrlSource {
-    pub(super) fn next_url(&self) -> Result<String, String> {
+    pub(super) fn from_list(urls: Vec<String>) -> Self {
+        Self::List(Arc::new(IndexedList::new(urls)))
+    }
+}
+
+impl UrlSource {
+    pub(super) fn next_url(&self) -> AppResult<String> {
         match self {
             UrlSource::Static(url) => Ok(url.clone()),
-            UrlSource::List(list, cursor) => {
-                if list.is_empty() {
-                    return Err("URL list was empty.".to_owned());
-                }
-                let idx = cursor.fetch_add(1, Ordering::Relaxed);
-                let len = list.len();
-                let selected = idx.rem_euclid(len);
-                list.get(selected)
-                    .cloned()
-                    .ok_or_else(|| "URL list was empty.".to_owned())
-            }
+            UrlSource::List(list) => list
+                .next()
+                .ok_or_else(|| AppError::http(HttpError::UrlListEmpty)),
             UrlSource::Regex(regex) => {
                 let mut rng = thread_rng();
                 Ok(regex.sample(&mut rng))
@@ -144,13 +176,13 @@ pub(super) struct SingleRequestSpec {
     pub(super) url: UrlSource,
     pub(super) headers: Vec<(String, String)>,
     pub(super) body: BodySource,
-    pub(super) form: Option<Arc<Vec<FormFieldSpec>>>,
-    pub(super) connect_to: Arc<Vec<ConnectToMapping>>,
+    pub(super) form: Option<Vec<FormFieldSpec>>,
+    pub(super) connect_to: Vec<ConnectToMapping>,
     pub(super) auth: Option<AuthConfig>,
 }
 
 pub(super) struct WorkerContext<'ctx> {
-    pub(super) shutdown_tx: &'ctx broadcast::Sender<u16>,
+    pub(super) shutdown_tx: &'ctx ShutdownSender,
     pub(super) rate_limiter: Option<&'ctx Arc<Semaphore>>,
     pub(super) request_limiter: Option<&'ctx Arc<RequestLimiter>>,
     pub(super) wait_ongoing: bool,
@@ -160,29 +192,29 @@ pub(super) struct WorkerContext<'ctx> {
     pub(super) metrics_tx: &'ctx mpsc::Sender<Metrics>,
 }
 
-pub(super) async fn preflight_request(client: &Client, workload: &Workload) -> Result<(), String> {
+pub(super) async fn preflight_request(client: &Client, workload: &Workload) -> AppResult<()> {
     match workload {
         Workload::Single(request_template) => {
             let request = request_template
                 .try_clone()
-                .ok_or_else(|| "Failed to clone request for initial test.".to_owned())?;
+                .ok_or_else(|| AppError::http(HttpError::CloneRequestFailed))?;
             execute_request(client, request, true)
                 .await
-                .map_err(|err| format!("Test request failed: {}", err))?;
+                .map_err(|err| AppError::http(HttpError::TestRequestFailed { source: err }))?;
             Ok(())
         }
         Workload::SingleDynamic(spec) => {
             let request = build_request_from_spec(client, spec)?;
             execute_request(client, request, true)
                 .await
-                .map_err(|err| format!("Test request failed: {}", err))?;
+                .map_err(|err| AppError::http(HttpError::TestRequestFailed { source: err }))?;
             Ok(())
         }
         Workload::Scenario(scenario, connect_to, host_header, auth) => {
             let step = scenario
                 .steps
                 .first()
-                .ok_or_else(|| "Scenario has no steps.".to_owned())?;
+                .ok_or_else(|| AppError::http(HttpError::ScenarioHasNoSteps))?;
             let vars = build_template_vars(scenario, step, 0, 0);
             let request = build_step_request(
                 client,
@@ -197,14 +229,18 @@ pub(super) async fn preflight_request(client: &Client, workload: &Workload) -> R
             )?;
             execute_request(client, request, true)
                 .await
-                .map_err(|err| format!("Scenario preflight failed: {}", err))?;
+                .map_err(|err| {
+                    AppError::http(HttpError::ScenarioPreflightFailed {
+                        source: Box::new(AppError::from(err)),
+                    })
+                })?;
             Ok(())
         }
     }
 }
 
 pub(super) async fn run_single_iteration(
-    shutdown_rx: &mut broadcast::Receiver<u16>,
+    shutdown_rx: &mut ShutdownReceiver,
     context: &WorkerContext<'_>,
     request_template: &Arc<Request>,
 ) -> bool {
@@ -222,11 +258,11 @@ pub(super) async fn run_single_iteration(
         None
     };
     if let Some(rate_limiter) = context.rate_limiter {
-        let rate_permit_result = tokio::select! {
-            _ = shutdown_rx.recv() => return true,
-            permit = rate_limiter.acquire() => permit,
+        let denied = tokio::select! {
+            _ = shutdown_rx.recv() => true,
+            permit = rate_limiter.acquire() => permit.is_err(),
         };
-        if rate_permit_result.is_err() {
+        if denied {
             return true;
         }
         if !context.latency_correction {
@@ -266,7 +302,7 @@ pub(super) async fn run_single_iteration(
 }
 
 pub(super) async fn run_single_dynamic_iteration(
-    shutdown_rx: &mut broadcast::Receiver<u16>,
+    shutdown_rx: &mut ShutdownReceiver,
     context: &WorkerContext<'_>,
     spec: &Arc<SingleRequestSpec>,
 ) -> bool {
@@ -284,11 +320,11 @@ pub(super) async fn run_single_dynamic_iteration(
         None
     };
     if let Some(rate_limiter) = context.rate_limiter {
-        let rate_permit_result = tokio::select! {
-            _ = shutdown_rx.recv() => return true,
-            permit = rate_limiter.acquire() => permit,
+        let denied = tokio::select! {
+            _ = shutdown_rx.recv() => true,
+            permit = rate_limiter.acquire() => permit.is_err(),
         };
-        if rate_permit_result.is_err() {
+        if denied {
             return true;
         }
         if !context.latency_correction {
@@ -342,7 +378,7 @@ pub(super) struct ScenarioRunContext<'ctx> {
 }
 
 pub(super) async fn run_scenario_iteration(
-    shutdown_rx: &mut broadcast::Receiver<u16>,
+    shutdown_rx: &mut ShutdownReceiver,
     worker: &WorkerContext<'_>,
     context: &mut ScenarioRunContext<'_>,
 ) -> bool {
@@ -361,11 +397,11 @@ pub(super) async fn run_scenario_iteration(
             None
         };
         if let Some(rate_limiter) = worker.rate_limiter {
-            let rate_permit_result = tokio::select! {
-                _ = shutdown_rx.recv() => return true,
-                permit = rate_limiter.acquire() => permit,
+            let denied = tokio::select! {
+                _ = shutdown_rx.recv() => true,
+                permit = rate_limiter.acquire() => permit.is_err(),
             };
-            if rate_permit_result.is_err() {
+            if denied {
                 return true;
             }
             if !worker.latency_correction {
@@ -525,9 +561,14 @@ async fn execute_request_with_asserts(
     }
 }
 
-fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> Result<Request, String> {
+fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> AppResult<Request> {
     let url_raw = spec.url.next_url()?;
-    let url = Url::parse(&url_raw).map_err(|err| format!("Invalid URL '{}': {}", url_raw, err))?;
+    let url = Url::parse(&url_raw).map_err(|err| {
+        AppError::http(HttpError::InvalidUrl {
+            url: url_raw,
+            source: err,
+        })
+    })?;
     let (url, host_override) = apply_connect_to(&url, &spec.connect_to)?;
 
     let mut request_builder = match spec.method {
@@ -549,18 +590,9 @@ fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> Result<
 
     let body = match &spec.body {
         BodySource::Static(body) => body.clone(),
-        BodySource::Lines(lines, cursor) => {
-            if lines.is_empty() {
-                return Err("Body lines file was empty.".to_owned());
-            }
-            let idx = cursor.fetch_add(1, Ordering::Relaxed);
-            let len = lines.len();
-            let selected = idx.rem_euclid(len);
-            lines
-                .get(selected)
-                .cloned()
-                .ok_or_else(|| "Body lines file was empty.".to_owned())?
-        }
+        BodySource::Lines(lines) => lines
+            .next()
+            .ok_or_else(|| AppError::http(HttpError::BodyLinesEmpty))?,
     };
 
     if let Some(auth) = spec.auth.as_ref() {
@@ -589,10 +621,10 @@ fn build_request_from_spec(client: &Client, spec: &SingleRequestSpec) -> Result<
 
     request_builder
         .build()
-        .map_err(|err| format!("Failed to build request: {}", err))
+        .map_err(|err| AppError::http(HttpError::BuildRequestFailed { source: err }))
 }
 
-fn build_multipart(fields: &[FormFieldSpec]) -> Result<reqwest::multipart::Form, String> {
+fn build_multipart(fields: &[FormFieldSpec]) -> AppResult<reqwest::multipart::Form> {
     let mut form = reqwest::multipart::Form::new();
     for field in fields {
         match field {
@@ -600,8 +632,12 @@ fn build_multipart(fields: &[FormFieldSpec]) -> Result<reqwest::multipart::Form,
                 form = form.text(name.clone(), value.clone());
             }
             FormFieldSpec::File { name, path } => {
-                let bytes = std::fs::read(path)
-                    .map_err(|err| format!("Failed to read form file '{}': {}", path, err))?;
+                let bytes = std::fs::read(path).map_err(|err| {
+                    AppError::http(HttpError::ReadFormFile {
+                        path: path.clone(),
+                        source: err,
+                    })
+                })?;
                 let part = reqwest::multipart::Part::bytes(bytes).file_name(
                     std::path::Path::new(path)
                         .file_name()
@@ -628,7 +664,7 @@ pub(crate) fn build_step_request(
     step: &ScenarioStep,
     vars: &BTreeMap<String, String>,
     context: &StepRequestContext<'_>,
-) -> Result<Request, String> {
+) -> AppResult<Request> {
     let url = resolve_step_url(scenario, step, vars)?;
     let (url, host_override) = apply_connect_to(&url, context.connect_to)?;
     let mut request_builder = match step.method {
@@ -685,13 +721,13 @@ pub(crate) fn build_step_request(
 
     request_builder
         .build()
-        .map_err(|err| format!("Failed to build request: {}", err))
+        .map_err(|err| AppError::http(HttpError::BuildRequestFailed { source: err }))
 }
 
 fn apply_connect_to(
     url: &Url,
     connect_to: &[ConnectToMapping],
-) -> Result<(Url, Option<String>), String> {
+) -> AppResult<(Url, Option<String>)> {
     let Some(host) = url.host_str() else {
         return Ok((url.clone(), None));
     };
@@ -701,10 +737,10 @@ fn apply_connect_to(
             let mut rewritten = url.clone();
             rewritten
                 .set_host(Some(&mapping.target_host))
-                .map_err(|err| format!("Invalid connect-to host: {}", err))?;
+                .map_err(|err| AppError::http(HttpError::InvalidConnectToHost { source: err }))?;
             rewritten
                 .set_port(Some(mapping.target_port))
-                .map_err(|()| "Invalid connect-to port.".to_owned())?;
+                .map_err(|()| AppError::http(HttpError::InvalidConnectToPort))?;
             let host_header = if port == 80 || port == 443 {
                 host.to_owned()
             } else {
@@ -739,7 +775,7 @@ fn apply_auth_headers(
     headers: &[(String, String)],
     body: &str,
     auth: &AuthConfig,
-) -> Result<RequestBuilder, String> {
+) -> AppResult<RequestBuilder> {
     match auth {
         AuthConfig::Basic { username, password } => {
             let token = format!("{}:{}", username, password);
@@ -770,7 +806,11 @@ fn apply_auth_headers(
                 .time(std::time::SystemTime::now())
                 .settings(signing_settings)
                 .build()
-                .map_err(|err| format!("Failed to build sigv4 params: {}", err))?
+                .map_err(|err| {
+                    AppError::http(HttpError::SigV4Params {
+                        source: Box::new(err),
+                    })
+                })?
                 .into();
 
             let method_str = http_method_str(method);
@@ -780,10 +820,18 @@ fn apply_auth_headers(
                 headers.iter().map(|(k, v)| (k.as_str(), v.as_str())),
                 SignableBody::Bytes(body.as_bytes()),
             )
-            .map_err(|err| format!("Failed to build sigv4 request: {}", err))?;
+            .map_err(|err| {
+                AppError::http(HttpError::SigV4Request {
+                    source: Box::new(err),
+                })
+            })?;
 
             let (instructions, _signature) = sign(signable, &signing_params)
-                .map_err(|err| format!("Failed to sign request: {}", err))?
+                .map_err(|err| {
+                    AppError::http(HttpError::SigV4Sign {
+                        source: Box::new(err),
+                    })
+                })?
                 .into_parts();
 
             let mut http_req = http::Request::builder()
@@ -792,9 +840,11 @@ fn apply_auth_headers(
             for (key, value) in headers {
                 http_req = http_req.header(key, value);
             }
-            let mut http_req = http_req
-                .body(())
-                .map_err(|err| format!("Failed to build sign request: {}", err))?;
+            let mut http_req = http_req.body(()).map_err(|err| {
+                AppError::http(HttpError::SigV4BuildSign {
+                    source: Box::new(err),
+                })
+            })?;
             instructions.apply_to_request_http1x(&mut http_req);
 
             for (name, value) in http_req.headers().iter() {
@@ -809,27 +859,38 @@ fn resolve_step_url(
     scenario: &Scenario,
     step: &ScenarioStep,
     vars: &BTreeMap<String, String>,
-) -> Result<Url, String> {
+) -> AppResult<Url> {
     if let Some(url) = step.url.as_ref() {
         let rendered = render_template(url, vars);
-        return Url::parse(&rendered)
-            .map_err(|err| format!("Invalid scenario url '{}': {}", rendered, err));
+        return Url::parse(&rendered).map_err(|err| {
+            AppError::http(HttpError::InvalidScenarioUrl {
+                url: rendered,
+                source: err,
+            })
+        });
     }
 
     let path = step
         .path
         .as_ref()
-        .ok_or_else(|| "Scenario step missing url/path.".to_owned())?;
+        .ok_or_else(|| AppError::http(HttpError::ScenarioStepMissingUrlOrPath))?;
     let base_url = scenario
         .base_url
         .as_ref()
-        .ok_or_else(|| "Scenario base_url is required for relative paths.".to_owned())?;
+        .ok_or_else(|| AppError::http(HttpError::ScenarioBaseUrlRequired))?;
     let rendered_path = render_template(path, vars);
-    let base = Url::parse(base_url)
-        .map_err(|err| format!("Invalid scenario base_url '{}': {}", base_url, err))?;
-    let joined = base
-        .join(&rendered_path)
-        .map_err(|err| format!("Failed to join URL '{}': {}", rendered_path, err))?;
+    let base = Url::parse(base_url).map_err(|err| {
+        AppError::http(HttpError::InvalidScenarioBaseUrl {
+            url: base_url.to_owned(),
+            source: err,
+        })
+    })?;
+    let joined = base.join(&rendered_path).map_err(|err| {
+        AppError::http(HttpError::JoinUrlFailed {
+            url: rendered_path,
+            source: err,
+        })
+    })?;
     Ok(joined)
 }
 
