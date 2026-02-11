@@ -190,6 +190,7 @@ jobs:
             target: aarch64-apple-darwin
             suffix: macos-arm64
             archive: tar.gz
+            rust_min_stack: 16777216
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -202,6 +203,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libfreetype6-dev pkg-config
       
       - name: Build Release
+        env:
+          RUST_MIN_STACK: ${{ matrix.rust_min_stack }}
         run: cargo build --release --target ${{ matrix.target }} --locked
 
       - name: Package Assets
