@@ -5,6 +5,14 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+## 0.1.8
+
+Released: 2026-02-11
+
+- Fixed Windows (`x86_64-pc-windows-msvc`) build failure caused by unconditional `ClientBuilder::unix_socket(...)` usage.
+- Gated Unix socket client configuration behind `cfg(unix)` in the HTTP sender so Windows builds do not compile Unix-only APIs.
+- Added a clear validation error (`--unix-socket is only supported on Unix targets`) when `--unix-socket` is provided on non-Unix platforms.
+
 ## 0.1.7
 
 Released: 2026-02-11

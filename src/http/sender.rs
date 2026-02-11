@@ -214,7 +214,17 @@ pub fn setup_request_sender(
     }
 
     if let Some(path) = args.unix_socket.as_ref() {
-        client_builder = client_builder.unix_socket(path.clone());
+        #[cfg(unix)]
+        {
+            client_builder = client_builder.unix_socket(path.clone());
+        }
+        #[cfg(not(unix))]
+        {
+            drop(path);
+            return Err(AppError::validation(
+                ValidationError::UnixSocketUnsupportedOnPlatform,
+            ));
+        }
     }
 
     let client = match client_builder.build() {

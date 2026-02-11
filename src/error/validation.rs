@@ -142,6 +142,8 @@ RUSTFLAGS=\"--cfg reqwest_unstable\"."
     },
     #[error("proxy http version 3 is not supported.")]
     ProxyHttpVersionUnsupported,
+    #[error("--unix-socket is only supported on Unix targets.")]
+    UnixSocketUnsupportedOnPlatform,
     #[error("Invalid URL '{url}': {source}")]
     InvalidUrl {
         url: String,
