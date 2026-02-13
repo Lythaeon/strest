@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use crate::app::summary as app_summary;
 use crate::args::TesterArgs;
 use crate::metrics::MetricsSummary;
 
@@ -158,7 +159,7 @@ pub(super) fn print_summary(
     summary: &MetricsSummary,
     percentiles: SummaryPercentiles,
     args: &TesterArgs,
-    charts_written: bool,
+    charts_output_path: Option<&str>,
 ) {
     let stats = compute_summary_stats(summary);
 
@@ -203,11 +204,13 @@ pub(super) fn print_summary(
         stats.avg_rpm_x100 % PERCENT_DIVISOR
     );
 
-    if args.no_charts {
-        println!("Charts: disabled");
-    } else if charts_written {
-        println!("Charts: saved in {}", args.charts_path);
-    } else {
-        println!("Charts: unavailable (enable --stream-summaries)");
+    println!(
+        "{}",
+        app_summary::chart_status_line(args, charts_output_path, false)
+    );
+    if args.show_selections {
+        for line in app_summary::selection_lines(args, charts_output_path) {
+            println!("{}", line);
+        }
     }
 }

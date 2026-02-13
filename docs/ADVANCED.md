@@ -2,6 +2,67 @@
 
 This page covers replay, profiling, WASM scripting, distributed mode, sinks, and operations topics.
 
+## Presets vs Advanced Flags
+
+`strest quick`, `strest soak`, `strest spike`, and `strest distributed` provide opinionated defaults for common workflows.
+The original flag-driven workflow remains fully supported for power users.
+
+Use presets when you want a fast starting point, and switch to top-level flags/config when you need exact tuning.
+The CLI remains intentionally sharp-edged for advanced users; presets are a convenience layer, not a replacement.
+
+## Protocol Adapter Strategy
+
+The CLI surface includes a protocol adapter selector (`--protocol`) so protocol-specific engines can
+be added without redesigning the command model.
+
+Protocol adapters are managed through a central registry in `src/protocol.rs`
+and `src/protocol/`.
+Each adapter declares:
+
+- protocol key (`Protocol`)
+- display name
+- whether it is executable in this build
+- stateful-connection capability
+- supported `LoadMode` values
+
+Important current limitation: this is **not** a runtime-loaded external plugin system yet.
+Today, adapters are compiled into the binary and selected through the fixed `Protocol` enum.
+So adding a brand-new protocol still requires core code changes (enum + runtime sender wiring),
+not just dropping in an external module.
+
+To add metadata for an existing protocol key, implement `ProtocolAdapter` and register it in
+`ProtocolRegistry::with_builtins()`. Entry validation and CLI behavior will pick it up automatically.
+
+Example adapter implementations (reference patterns):
+
+- `src/protocol/examples/game_udp.rs`
+- `src/protocol/examples/chat_websocket.rs`
+- `src/protocol/examples/telemetry_mqtt.rs`
+
+Current execution support:
+
+- `http`, `grpc-unary`, `grpc-streaming`, `websocket`, `tcp`, `udp`
+- `quic`, `mqtt`, `enet`, `kcp`, `raknet`
+
+Notes on baseline transport behavior:
+
+- `quic`, `enet`, `kcp`, and `raknet` currently use one-shot datagram probing semantics (UDP-style send + optional recv).
+- `mqtt` uses a minimal MQTT 3.1.1 `CONNECT` + optional QoS0 `PUBLISH` flow (topic derived from URL path).
+- gRPC adapters accept both `grpc://`/`grpcs://` and `http://`/`https://` URL schemes.
+
+## Load-Mode Intent
+
+`--load-mode` captures run intent and aligns presets/config to “named workflows”:
+
+- `arrival`: default arrival-rate behavior.
+- `step`/`ramp`: staged load profiles from config.
+- `burst`: spike-style traffic.
+- `soak`: long-duration stability runs.
+- `jitter`: reserved for future randomized scheduling.
+
+Load mode is also validated per protocol adapter. Notably, `grpc-unary` currently supports
+`arrival` and `ramp`, while other executable adapters accept all current load modes.
+
 ## Replay (Post-Mortem)
 
 Replay lets you re-run summaries from tmp logs or exported CSV/JSON/JSONL without hitting the target again.
@@ -66,9 +127,14 @@ MALLOC_CONF=prof_active:true \
 
 ## WASM Scripts (Experimental)
 
-WASM is for people who want programmatic scenario generation without embedding a scripting runtime.
+There are two WASM extension paths in `strest`:
 
-You can generate scenarios from a WASM module and run them with `--script`. This is useful when you want programmable test setup while still using strest’s scenario engine.
+- `--script`: scenario-generation scripts (request model input)
+- `--plugin`: lifecycle plugins (run/metrics/artifact hooks)
+
+Use scripts when you want a module to define the scenario payload (and, over time, support dynamic
+request generation such as payload/header shaping and response-reactive flows) while still running
+on strest's scenario engine.
 
 Build with the optional feature:
 
@@ -140,6 +206,48 @@ Notes:
 
 - If you pass `--url`, it becomes the default base URL when the scenario omits `base_url`.
 - `--script` cannot be combined with an explicit `scenario` config section.
+
+## WASM Plugins (Experimental)
+
+You can load external WASM plugins with:
+
+```bash
+strest --plugin ./plugins/example.wasm -u http://localhost:3000 -t 20 --summary
+```
+
+`--plugin` is repeatable. Plugins are invoked through `wasmer` as sandboxed WASI commands and are
+intended for lifecycle hook integrations and additional runtime features.
+
+Current hooks:
+
+- `strest_on_run_start`
+- `strest_on_metrics_summary`
+- `strest_on_artifact`
+- `strest_on_run_end`
+
+ABI contract (host -> plugin):
+
+- env `STREST_PLUGIN_API_VERSION=1`
+- env `STREST_PLUGIN_HOOK=<hook-name>`
+- payload JSON on `stdin`
+- exit code `0` => success, non-zero => failure
+
+Sandbox policy (current):
+
+- plugin module size capped at 4MB
+- only `wasi_snapshot_preview1` imports are allowed
+- per-hook payload capped at 256KB
+
+SDK:
+
+- `sdk/strest-wasm-plugin-sdk`
+- helper API for hook dispatch and ABI validation in plugin `main()`
+
+Example plugins:
+
+- `examples/plugins/echo-hook-logger`
+- `examples/plugins/slo-guard`
+- `examples/plugins/README.md` (build + run commands)
 
 ## Output Sinks
 

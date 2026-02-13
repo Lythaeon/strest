@@ -53,6 +53,7 @@ pub use streaming::{
 #[cfg(feature = "legacy-charts")]
 pub use timeouts::plot_timeouts_per_second;
 
+pub(crate) use driver::is_chart_run_dir_name;
 #[cfg(feature = "legacy-charts")]
 pub use driver::plot_metrics;
 pub use driver::{plot_aggregated_metrics, plot_streaming_metrics};

@@ -50,6 +50,15 @@ pub enum ValidationError {
     InvalidHttpVersion { value: String },
     #[error("Invalid controller mode '{value}'. Use auto or manual.")]
     InvalidControllerMode { value: String },
+    #[error("Unsupported URL scheme '{scheme}' for protocol '{protocol}'.")]
+    UnsupportedProtocolUrlScheme { protocol: String, scheme: String },
+    #[error(
+        "Protocol '{protocol}' is not executable in this build. Current executable protocols: \
+{supported}."
+    )]
+    UnsupportedProtocol { protocol: String, supported: String },
+    #[error("Load mode '{load_mode}' is not supported by protocol '{protocol}'.")]
+    UnsupportedLoadModeForProtocol { protocol: String, load_mode: String },
     #[error("Invalid TLS version '{value}'. Use 1.0, 1.1, 1.2, or 1.3.")]
     InvalidTlsVersion { value: String },
     #[error("Value must be >= {min}.")]
@@ -69,6 +78,8 @@ pub enum ValidationError {
     NoUserAgentWithoutAuthorization,
     #[error("Missing URL (set --url or provide in config).")]
     MissingUrl,
+    #[error("Run cancelled.")]
+    RunCancelled,
     #[error("Runtime errors occurred.")]
     RuntimeErrors,
     #[error("`--output-format` requires `--output`.")]

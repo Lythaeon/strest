@@ -1,19 +1,19 @@
 #[derive(Clone, Copy)]
-pub(super) struct ReplayWindow {
-    pub(super) start_ms: u64,
-    pub(super) cursor_ms: u64,
-    pub(super) end_ms: u64,
-    pub(super) playing: bool,
+pub(crate) struct ReplayWindow {
+    pub(crate) start_ms: u64,
+    pub(crate) cursor_ms: u64,
+    pub(crate) end_ms: u64,
+    pub(crate) playing: bool,
 }
 
 #[derive(Default)]
-pub(super) struct SnapshotMarkers {
-    pub(super) start: Option<u64>,
-    pub(super) end: Option<u64>,
+pub(crate) struct SnapshotMarkers {
+    pub(crate) start: Option<u64>,
+    pub(crate) end: Option<u64>,
 }
 
 impl SnapshotMarkers {
-    pub(super) const fn clear(&mut self) {
+    pub(crate) const fn clear(&mut self) {
         self.start = None;
         self.end = None;
     }

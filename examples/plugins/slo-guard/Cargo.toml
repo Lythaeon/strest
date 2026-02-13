@@ -1,0 +1,9 @@
+[package]
+name = "slo-guard"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+strest-wasm-plugin-sdk = { path = "../../../sdk/strest-wasm-plugin-sdk" }
+
+[workspace]

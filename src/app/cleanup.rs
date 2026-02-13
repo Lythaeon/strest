@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::args::CleanupArgs;
+use crate::charts;
 use crate::error::{AppError, AppResult, ServiceError, ValidationError};
 
 pub(crate) async fn cleanup_tmp(log_path: &Path, tmp_dir: &Path) -> Result<(), std::io::Error> {
@@ -26,18 +27,6 @@ pub(crate) async fn cleanup_tmp(log_path: &Path, tmp_dir: &Path) -> Result<(), s
 }
 
 pub(crate) async fn run_cleanup(args: &CleanupArgs) -> AppResult<()> {
-    let tmp_dir = Path::new(&args.tmp_path);
-    let mut entries = match tokio::fs::read_dir(tmp_dir).await {
-        Ok(entries) => entries,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            println!("No tmp directory found at {}", tmp_dir.display());
-            return Ok(());
-        }
-        Err(err) => {
-            return Err(AppError::service(ServiceError::ReadTmpDir { source: err }));
-        }
-    };
-
     let cutoff = if let Some(age) = args.older_than {
         Some(
             SystemTime::now()
@@ -48,39 +37,13 @@ pub(crate) async fn run_cleanup(args: &CleanupArgs) -> AppResult<()> {
         None
     };
 
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|err| AppError::service(ServiceError::ReadTmpEntry { source: err }))?
-    {
-        let path = entry.path();
-        let file_name = entry.file_name().to_string_lossy().to_string();
-        let metadata = entry.metadata().await.map_err(|err| {
-            AppError::service(ServiceError::ReadMetadata {
-                path: path.clone(),
-                source: err,
-            })
-        })?;
-        if !is_cleanup_candidate(&file_name, &metadata) {
-            continue;
-        }
-        if let Some(cutoff) = cutoff {
-            let modified = metadata.modified().map_err(|err| {
-                AppError::service(ServiceError::ReadModifiedTime {
-                    path: path.clone(),
-                    source: err,
-                })
-            })?;
-            if modified > cutoff {
-                continue;
-            }
-        }
-        candidates.push(path);
+    let mut candidates = collect_tmp_candidates(args, cutoff).await?;
+    if args.with_charts {
+        candidates.extend(collect_chart_candidates(args, cutoff).await?);
     }
 
     if candidates.is_empty() {
-        println!("No tmp entries matched cleanup criteria.");
+        println!("No entries matched cleanup criteria.");
         return Ok(());
     }
 
@@ -118,6 +81,89 @@ fn is_cleanup_candidate(file_name: &str, metadata: &std::fs::Metadata) -> bool {
         return file_name.starts_with("run-");
     }
     false
+}
+
+async fn collect_tmp_candidates(
+    args: &CleanupArgs,
+    cutoff: Option<SystemTime>,
+) -> AppResult<Vec<PathBuf>> {
+    collect_candidates(
+        Path::new(&args.tmp_path),
+        cutoff,
+        is_cleanup_candidate,
+        |dir| AppError::service(ServiceError::ReadTmpDir { source: dir }),
+    )
+    .await
+}
+
+async fn collect_chart_candidates(
+    args: &CleanupArgs,
+    cutoff: Option<SystemTime>,
+) -> AppResult<Vec<PathBuf>> {
+    collect_candidates(
+        Path::new(&args.charts_path),
+        cutoff,
+        is_chart_cleanup_candidate,
+        |dir| AppError::service(ServiceError::ReadTmpDir { source: dir }),
+    )
+    .await
+}
+
+async fn collect_candidates<F, E>(
+    root: &Path,
+    cutoff: Option<SystemTime>,
+    is_candidate: F,
+    map_read_dir_error: E,
+) -> AppResult<Vec<PathBuf>>
+where
+    F: Fn(&str, &std::fs::Metadata) -> bool,
+    E: Fn(std::io::Error) -> AppError,
+{
+    let mut entries = match tokio::fs::read_dir(root).await {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Vec::new());
+        }
+        Err(err) => {
+            return Err(map_read_dir_error(err));
+        }
+    };
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|err| AppError::service(ServiceError::ReadTmpEntry { source: err }))?
+    {
+        let path = entry.path();
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        let metadata = entry.metadata().await.map_err(|err| {
+            AppError::service(ServiceError::ReadMetadata {
+                path: path.clone(),
+                source: err,
+            })
+        })?;
+        if !is_candidate(&file_name, &metadata) {
+            continue;
+        }
+        if let Some(cutoff) = cutoff {
+            let modified = metadata.modified().map_err(|err| {
+                AppError::service(ServiceError::ReadModifiedTime {
+                    path: path.clone(),
+                    source: err,
+                })
+            })?;
+            if modified > cutoff {
+                continue;
+            }
+        }
+        candidates.push(path);
+    }
+    Ok(candidates)
+}
+
+fn is_chart_cleanup_candidate(file_name: &str, metadata: &std::fs::Metadata) -> bool {
+    metadata.is_dir() && charts::is_chart_run_dir_name(file_name)
 }
 
 async fn remove_entry(path: &Path) -> Result<(), std::io::Error> {
@@ -193,6 +239,48 @@ mod tests {
         }
         if !other_path.exists() {
             return Err(AppError::service(ServiceError::ExpectedOtherFileRemain));
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn chart_cleanup_candidate_matches_run_dirs_only() -> AppResult<()> {
+        let dir =
+            tempdir().map_err(|err| AppError::service(ServiceError::TempDir { source: err }))?;
+        let charts_root = dir.path().join("charts");
+        std::fs::create_dir_all(&charts_root)
+            .map_err(|err| AppError::service(ServiceError::CreateDirAll { source: err }))?;
+
+        let valid = charts_root.join("run-2026-02-12_15-30-07_example.com-443");
+        std::fs::create_dir_all(&valid)
+            .map_err(|err| AppError::service(ServiceError::CreateDirAll { source: err }))?;
+        let invalid = charts_root.join("api.example.com");
+        std::fs::create_dir_all(&invalid)
+            .map_err(|err| AppError::service(ServiceError::CreateDirAll { source: err }))?;
+
+        let valid_meta = std::fs::metadata(&valid).map_err(|err| {
+            AppError::service(ServiceError::ReadMetadata {
+                path: valid.clone(),
+                source: err,
+            })
+        })?;
+        let invalid_meta = std::fs::metadata(&invalid).map_err(|err| {
+            AppError::service(ServiceError::ReadMetadata {
+                path: invalid.clone(),
+                source: err,
+            })
+        })?;
+
+        if !is_chart_cleanup_candidate("run-2026-02-12_15-30-07_example.com-443", &valid_meta) {
+            return Err(AppError::validation(
+                "expected chart run directory candidate",
+            ));
+        }
+        if is_chart_cleanup_candidate("api.example.com", &invalid_meta) {
+            return Err(AppError::validation(
+                "unexpected non-run chart directory candidate",
+            ));
         }
 
         Ok(())

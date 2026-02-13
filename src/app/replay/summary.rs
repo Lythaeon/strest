@@ -5,13 +5,13 @@ use crate::metrics::{LatencyHistogram, MetricRecord, MetricsSummary};
 
 use super::super::summary as app_summary;
 
-pub(super) struct SummaryOutput {
-    pub(super) summary: MetricsSummary,
-    pub(super) histogram: LatencyHistogram,
-    pub(super) success_histogram: LatencyHistogram,
+pub(crate) struct SummaryOutput {
+    pub(crate) summary: MetricsSummary,
+    pub(crate) histogram: LatencyHistogram,
+    pub(crate) success_histogram: LatencyHistogram,
 }
 
-pub(super) fn summarize(
+pub(crate) fn summarize(
     records: &[MetricRecord],
     expected_status_code: u16,
     window_start_ms: u64,

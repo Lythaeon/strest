@@ -55,6 +55,40 @@ assert_status = 200
 strest --config strest.toml -t 30 --no-tui --summary --no-charts
 ```
 
+## 99% Paths
+
+Use these first. They are the intended onboarding paths.
+
+Local quick check:
+
+```bash
+strest quick --url http://localhost:3000
+```
+
+Long soak run:
+
+```bash
+strest soak --url http://localhost:3000
+```
+
+Burst/spike test:
+
+```bash
+strest spike --url http://localhost:3000
+```
+
+Distributed controller run (wait for agents):
+
+```bash
+strest distributed --url http://localhost:3000 --agents 3
+```
+
+Replay from exported metrics:
+
+```bash
+strest --replay --export-jsonl ./metrics.jsonl
+```
+
 ## Usage
 
 Basic example:
@@ -75,50 +109,76 @@ For full CLI options:
 strest --help
 ```
 
+`--help` is intentionally split into `Common Options` (day-to-day flags) and `Advanced Options` (full sharp-edged surface).
+
 ## Logging
 
 Use `--verbose` to enable debug logging (useful for distributed controller/agent handshakes). You can also override the log level via `STREST_LOG` or `RUST_LOG`.
 
-## Presets
+## Preset Subcommands
 
-Smoke (quick validation, low load):
-
-```bash
-strest -u http://localhost:3000 -t 15 --rate 50 --max-tasks 50 --spawn-rate 10 --spawn-interval 100 --no-charts
-```
-
-Steady (sustained load, CI-friendly):
+Quick baseline:
 
 ```bash
-strest -u http://localhost:3000 -t 300 --rate 500 --max-tasks 500 --spawn-rate 20 --spawn-interval 100 --no-tui --summary --no-charts
+strest quick --url http://localhost:3000
 ```
 
-Ramp (gradual increase):
-
-```toml
-# ramp.toml
-url = "http://localhost:3000"
-duration = 300
-
-[load]
-rate = 100
-
-[[load.stages]]
-duration = "60s"
-target = 300
-
-[[load.stages]]
-duration = "120s"
-target = 800
-```
+Soak (long run, no TUI + summary by default):
 
 ```bash
-strest --config ramp.toml --no-tui --summary --no-charts
+strest soak --url http://localhost:3000
 ```
+
+Spike (short, aggressive ramp profile):
+
+```bash
+strest spike --url http://localhost:3000
+```
+
+Distributed controller preset (wait for agents):
+
+```bash
+strest distributed --url http://localhost:3000 --agents 3
+```
+
+You can still use the full advanced CLI surface (`strest --help`) for fine-grained control. Presets are additive and do not remove existing flags.
+
+## Protocols and Load Modes
+
+`strest` now exposes explicit intent flags:
+
+```bash
+strest --protocol http --load-mode arrival -u http://localhost:3000
+```
+
+Common `--load-mode` values map to existing workflows:
+
+- `arrival`: steady arrival-rate style runs (`--rate` or unrestricted open-loop).
+- `step`: stepwise load profile stages (`[load]` config stages).
+- `ramp`: linear ramps between load profile stages.
+- `burst`: short spike/burst behavior (`--burst-delay` + `--burst-rate` or `strest spike`).
+- `soak`: long-running stability profile (`strest soak`).
+- `jitter`: reserved intent for randomized inter-arrival modeling.
+
+Protocol adapter values are versioned in the CLI for discoverability.
+Current executable adapters: `http`, `grpc-unary`, `grpc-streaming`, `websocket`,
+`tcp`, `udp`, `quic`, `mqtt`, `enet`, `kcp`, `raknet`.
+`grpc-unary` currently accepts `arrival` and `ramp` load modes; other executable adapters accept
+all current load modes.
+For gRPC adapters, `grpc://` and `grpcs://` URL schemes are accepted aliases for `http://` and
+`https://`.
+Protocol compatibility is validated through a central adapter registry.
+This registry is currently compile-time (built into the binary), not runtime external plugin loading.
+
+WASM extensions are split by role:
+
+- `--script`: scenario-generation input for strest's scenario engine
+- `--plugin`: lifecycle hook integrations via WASI command ABI
 
 ## Charts
 
-Charts are stored in `~/.strest/charts` (or `%USERPROFILE%\\.strest\\charts` on Windows). Change location via `--charts-path` (`-c`).
+Charts are stored in `~/.strest/charts` (or `%USERPROFILE%\\.strest\\charts` on Windows) under per-run folders:
+`run-<YYYY-MM-DD_HH-MM-SS>_<HOST-PORT>`. Change root location via `--charts-path` (`-c`).
 
 To disable charts use `--no-charts`.
 Latency percentile charts are bucketed at 100ms by default; adjust with `--charts-latency-bucket-ms`.
@@ -252,6 +312,7 @@ Cleanup old tmp logs:
 ```bash
 strest cleanup --tmp-path ~/.strest/tmp --older-than 24h --dry-run
 strest cleanup --tmp-path ~/.strest/tmp --older-than 24h --force
+strest cleanup --tmp-path ~/.strest/tmp --charts-path ~/.strest/charts --with-charts --older-than 24h --force
 ```
 
 Replay snapshots are written to `~/.strest/snapshots` (or `%USERPROFILE%\\.strest\\snapshots` on Windows) by default. Override the destination with `--replay-snapshot-out`.
@@ -266,6 +327,7 @@ Everyday flags:
 - `--max-tasks` (`-m`) limits concurrent request tasks (`--concurrency`, `--connections` alias).
 - `--no-tui` disables the interactive UI and shows a progress bar in the terminal (summary output is printed automatically).
 - `--summary` prints an end-of-run summary.
+- `--show-selections` includes the full selection summary at the end of the run (works with TUI).
 - `--output` (`-o`) writes results to a file (aliases the export formats).
 
 CLI-only flags (not represented in config):
@@ -274,6 +336,7 @@ CLI-only flags (not represented in config):
 - `--verbose` enables debug logging (unless overridden by `STREST_LOG`/`RUST_LOG`).
 - `--charts-path` sets the chart output directory.
 - `--charts-latency-bucket-ms` controls the latency percentile bucket size.
+- `--show-selections` prints the full selection summary at the end of the run (works with TUI).
 - `--replay` replays a run from tmp logs or exported CSV/JSON/JSONL.
 - `--replay-start` and `--replay-end` set the replay window (supports `min`/`max` or durations like `10s`).
 - `--replay-step` sets the seek step for replay.
@@ -407,6 +470,7 @@ Config keys (top-level):
 | `scenario` | object | See scenario keys below |
 | `scenarios` | object | Map of name -> scenario config |
 | `script` | string | `--script` (WASM scenario generator) |
+| `plugin` | array[string] | `--plugin` (repeatable WASM lifecycle plugins) |
 | `sinks` | object | See sinks keys below |
 | `distributed` | object | See distributed keys below |
 

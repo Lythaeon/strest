@@ -5,6 +5,34 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+- Added `strest compare` command to compare two metric snapshots side-by-side with synchronized playback controls.
+- Added `CompareOverlay` UI component to display comparison metrics (RPS, latency percentiles, error counts) alongside primary metrics.
+- Extended UI data model with `compare` field to support overlay rendering in TUI mode.
+- Fixed module visibility for replay `state`, `summary`, and `ui` modules to enable compare mode functionality.
+- Changed chart exports to write into per-run folders named `run-<YYYY-MM-DD_HH-MM-SS>_<HOST-PORT>` under `--charts-path`.
+- Extended `strest cleanup` with `--with-charts` and `--charts-path` to optionally remove chart run directories alongside tmp data.
+- Added `--show-selections` to include full selection summary output even when the TUI is enabled.
+- Stopped `--no-tui` from implicitly enabling summary output; use `--summary`.
+- Added opinionated preset subcommands: `strest quick`, `strest soak`, `strest spike`, and `strest distributed --agents=<N>`.
+- Preset commands now map to sensible defaults while preserving all existing advanced flag workflows.
+- Grouped high-frequency CLI flags under `Common Options` in `--help` for faster discoverability; kept advanced flags available unchanged.
+- Documented “99% paths” explicitly in `docs/USAGE.md` to reduce onboarding friction while preserving the full advanced surface.
+- Fixed replay/export flow metrics ingestion so `response_bytes` and `in_flight_ops` are preserved when reading metrics logs.
+- Updated metrics log writing/parsing to include `response_bytes` and `in_flight_ops` columns, with backward compatibility for older 5-column logs.
+- Extended JSON/JSONL summary exports with flow aggregates: `total_response_bytes`, `avg_response_bytes_per_sec`, `max_in_flight_ops`, and `last_in_flight_ops`.
+- Fixed compare mode timeline/windowing so each snapshot is clamped to its own data range, preventing status/RPS/RPM panels from incorrectly dropping to zero.
+- Improved compare visualization with clearer snapshot identity (legend + high-contrast per-snapshot colors) and line-style chart traces.
+- Updated chart color rules so normal run and replay use per-chart colors, while compare mode uses one consistent color per snapshot across charts.
+- Fixed replay/compare chart rendering to avoid fabricated right-edge tails and exclude trailing partial-second buckets from RPS/data series.
+- Added explicit protocol and load intent flags: `--protocol` and `--load-mode`.
+- Added a protocol adapter registry (`src/protocol.rs` + `src/protocol/`) so new protocol adapters can be added by registering a `ProtocolAdapter` implementation instead of patching validation paths.
+- Refactored module layout to remove `mod.rs` files from `src/` and move module roots to explicit `*.rs` files for flatter navigation.
+- Split protocol adapter system into focused files (`src/protocol/{traits,registry,builtins}.rs`) and added three example adapters under `src/protocol/examples/`.
+- Added protocol runtime support for `grpc-unary`, `grpc-streaming`, `websocket`, `tcp`, and `udp` in addition to `http`.
+- Added baseline runtime support for `quic`, `mqtt`, `enet`, `kcp`, and `raknet`.
+- `quic`/`enet`/`kcp`/`raknet` currently run through one-shot datagram probe semantics; `mqtt` uses a minimal MQTT 3.1.1 `CONNECT` + optional QoS0 `PUBLISH` flow.
+- Mapped preset workflows to explicit load intent (`quick` -> arrival, `soak` -> soak, `spike` -> burst, `distributed` -> ramp).
+
 ## 0.1.8
 
 Released: 2026-02-11

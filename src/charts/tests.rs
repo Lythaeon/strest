@@ -5,9 +5,9 @@ use std::time::Duration;
 use tempfile::tempdir;
 use tokio::io::AsyncWriteExt;
 
-use super::{LatencyPercentilesSeries, plot_streaming_metrics};
+use super::{LatencyPercentilesSeries, is_chart_run_dir_name, plot_streaming_metrics};
 use crate::app::logs;
-use crate::args::{HttpMethod, PositiveU64, PositiveUsize, TesterArgs};
+use crate::args::{HttpMethod, LoadMode, PositiveU64, PositiveUsize, Protocol, TesterArgs};
 use crate::error::{AppError, AppResult};
 use crate::metrics::{MetricRecord, StreamingChartData};
 
@@ -19,6 +19,8 @@ fn sample_metrics() -> Vec<MetricRecord> {
             status_code: 200,
             timed_out: false,
             transport_error: false,
+            response_bytes: 0,
+            in_flight_ops: 0,
         },
         MetricRecord {
             elapsed_ms: 100,
@@ -26,6 +28,8 @@ fn sample_metrics() -> Vec<MetricRecord> {
             status_code: 200,
             timed_out: false,
             transport_error: false,
+            response_bytes: 0,
+            in_flight_ops: 0,
         },
         MetricRecord {
             elapsed_ms: 200,
@@ -33,6 +37,8 @@ fn sample_metrics() -> Vec<MetricRecord> {
             status_code: 200,
             timed_out: false,
             transport_error: false,
+            response_bytes: 0,
+            in_flight_ops: 0,
         },
         MetricRecord {
             elapsed_ms: 400,
@@ -40,6 +46,8 @@ fn sample_metrics() -> Vec<MetricRecord> {
             status_code: 500,
             timed_out: false,
             transport_error: true,
+            response_bytes: 0,
+            in_flight_ops: 0,
         },
     ]
 }
@@ -169,6 +177,8 @@ fn plot_metrics_creates_files() -> AppResult<()> {
             replay_snapshot_out: None,
             replay_snapshot_format: "json".to_owned(),
             method: HttpMethod::Get,
+            protocol: Protocol::Http,
+            load_mode: LoadMode::Arrival,
             url: Some("http://localhost".to_owned()),
             urls_from_file: false,
             rand_regex_url: false,
@@ -233,6 +243,7 @@ fn plot_metrics_creates_files() -> AppResult<()> {
             no_splash: true,
             ui_window_ms: PositiveU64::try_from(10_000)?,
             summary: false,
+            show_selections: false,
             tls_min: None,
             tls_max: None,
             cacert: None,
@@ -271,6 +282,7 @@ fn plot_metrics_creates_files() -> AppResult<()> {
             alloc_profiler_dump_path: "./alloc-prof".to_owned(),
             scenario: None,
             script: None,
+            plugin: vec![],
             install_service: false,
             uninstall_service: false,
             service_name: None,
@@ -282,9 +294,10 @@ fn plot_metrics_creates_files() -> AppResult<()> {
 
         let (_dir, data) = build_streaming_data(&metrics, args.expected_status_code).await?;
 
-        plot_streaming_metrics(&data, &args)
+        let output_dir = plot_streaming_metrics(&data, &args)
             .await
-            .map_err(|err| AppError::metrics(format!("plot_streaming_metrics failed: {}", err)))?;
+            .map_err(|err| AppError::metrics(format!("plot_streaming_metrics failed: {}", err)))?
+            .ok_or_else(|| AppError::metrics("Expected chart output directory"))?;
 
         let expected = vec![
             "average_response_time.png",
@@ -305,7 +318,7 @@ fn plot_metrics_creates_files() -> AppResult<()> {
         ];
 
         for file in expected {
-            let path = dir.path().join(file);
+            let path = std::path::Path::new(&output_dir).join(file);
             std::fs::metadata(path).map_err(|err| {
                 AppError::metrics(format!("Missing chart output: {} ({})", file, err))
             })?;
@@ -313,4 +326,22 @@ fn plot_metrics_creates_files() -> AppResult<()> {
 
         Ok(())
     })
+}
+
+#[test]
+fn chart_run_dir_name_validation() -> AppResult<()> {
+    if !is_chart_run_dir_name("run-2026-02-12_15-30-07_example.com-443") {
+        return Err(AppError::metrics("Expected valid chart run directory name"));
+    }
+    if is_chart_run_dir_name("api.example.com") {
+        return Err(AppError::metrics(
+            "Unexpected valid name without run prefix",
+        ));
+    }
+    if is_chart_run_dir_name("run-abc-api.example.com") {
+        return Err(AppError::metrics(
+            "Unexpected valid name with non-numeric timestamp",
+        ));
+    }
+    Ok(())
 }

@@ -98,6 +98,8 @@ pub struct MetricRecord {
     pub status_code: u16,
     pub timed_out: bool,
     pub transport_error: bool,
+    pub response_bytes: u64,
+    pub in_flight_ops: u64,
 }
 
 #[derive(Debug, Clone)]

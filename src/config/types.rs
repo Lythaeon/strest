@@ -99,6 +99,7 @@ pub struct ConfigFile {
     pub scenario: Option<ScenarioConfig>,
     pub scenarios: Option<BTreeMap<String, ScenarioConfig>>,
     pub script: Option<String>,
+    pub plugin: Option<Vec<String>>,
     pub sinks: Option<SinksConfig>,
     pub distributed: Option<DistributedConfig>,
 }

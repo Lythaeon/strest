@@ -6,16 +6,18 @@ mod distributed;
 mod entry;
 mod error;
 mod http;
-mod logger;
 mod metrics;
-#[cfg(feature = "wasm")]
-mod probestack;
+mod protocol;
 mod script;
 mod service;
 mod shutdown;
-mod shutdown_handlers;
 mod sinks;
+mod system;
 mod ui;
+#[cfg(feature = "wasm")]
+mod wasm_plugins;
+#[cfg(feature = "wasm")]
+mod wasm_runtime;
 
 #[cfg(feature = "alloc-profiler")]
 #[global_allocator]

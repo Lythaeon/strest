@@ -1,5 +1,5 @@
 use super::*;
-use crate::args::{HttpMethod, PositiveU64, PositiveUsize, TesterArgs};
+use crate::args::{HttpMethod, LoadMode, PositiveU64, PositiveUsize, Protocol, TesterArgs};
 use crate::error::{AppError, AppResult};
 use crate::ui::model::UiData;
 use std::future::Future;
@@ -30,6 +30,8 @@ fn base_args() -> AppResult<TesterArgs> {
         replay_snapshot_out: None,
         replay_snapshot_format: "json".to_owned(),
         method: HttpMethod::Get,
+        protocol: Protocol::Http,
+        load_mode: LoadMode::Arrival,
         url: Some("http://localhost".to_owned()),
         urls_from_file: false,
         rand_regex_url: false,
@@ -94,6 +96,7 @@ fn base_args() -> AppResult<TesterArgs> {
         no_splash: true,
         ui_window_ms: positive_u64(10_000)?,
         summary: false,
+        show_selections: false,
         tls_min: None,
         tls_max: None,
         cacert: None,
@@ -132,6 +135,7 @@ fn base_args() -> AppResult<TesterArgs> {
         alloc_profiler_dump_path: "./alloc-prof".to_owned(),
         scenario: None,
         script: None,
+        plugin: vec![],
         install_service: false,
         uninstall_service: false,
         service_name: None,
@@ -222,6 +226,37 @@ fn read_metrics_log_respects_range() -> AppResult<()> {
                 result.summary.total_requests
             )))
         }
+    })
+}
+
+#[test]
+fn read_metrics_log_parses_flow_fields() -> AppResult<()> {
+    run_async_test(async {
+        let dir = tempfile::tempdir()
+            .map_err(|err| AppError::metrics(format!("tempdir failed: {}", err)))?;
+        let log_path = dir.path().join("metrics.log");
+        let mut file = tokio::fs::File::create(&log_path)
+            .await
+            .map_err(|err| AppError::metrics(format!("Failed to create log: {}", err)))?;
+        file.write_all(b"500,5,200,0,0,1024,7\n")
+            .await
+            .map_err(|err| AppError::metrics(format!("Failed to write log: {}", err)))?;
+        file.flush()
+            .await
+            .map_err(|err| AppError::metrics(format!("Failed to flush log: {}", err)))?;
+
+        let result = read_metrics_log(&log_path, 200, &None, 10, None).await?;
+        let record = result
+            .records
+            .first()
+            .ok_or_else(|| AppError::validation("Expected a parsed record"))?;
+        if record.response_bytes != 1024 || record.in_flight_ops != 7 {
+            return Err(AppError::validation(format!(
+                "Unexpected flow fields: response_bytes={}, in_flight_ops={}",
+                record.response_bytes, record.in_flight_ops
+            )));
+        }
+        Ok(())
     })
 }
 

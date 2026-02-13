@@ -116,7 +116,7 @@ pub(crate) async fn run_replay(args: &TesterArgs) -> AppResult<()> {
         }
     });
 
-    let (shutdown_tx, _) = crate::shutdown_handlers::shutdown_channel();
+    let (shutdown_tx, _) = crate::system::shutdown_handlers::shutdown_channel();
     let initial_ui = UiData {
         target_duration: Duration::from_millis(end_ms.saturating_sub(start_ms)),
         ui_window_ms: args.ui_window_ms.get(),
@@ -124,7 +124,7 @@ pub(crate) async fn run_replay(args: &TesterArgs) -> AppResult<()> {
         ..UiData::default()
     };
     let (ui_tx, _) = watch::channel(initial_ui);
-    let render_ui_handle = setup_render_ui(args, &shutdown_tx, &ui_tx);
+    let render_ui_handle = setup_render_ui(&shutdown_tx, &ui_tx);
 
     let mut state = ReplayWindow {
         start_ms,
@@ -150,7 +150,11 @@ pub(crate) async fn run_replay(args: &TesterArgs) -> AppResult<()> {
                 && let Event::Key(key) = event::read()?
                 && key.kind == KeyEventKind::Press
             {
-                if matches!(key.code, KeyCode::Char('q') | KeyCode::Esc) {
+                // Handle Ctrl+C and q/Esc for quitting
+                if matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
+                    || (key.code == KeyCode::Char('c')
+                        && key.modifiers.contains(event::KeyModifiers::CONTROL))
+                {
                     break;
                 }
                 if matches!(key.code, KeyCode::Char(' ')) {

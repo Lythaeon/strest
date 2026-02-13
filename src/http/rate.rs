@@ -84,7 +84,7 @@ impl RateController {
     }
 }
 
-pub(super) fn build_rate_limiter(
+pub(crate) fn build_rate_limiter(
     rate_limit: Option<u64>,
     load_profile: Option<&LoadProfile>,
     burst_delay: Option<Duration>,
