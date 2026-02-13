@@ -4,9 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-if ! command -v rg >/dev/null 2>&1; then
-  echo "error: ripgrep (rg) is required to run architecture checks."
-  exit 1
+HAS_RG=0
+if command -v rg >/dev/null 2>&1; then
+  HAS_RG=1
+else
+  echo "warn: ripgrep (rg) not found; using find/grep fallback (slower)."
 fi
 
 NON_TEST_GLOBS=(
@@ -20,20 +22,30 @@ NON_TEST_GLOBS=(
 FAILED=0
 
 list_non_test_rust_files() {
-  rg --files src "${NON_TEST_GLOBS[@]}"
+  if [[ "$HAS_RG" -eq 1 ]]; then
+    rg --files src "${NON_TEST_GLOBS[@]}"
+  else
+    find src -type f -name '*.rs' \
+      ! -path '*/tests/*' \
+      ! -name 'tests.rs' \
+      ! -name 'test_*.rs' \
+      ! -name '*_test.rs' \
+      | sort
+  fi
 }
 
 count_matching_files() {
   local needle="$1"
-  local matches
+  local file_path
+  local count=0
 
-  matches="$(rg -l --fixed-strings "$needle" src "${NON_TEST_GLOBS[@]}" || true)"
-  if [[ -z "$matches" ]]; then
-    echo "0"
-    return 0
-  fi
+  while IFS= read -r file_path; do
+    if grep -Fq -- "$needle" "$file_path"; then
+      count=$((count + 1))
+    fi
+  done < <(list_non_test_rust_files)
 
-  printf '%s\n' "$matches" | wc -l | tr -d '[:space:]'
+  echo "$count"
 }
 
 check_forbidden_crates_in_layer() {
@@ -50,7 +62,11 @@ check_forbidden_crates_in_layer() {
   for crate_name in "${crates[@]}"; do
     local regex="\\b${crate_name}::"
     local matches
-    matches="$(rg -n --glob '*.rs' "$regex" "$layer_dir" || true)"
+    if [[ "$HAS_RG" -eq 1 ]]; then
+      matches="$(rg -n --glob '*.rs' "$regex" "$layer_dir" || true)"
+    else
+      matches="$(grep -R -n -E --include='*.rs' "$regex" "$layer_dir" || true)"
+    fi
     if [[ -n "$matches" ]]; then
       echo "error: forbidden '${crate_name}' usage detected in ${layer_dir}"
       printf '%s\n' "$matches"
@@ -75,11 +91,7 @@ print_top_module_edges() {
       target_module="${ref#crate::}"
       [[ "$target_module" == "$source_module" ]] && continue
       printf '%s -> %s\n' "$source_module" "$target_module" >> "$edge_tmp"
-    done < <(
-      rg --no-filename '^use ' "$file_path" \
-        | rg -o 'crate::[A-Za-z_][A-Za-z0-9_]*' \
-        | sort -u
-    )
+    done < <(find_use_refs "$file_path")
   done < <(list_non_test_rust_files)
 
   if [[ ! -s "$edge_tmp" ]]; then
@@ -94,6 +106,21 @@ print_top_module_edges() {
     | awk -F'\t' '{printf "  %s (%s)\n", $2, $1}'
 
   rm -f "$edge_tmp"
+}
+
+find_use_refs() {
+  local file_path="$1"
+  if [[ "$HAS_RG" -eq 1 ]]; then
+    rg --no-filename '^use ' "$file_path" \
+      | rg -o 'crate::[A-Za-z_][A-Za-z0-9_]*' \
+      | sort -u \
+      || true
+  else
+    grep -E '^use ' "$file_path" \
+      | grep -oE 'crate::[A-Za-z_][A-Za-z0-9_]*' \
+      | sort -u \
+      || true
+  fi
 }
 
 echo "Architecture boundary checks"
