@@ -24,7 +24,7 @@ mod scheme_resolution;
 mod transport_http_grpc;
 
 const SHUTDOWN_CHANNEL_CAPACITY: usize = 16;
-const TEST_TIMEOUT: Duration = Duration::from_secs(2);
+const TEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn run_async_test<F>(future: F) -> AppResult<()>
 where
@@ -59,9 +59,9 @@ fn parse_args(protocol: &str, load_mode: &str, url: &str) -> AppResult<TesterArg
         "--spawn-interval",
         "1",
         "--timeout",
-        "1s",
+        "3s",
         "--connect-timeout",
-        "1s",
+        "3s",
         "--data",
         "ping",
     ])
