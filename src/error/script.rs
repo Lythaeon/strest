@@ -23,6 +23,9 @@ pub enum ScriptError {
     },
     #[error("WASM scripting requires the 'wasm' feature.")]
     WasmFeatureDisabled,
+    #[cfg(feature = "wasm")]
+    #[error("WASM plugin error: {message}")]
+    WasmPlugin { message: String },
     #[cfg(test)]
     #[error("Test expectation failed: {message}")]
     TestExpectation { message: &'static str },

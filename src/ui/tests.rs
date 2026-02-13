@@ -52,6 +52,7 @@ fn ui_render_does_not_panic() -> AppResult<()> {
         rps: 2,
         rpm: 120,
         replay: None,
+        compare: None,
     };
 
     Ui::render(&mut terminal, &data);
@@ -94,6 +95,7 @@ fn ui_render_data_from_ui_data() -> AppResult<()> {
         rps: 4,
         rpm: 240,
         replay: None,
+        compare: None,
     };
 
     let render_data = UiRenderData::from(&ui_data);

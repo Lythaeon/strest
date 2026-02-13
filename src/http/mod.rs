@@ -7,6 +7,7 @@ pub(crate) mod workload;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use rate::build_rate_limiter;
 pub use sender::setup_request_sender;
 
 #[cfg(test)]

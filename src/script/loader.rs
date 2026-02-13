@@ -6,7 +6,7 @@ use crate::error::{AppError, ScriptError};
 
 #[cfg(feature = "wasm")]
 pub(crate) fn load_scenario_from_wasm(script_path: &str, args: &TesterArgs) -> AppResult<Scenario> {
-    super::wasm::load_scenario_from_wasm(script_path, args)
+    crate::wasm_runtime::load_scenario_from_wasm(script_path, args)
 }
 
 #[cfg(not(feature = "wasm"))]

@@ -51,6 +51,55 @@ pub struct UiData {
     pub rps: u64,
     pub rpm: u64,
     pub replay: Option<ReplayUi>,
+    pub compare: Option<CompareOverlay>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompareOverlay {
+    pub label: String,
+    pub current_requests: u64,
+    pub successful_requests: u64,
+    pub timeout_requests: u64,
+    pub transport_errors: u64,
+    pub non_expected_status: u64,
+    pub in_flight_ops: u64,
+    pub latencies: Vec<(u64, u64)>,
+    pub rps_series: Vec<(u64, u64)>,
+    pub data_usage: Option<DataUsage>,
+    pub p50: u64,
+    pub p90: u64,
+    pub p99: u64,
+    pub p50_ok: u64,
+    pub p90_ok: u64,
+    pub p99_ok: u64,
+    pub rps: u64,
+    pub rpm: u64,
+}
+
+impl CompareOverlay {
+    #[must_use]
+    pub fn from_ui(label: String, data: &UiData) -> Self {
+        Self {
+            label,
+            current_requests: data.current_requests,
+            successful_requests: data.successful_requests,
+            timeout_requests: data.timeout_requests,
+            transport_errors: data.transport_errors,
+            non_expected_status: data.non_expected_status,
+            in_flight_ops: data.in_flight_ops,
+            latencies: data.latencies.clone(),
+            rps_series: data.rps_series.clone(),
+            data_usage: data.data_usage.clone(),
+            p50: data.p50,
+            p90: data.p90,
+            p99: data.p99,
+            p50_ok: data.p50_ok,
+            p90_ok: data.p90_ok,
+            p99_ok: data.p99_ok,
+            rps: data.rps,
+            rpm: data.rpm,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -78,6 +127,7 @@ pub struct UiRenderData {
     pub rps: u64,
     pub rpm: u64,
     pub replay: Option<ReplayUi>,
+    pub compare: Option<CompareOverlay>,
 }
 
 impl Default for UiData {
@@ -106,6 +156,7 @@ impl Default for UiData {
             rps: 0,
             rpm: 0,
             replay: None,
+            compare: None,
         }
     }
 }
@@ -136,6 +187,7 @@ impl From<&UiData> for UiRenderData {
             rps: data.rps,
             rpm: data.rpm,
             replay: data.replay.clone(),
+            compare: data.compare.clone(),
         }
     }
 }

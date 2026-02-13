@@ -1,6 +1,6 @@
 use super::workload::{RequestLimiter, render_template};
 use super::*;
-use crate::args::{HttpMethod, PositiveU64, PositiveUsize, TesterArgs};
+use crate::args::{HttpMethod, LoadMode, PositiveU64, PositiveUsize, Protocol, TesterArgs};
 use crate::error::{AppError, AppResult};
 use crate::metrics::Metrics;
 use std::future::Future;
@@ -30,6 +30,8 @@ fn base_args(url: String) -> AppResult<TesterArgs> {
         replay_snapshot_out: None,
         replay_snapshot_format: "json".to_owned(),
         method: HttpMethod::Get,
+        protocol: Protocol::Http,
+        load_mode: LoadMode::Arrival,
         url: Some(url),
         urls_from_file: false,
         rand_regex_url: false,
@@ -94,6 +96,7 @@ fn base_args(url: String) -> AppResult<TesterArgs> {
         no_splash: true,
         ui_window_ms: positive_u64(10_000)?,
         summary: false,
+        show_selections: false,
         tls_min: None,
         tls_max: None,
         cacert: None,
@@ -132,6 +135,7 @@ fn base_args(url: String) -> AppResult<TesterArgs> {
         alloc_profiler_dump_path: "./alloc-prof".to_owned(),
         scenario: None,
         script: None,
+        plugin: vec![],
         install_service: false,
         uninstall_service: false,
         service_name: None,

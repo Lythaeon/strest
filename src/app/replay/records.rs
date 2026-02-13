@@ -7,6 +7,23 @@ use crate::args::TesterArgs;
 use crate::error::{AppError, AppResult, MetricsError, ValidationError};
 use crate::metrics::MetricRecord;
 
+pub(crate) async fn read_records_from_path(path: &Path) -> AppResult<Vec<MetricRecord>> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    match extension.to_ascii_lowercase().as_str() {
+        "csv" => read_csv_records(path).await,
+        "json" => read_json_records(path).await,
+        "jsonl" | "ndjson" => read_jsonl_records(path).await,
+        _ => Err(AppError::validation(
+            ValidationError::InvalidSnapshotFormat {
+                value: path.to_string_lossy().into_owned(),
+            },
+        )),
+    }
+}
+
 pub(super) async fn load_replay_records(args: &TesterArgs) -> AppResult<Vec<MetricRecord>> {
     let export_sources = [
         args.export_csv.as_ref(),
@@ -123,12 +140,22 @@ pub(super) async fn read_csv_records(path: &Path) -> AppResult<Vec<MetricRecord>
         };
         let timed_out = parts.next().map(parse_bool).unwrap_or(false);
         let transport_error = parts.next().map(parse_bool).unwrap_or(false);
+        let response_bytes = parts
+            .next()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
+        let in_flight_ops = parts
+            .next()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
         records.push(MetricRecord {
             elapsed_ms,
             latency_ms,
             status_code,
             timed_out,
             transport_error,
+            response_bytes,
+            in_flight_ops,
         });
     }
 
@@ -157,6 +184,8 @@ pub(super) async fn read_json_records(path: &Path) -> AppResult<Vec<MetricRecord
             status_code: record.status_code,
             timed_out: record.timed_out,
             transport_error: record.transport_error,
+            response_bytes: record.response_bytes.unwrap_or(0),
+            in_flight_ops: record.in_flight_ops.unwrap_or(0),
         })
         .collect())
 }
@@ -213,6 +242,8 @@ pub(super) async fn read_jsonl_records(path: &Path) -> AppResult<Vec<MetricRecor
             status_code,
             timed_out: parsed.timed_out.unwrap_or(false),
             transport_error: parsed.transport_error.unwrap_or(false),
+            response_bytes: parsed.response_bytes.unwrap_or(0),
+            in_flight_ops: parsed.in_flight_ops.unwrap_or(0),
         });
     }
 
@@ -236,6 +267,8 @@ struct ExportRecord {
     status_code: u16,
     timed_out: bool,
     transport_error: bool,
+    response_bytes: Option<u64>,
+    in_flight_ops: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -247,4 +280,6 @@ struct ExportJsonlLine {
     status_code: Option<u16>,
     timed_out: Option<bool>,
     transport_error: Option<bool>,
+    response_bytes: Option<u64>,
+    in_flight_ops: Option<u64>,
 }

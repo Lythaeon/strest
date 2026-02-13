@@ -10,6 +10,7 @@ pub mod config;
 pub mod error;
 pub mod http;
 pub mod metrics;
+pub mod protocol;
 mod shutdown;
 pub mod sinks;
 pub mod ui;

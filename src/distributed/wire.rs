@@ -10,6 +10,8 @@ use super::utils::duration_to_ms;
 pub(super) fn build_wire_args(args: &TesterArgs) -> WireArgs {
     WireArgs {
         method: args.method,
+        protocol: args.protocol,
+        load_mode: args.load_mode,
         url: args.url.clone(),
         headers: args.headers.clone(),
         data: args.data.clone(),
@@ -52,6 +54,8 @@ pub(super) fn build_wire_args(args: &TesterArgs) -> WireArgs {
 
 pub(super) fn apply_wire_args(args: &mut TesterArgs, wire: WireArgs) -> AppResult<()> {
     args.method = wire.method;
+    args.protocol = wire.protocol;
+    args.load_mode = wire.load_mode;
     args.url = wire.url;
     args.headers = wire.headers;
     args.data = wire.data;

@@ -8,7 +8,7 @@ use crate::args::{
     PositiveU64, PositiveUsize, Scenario, ScenarioStep, TesterArgs, TlsVersion, parse_header,
     parsers::parse_duration_arg,
 };
-use crate::config::apply::parse_scenario;
+use crate::config::apply::scenario::parse_scenario;
 use crate::config::types::{ConfigFile, LoadConfig, ScenarioConfig};
 use crate::config::{apply_config, parse_duration_value};
 use crate::error::{AppError, AppResult, ValidationError};

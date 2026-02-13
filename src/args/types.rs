@@ -98,6 +98,66 @@ impl std::str::FromStr for ControllerMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Protocol {
+    Http,
+    GrpcUnary,
+    GrpcStreaming,
+    Websocket,
+    Tcp,
+    Udp,
+    Quic,
+    Mqtt,
+    Enet,
+    Kcp,
+    Raknet,
+}
+
+impl Protocol {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Protocol::Http => "http",
+            Protocol::GrpcUnary => "grpc-unary",
+            Protocol::GrpcStreaming => "grpc-streaming",
+            Protocol::Websocket => "websocket",
+            Protocol::Tcp => "tcp",
+            Protocol::Udp => "udp",
+            Protocol::Quic => "quic",
+            Protocol::Mqtt => "mqtt",
+            Protocol::Enet => "enet",
+            Protocol::Kcp => "kcp",
+            Protocol::Raknet => "raknet",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LoadMode {
+    Arrival,
+    Step,
+    Ramp,
+    Jitter,
+    Burst,
+    Soak,
+}
+
+impl LoadMode {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            LoadMode::Arrival => "arrival",
+            LoadMode::Step => "step",
+            LoadMode::Ramp => "ramp",
+            LoadMode::Jitter => "jitter",
+            LoadMode::Burst => "burst",
+            LoadMode::Soak => "soak",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TlsVersion {
     V1_0,

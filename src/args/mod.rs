@@ -7,10 +7,11 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use cli::{CleanupArgs, Command, TesterArgs};
+pub use cli::{CleanupArgs, Command, CompareArgs, TesterArgs};
 pub use types::{
-    ConnectToMapping, ControllerMode, HttpMethod, HttpVersion, LoadProfile, LoadStage,
-    OutputFormat, PositiveU64, PositiveUsize, Scenario, ScenarioStep, TimeUnit, TlsVersion,
+    ConnectToMapping, ControllerMode, HttpMethod, HttpVersion, LoadMode, LoadProfile, LoadStage,
+    OutputFormat, PositiveU64, PositiveUsize, Protocol, Scenario, ScenarioStep, TimeUnit,
+    TlsVersion,
 };
 
 pub(crate) use defaults::DEFAULT_USER_AGENT;
