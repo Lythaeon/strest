@@ -63,4 +63,5 @@ Full gallery: `docs/USAGE.md#charts`.
 
 If you'd like to contribute, start with `CONTRIBUTING.md` for the workflow and checks.
 
-This project is licensed under the Apache License 2.0 - see the `LICENSE` file for details.
+This project is dual-licensed under MIT OR Apache-2.0.
+See `LICENSE-MIT` and `LICENSE-APACHE` for details.
