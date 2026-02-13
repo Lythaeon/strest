@@ -1,10 +1,8 @@
 use std::future::Future;
 use std::time::Duration;
 
-use bytes::Bytes;
 use clap::Parser;
 use futures_util::{SinkExt, StreamExt};
-use http::Response;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::mpsc;
@@ -356,81 +354,6 @@ async fn spawn_websocket_mock_server(
                 .await
                 .map_err(|_err| AppError::validation("Websocket send timed out"))?
                 .map_err(|err| AppError::validation(format!("Websocket send failed: {}", err)))?;
-        }
-        Ok(())
-    });
-    Ok((addr, task))
-}
-
-fn grpc_frame(payload: &[u8]) -> Vec<u8> {
-    let payload_len = u32::try_from(payload.len()).unwrap_or(u32::MAX);
-    let mut framed = Vec::with_capacity(payload.len().saturating_add(5));
-    framed.push(0);
-    framed.extend_from_slice(&payload_len.to_be_bytes());
-    framed.extend_from_slice(payload);
-    framed
-}
-
-async fn spawn_grpc_mock_server(
-    expected_connections: usize,
-) -> AppResult<(std::net::SocketAddr, JoinHandle<AppResult<()>>)> {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .map_err(|err| AppError::validation(format!("Failed to bind gRPC server: {}", err)))?;
-    let addr = listener
-        .local_addr()
-        .map_err(|err| AppError::validation(format!("Failed to read gRPC addr: {}", err)))?;
-
-    let task = tokio::spawn(async move {
-        for _ in 0..expected_connections {
-            let (stream, _) = timeout(TEST_TIMEOUT, listener.accept())
-                .await
-                .map_err(|_err| AppError::validation("gRPC accept timed out"))?
-                .map_err(|err| AppError::validation(format!("gRPC accept failed: {}", err)))?;
-            let mut conn = h2::server::handshake(stream).await.map_err(|err| {
-                AppError::validation(format!("gRPC h2 handshake failed: {}", err))
-            })?;
-
-            let req = timeout(TEST_TIMEOUT, conn.accept())
-                .await
-                .map_err(|_err| AppError::validation("gRPC request timed out"))?
-                .ok_or_else(|| AppError::validation("gRPC stream closed unexpectedly"))?
-                .map_err(|err| {
-                    AppError::validation(format!("gRPC accept stream failed: {}", err))
-                })?;
-
-            let (request, mut respond) = req;
-            let mut body = request.into_body();
-            loop {
-                let next = timeout(TEST_TIMEOUT, body.data())
-                    .await
-                    .map_err(|_err| AppError::validation("gRPC body read timed out"))?;
-                match next {
-                    Some(Ok(_chunk)) => continue,
-                    Some(Err(err)) => {
-                        return Err(AppError::validation(format!(
-                            "gRPC body read failed: {}",
-                            err
-                        )));
-                    }
-                    None => break,
-                }
-            }
-            let response = Response::builder()
-                .status(200)
-                .header("content-type", "application/grpc")
-                .header("grpc-status", "0")
-                .body(())
-                .map_err(|err| {
-                    AppError::validation(format!("gRPC response build failed: {}", err))
-                })?;
-
-            let mut send = respond.send_response(response, false).map_err(|err| {
-                AppError::validation(format!("gRPC send response failed: {}", err))
-            })?;
-            let data = grpc_frame(b"ok");
-            send.send_data(Bytes::from(data), true)
-                .map_err(|err| AppError::validation(format!("gRPC send data failed: {}", err)))?;
         }
         Ok(())
     });
