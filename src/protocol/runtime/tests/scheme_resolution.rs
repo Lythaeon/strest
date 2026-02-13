@@ -104,3 +104,33 @@ fn planned_protocols_reject_unsupported_url_schemes() -> AppResult<()> {
         Ok(())
     })
 }
+
+#[test]
+fn grpc_protocols_accept_grpc_scheme_aliases_in_endpoint_resolution() -> AppResult<()> {
+    run_async_test(async {
+        let cases = [
+            ("grpc-unary", "arrival", "grpc://localhost/test.Service/Method", 80_u16),
+            (
+                "grpc-streaming",
+                "arrival",
+                "grpcs://localhost/test.Service/Method",
+                443_u16,
+            ),
+        ];
+
+        for (protocol, load_mode, url, expected_port) in cases {
+            let args = parse_args(protocol, load_mode, url)?;
+            let endpoint = resolve_endpoint(&args, &[("http", 80), ("https", 443)])?;
+            if endpoint.port() != expected_port {
+                return Err(AppError::validation(format!(
+                    "Expected default port {} for {}, got {}",
+                    expected_port,
+                    protocol,
+                    endpoint.port()
+                )));
+            }
+        }
+
+        Ok(())
+    })
+}

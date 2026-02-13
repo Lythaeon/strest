@@ -165,6 +165,8 @@ Current executable adapters: `http`, `grpc-unary`, `grpc-streaming`, `websocket`
 `tcp`, `udp`, `quic`, `mqtt`, `enet`, `kcp`, `raknet`.
 `grpc-unary` currently accepts `arrival` and `ramp` load modes; other executable adapters accept
 all current load modes.
+For gRPC adapters, `grpc://` and `grpcs://` URL schemes are accepted aliases for `http://` and
+`https://`.
 Protocol compatibility is validated through a central adapter registry.
 This registry is currently compile-time (built into the binary), not runtime external plugin loading.
 

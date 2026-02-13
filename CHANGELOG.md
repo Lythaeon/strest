@@ -25,9 +25,9 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 - Updated chart color rules so normal run and replay use per-chart colors, while compare mode uses one consistent color per snapshot across charts.
 - Fixed replay/compare chart rendering to avoid fabricated right-edge tails and exclude trailing partial-second buckets from RPS/data series.
 - Added explicit protocol and load intent flags: `--protocol` and `--load-mode`.
-- Added a protocol plugin registry (`src/protocol.rs` + `src/protocol/`) so new protocol adapters can be added by registering a `ProtocolPlugin` implementation instead of patching validation paths.
+- Added a protocol adapter registry (`src/protocol.rs` + `src/protocol/`) so new protocol adapters can be added by registering a `ProtocolAdapter` implementation instead of patching validation paths.
 - Refactored module layout to remove `mod.rs` files from `src/` and move module roots to explicit `*.rs` files for flatter navigation.
-- Split protocol plugin system into focused files (`src/protocol/{traits,registry,builtins}.rs`) and added three example plugins under `src/protocol/examples/`.
+- Split protocol adapter system into focused files (`src/protocol/{traits,registry,builtins}.rs`) and added three example adapters under `src/protocol/examples/`.
 - Added protocol runtime support for `grpc-unary`, `grpc-streaming`, `websocket`, `tcp`, and `udp` in addition to `http`.
 - Added baseline runtime support for `quic`, `mqtt`, `enet`, `kcp`, and `raknet`.
 - `quic`/`enet`/`kcp`/`raknet` currently run through one-shot datagram probe semantics; `mqtt` uses a minimal MQTT 3.1.1 `CONNECT` + optional QoS0 `PUBLISH` flow.

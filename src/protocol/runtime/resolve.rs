@@ -2,6 +2,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 
 use url::Url;
 
+use crate::args::Protocol;
 use crate::args::TesterArgs;
 use crate::error::{AppError, AppResult, HttpError, ValidationError};
 
@@ -20,7 +21,12 @@ pub(super) fn resolve_endpoint(
         })
     })?;
 
-    let scheme = url.scheme();
+    let raw_scheme = url.scheme();
+    let scheme = match (args.protocol, raw_scheme) {
+        (Protocol::GrpcUnary | Protocol::GrpcStreaming, "grpc") => "http",
+        (Protocol::GrpcUnary | Protocol::GrpcStreaming, "grpcs") => "https",
+        _ => raw_scheme,
+    };
     let default_port = allowed_schemes
         .iter()
         .find_map(|(allowed, default_port)| {
@@ -33,7 +39,7 @@ pub(super) fn resolve_endpoint(
         .ok_or_else(|| {
             AppError::validation(ValidationError::UnsupportedProtocolUrlScheme {
                 protocol: args.protocol.as_str().to_owned(),
-                scheme: scheme.to_owned(),
+                scheme: raw_scheme.to_owned(),
             })
         })?;
 

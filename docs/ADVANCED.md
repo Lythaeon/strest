@@ -48,6 +48,7 @@ Notes on baseline transport behavior:
 
 - `quic`, `enet`, `kcp`, and `raknet` currently use one-shot datagram probing semantics (UDP-style send + optional recv).
 - `mqtt` uses a minimal MQTT 3.1.1 `CONNECT` + optional QoS0 `PUBLISH` flow (topic derived from URL path).
+- gRPC adapters accept both `grpc://`/`grpcs://` and `http://`/`https://` URL schemes.
 
 ## Load-Mode Intent
 
