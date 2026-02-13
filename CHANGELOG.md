@@ -5,6 +5,10 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+## 0.1.9
+
+Released: 2026-02-13
+
 - Added `strest compare` command to compare two metric snapshots side-by-side with synchronized playback controls.
 - Added `CompareOverlay` UI component to display comparison metrics (RPS, latency percentiles, error counts) alongside primary metrics.
 - Extended UI data model with `compare` field to support overlay rendering in TUI mode.
@@ -32,6 +36,10 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 - Added baseline runtime support for `quic`, `mqtt`, `enet`, `kcp`, and `raknet`.
 - `quic`/`enet`/`kcp`/`raknet` currently run through one-shot datagram probe semantics; `mqtt` uses a minimal MQTT 3.1.1 `CONNECT` + optional QoS0 `PUBLISH` flow.
 - Mapped preset workflows to explicit load intent (`quick` -> arrival, `soak` -> soak, `spike` -> burst, `distributed` -> ramp).
+- Added Phase 0 architecture guardrails and CI enforcement via `scripts/check_architecture.sh` and `cargo make architecture-check`.
+- Reorganized documentation into typed folders (`docs/guides`, `docs/assets`, `docs/architecture/{ard,adr,srs,rfc,patterns}`) and aligned references.
+- Removed flaky `protocol::runtime::tests::transport_http_grpc::grpc_protocols_emit_success_metric` pending deterministic replacement coverage.
+- Made architecture checks fall back to `find`/`grep` when `rg` is unavailable in CI runners.
 
 ## 0.1.8
 
