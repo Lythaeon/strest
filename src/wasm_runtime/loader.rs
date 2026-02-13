@@ -1,7 +1,7 @@
 use wasmparser::{ExternalKind, ValType};
 
 use crate::args::{Scenario, TesterArgs};
-use crate::config::apply::scenario::parse_scenario;
+use crate::config::apply::scenario::{ScenarioDefaults, parse_scenario};
 use crate::config::types::ScenarioConfig;
 use crate::error::{AppError, AppResult, ScriptError, WasmError};
 
@@ -92,7 +92,13 @@ pub(crate) fn load_scenario_from_wasm(script_path: &str, args: &TesterArgs) -> A
         .map_err(|err| AppError::script(WasmError::ScenarioJsonInvalid { source: err }))?;
     validate_wasm_scenario(&scenario_config)?;
 
-    parse_scenario(&scenario_config, args).map_err(|err| {
+    let defaults = ScenarioDefaults::new(
+        args.url.clone(),
+        args.method,
+        args.data.clone(),
+        args.headers.clone(),
+    );
+    parse_scenario(&scenario_config, &defaults).map_err(|err| {
         if let AppError::Config(source) = err {
             AppError::script(ScriptError::ScenarioConfig { source })
         } else {

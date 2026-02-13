@@ -8,7 +8,7 @@ use crate::args::{
     PositiveU64, PositiveUsize, Scenario, ScenarioStep, TesterArgs, TlsVersion, parse_header,
     parsers::parse_duration_arg,
 };
-use crate::config::apply::scenario::parse_scenario;
+use crate::config::apply::scenario::{ScenarioDefaults, parse_scenario};
 use crate::config::types::{ConfigFile, LoadConfig, ScenarioConfig};
 use crate::config::{apply_config, parse_duration_value};
 use crate::error::{AppError, AppResult, ValidationError};
@@ -78,7 +78,7 @@ pub fn render_template_input(input: &str, vars: &BTreeMap<String, String>) -> St
 /// Returns an error when parsing or validation fails.
 pub fn apply_config_from_toml(input: &str) -> AppResult<()> {
     let config: ConfigFile = toml::from_str(input)?;
-    apply_config_to_defaults(&config)
+    apply_config_to_defaults(config)
 }
 
 /// Parses JSON config and applies it to defaults.
@@ -88,7 +88,7 @@ pub fn apply_config_from_toml(input: &str) -> AppResult<()> {
 /// Returns an error when parsing or validation fails.
 pub fn apply_config_from_json(input: &[u8]) -> AppResult<()> {
     let config: ConfigFile = serde_json::from_slice(input)?;
-    apply_config_to_defaults(&config)
+    apply_config_to_defaults(config)
 }
 
 /// Parses a positive u64 string value.
@@ -166,7 +166,7 @@ pub fn apply_load_config_input(load: LoadConfig) -> AppResult<()> {
         load: Some(load),
         ..ConfigFile::default()
     };
-    apply_config_to_defaults(&config)
+    apply_config_to_defaults(config)
 }
 
 /// Parses a scenario config using default arguments.
@@ -177,7 +177,13 @@ pub fn apply_load_config_input(load: LoadConfig) -> AppResult<()> {
 pub fn parse_scenario_config_input(config: &ScenarioConfig) -> AppResult<()> {
     BASE_MATCHES.with(|matches| {
         let args = TesterArgs::from_arg_matches(matches)?;
-        parse_scenario(config, &args).map(|_| ())
+        let defaults = ScenarioDefaults::new(
+            args.url.clone(),
+            args.method,
+            args.data.clone(),
+            args.headers.clone(),
+        );
+        parse_scenario(config, &defaults).map(|_| ())
     })
 }
 
@@ -217,9 +223,9 @@ pub fn load_config_file_input(path: &std::path::Path) -> AppResult<()> {
     crate::config::load_config_file(path).map(|_| ())
 }
 
-fn apply_config_to_defaults(config: &ConfigFile) -> AppResult<()> {
+fn apply_config_to_defaults(config: ConfigFile) -> AppResult<()> {
     BASE_MATCHES.with(|matches| {
-        let mut args = TesterArgs::from_arg_matches(matches)?;
-        apply_config(&mut args, matches, config)
+        let args = TesterArgs::from_arg_matches(matches)?;
+        apply_config(args, matches, config).map(|_| ())
     })
 }
