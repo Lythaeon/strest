@@ -575,11 +575,7 @@ pub struct TesterArgs {
     pub script: Option<String>,
 
     /// WASM lifecycle plugins to load (repeatable, experimental; requires `wasm` feature)
-    #[arg(
-        long = "plugin",
-        alias = "plugin-wasm",
-        help_heading = "Advanced Options"
-    )]
+    #[arg(long = "plugin", help_heading = "Advanced Options")]
     pub plugin: Vec<String>,
 
     /// Install the controller/agent as a system service (Linux only)

@@ -470,7 +470,7 @@ Config keys (top-level):
 | `scenario` | object | See scenario keys below |
 | `scenarios` | object | Map of name -> scenario config |
 | `script` | string | `--script` (WASM scenario generator) |
-| `plugin` | array[string] | `--plugin` (repeatable WASM lifecycle plugins; `plugin_wasm` alias supported) |
+| `plugin` | array[string] | `--plugin` (repeatable WASM lifecycle plugins) |
 | `sinks` | object | See sinks keys below |
 | `distributed` | object | See distributed keys below |
 
