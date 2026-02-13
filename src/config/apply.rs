@@ -6,28 +6,46 @@ mod section_runtime;
 mod section_tail;
 mod util;
 
+use std::collections::BTreeMap;
+
 use clap::ArgMatches;
 
 use crate::args::TesterArgs;
+use crate::config::types::ScenarioConfig;
 use crate::error::{AppError, AppResult, ConfigError};
 
 use super::types::ConfigFile;
+use scenario::ScenarioDefaults;
 
-/// Applies configuration values to CLI arguments.
+/// Builds config-driven overrides over preset arguments.
 ///
 /// # Errors
 ///
 /// Returns an error when config values are invalid or conflict with CLI options.
 pub fn apply_config(
-    args: &mut TesterArgs,
+    preset_args: TesterArgs,
     matches: &ArgMatches,
-    config: &ConfigFile,
-) -> AppResult<()> {
-    validate_config_conflicts(config)?;
-    section_basic::apply_basic_config(args, matches, config)?;
-    section_runtime::apply_runtime_config(args, matches, config)?;
-    section_tail::apply_tail_config(args, matches, config)?;
-    Ok(())
+    mut config: ConfigFile,
+) -> AppResult<(TesterArgs, Option<BTreeMap<String, ScenarioConfig>>)> {
+    validate_config_conflicts(&config)?;
+
+    // Merge order is centralized here and intentionally explicit:
+    // command-line values in `preset_args` win, config fills missing values,
+    // and untouched fields keep preset defaults.
+    let mut effective_args = preset_args;
+    section_basic::apply_basic_config(&mut effective_args, matches, &config)?;
+    section_runtime::apply_runtime_config(&mut effective_args, matches, &config)?;
+    let scenario_defaults = ScenarioDefaults::new(
+        effective_args.url.clone(),
+        effective_args.method,
+        effective_args.data.clone(),
+        effective_args.headers.clone(),
+    );
+    section_tail::apply_tail_config(&mut effective_args, matches, &config, &scenario_defaults)?;
+
+    let scenario_registry = config.scenarios.take();
+
+    Ok((effective_args, scenario_registry))
 }
 
 fn validate_config_conflicts(config: &ConfigFile) -> AppResult<()> {

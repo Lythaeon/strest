@@ -147,10 +147,10 @@ aws_sigv4 = "aws:amz:us-east-1:service"
 
     let cmd = TesterArgs::command();
     let matches = cmd.get_matches_from(["strest"]);
-    let mut args = TesterArgs::from_arg_matches(&matches)
+    let args = TesterArgs::from_arg_matches(&matches)
         .map_err(|err| AppError::config(format!("parse args failed: {}", err)))?;
 
-    apply_config(&mut args, &matches, &config)?;
+    let args = apply_config(args, &matches, config)?.0;
 
     if args.proxy_url.as_deref() != Some("http://127.0.0.1:8080") {
         return Err(AppError::config("Unexpected proxy_url"));
@@ -264,10 +264,10 @@ fn apply_config_rejects_ipv4_ipv6_conflict() -> AppResult<()> {
 
     let cmd = TesterArgs::command();
     let matches = cmd.get_matches_from(["strest"]);
-    let mut args = TesterArgs::from_arg_matches(&matches)
+    let args = TesterArgs::from_arg_matches(&matches)
         .map_err(|err| AppError::config(format!("parse args failed: {}", err)))?;
 
-    if apply_config(&mut args, &matches, &config).is_ok() {
+    if apply_config(args, &matches, config).is_ok() {
         return Err(AppError::config("Expected ipv4/ipv6 conflict error"));
     }
 
@@ -284,10 +284,10 @@ fn apply_config_rejects_conflicting_body_sources() -> AppResult<()> {
 
     let cmd = TesterArgs::command();
     let matches = cmd.get_matches_from(["strest"]);
-    let mut args = TesterArgs::from_arg_matches(&matches)
+    let args = TesterArgs::from_arg_matches(&matches)
         .map_err(|err| AppError::config(format!("parse args failed: {}", err)))?;
 
-    if apply_config(&mut args, &matches, &config).is_ok() {
+    if apply_config(args, &matches, config).is_ok() {
         return Err(AppError::config("Expected conflict error"));
     }
 
@@ -304,10 +304,10 @@ fn apply_config_respects_cli_overrides() -> AppResult<()> {
 
     let cmd = TesterArgs::command();
     let matches = cmd.get_matches_from(["strest", "--url", "http://from-cli", "--no-charts"]);
-    let mut args = TesterArgs::from_arg_matches(&matches)
+    let args = TesterArgs::from_arg_matches(&matches)
         .map_err(|err| AppError::config(format!("parse args failed: {}", err)))?;
 
-    apply_config(&mut args, &matches, &config)?;
+    let args = apply_config(args, &matches, config)?.0;
 
     if args.url.as_deref() != Some("http://from-cli") {
         return Err(AppError::config("Expected CLI url to win"));
@@ -337,10 +337,10 @@ fn apply_config_load_profile_rate_to_rpm() -> AppResult<()> {
 
     let cmd = TesterArgs::command();
     let matches = cmd.get_matches_from(["strest"]);
-    let mut args = TesterArgs::from_arg_matches(&matches)
+    let args = TesterArgs::from_arg_matches(&matches)
         .map_err(|err| AppError::config(format!("parse args failed: {}", err)))?;
 
-    apply_config(&mut args, &matches, &config)?;
+    let args = apply_config(args, &matches, config)?.0;
 
     let load = match args.load_profile {
         Some(load) => load,
@@ -380,10 +380,10 @@ fn apply_config_rejects_load_and_rate_conflict() -> AppResult<()> {
 
     let cmd = TesterArgs::command();
     let matches = cmd.get_matches_from(["strest"]);
-    let mut args = TesterArgs::from_arg_matches(&matches)
+    let args = TesterArgs::from_arg_matches(&matches)
         .map_err(|err| AppError::config(format!("parse args failed: {}", err)))?;
 
-    let result = apply_config(&mut args, &matches, &config);
+    let result = apply_config(args, &matches, config);
     if result.is_err() {
         Ok(())
     } else {
@@ -425,10 +425,10 @@ fn apply_config_sets_warmup_and_tls() -> AppResult<()> {
 
     let cmd = TesterArgs::command();
     let matches = cmd.get_matches_from(["strest"]);
-    let mut args = TesterArgs::from_arg_matches(&matches)
+    let args = TesterArgs::from_arg_matches(&matches)
         .map_err(|err| AppError::config(format!("parse args failed: {}", err)))?;
 
-    apply_config(&mut args, &matches, &config)?;
+    let args = apply_config(args, &matches, config)?.0;
 
     if args.warmup != Some(Duration::from_secs(10)) {
         return Err(AppError::config("Expected warmup to be 10s"));
@@ -472,10 +472,10 @@ fn apply_config_parses_scenario() -> AppResult<()> {
 
     let cmd = TesterArgs::command();
     let matches = cmd.get_matches_from(["strest"]);
-    let mut args = TesterArgs::from_arg_matches(&matches)
+    let args = TesterArgs::from_arg_matches(&matches)
         .map_err(|err| AppError::config(format!("parse args failed: {}", err)))?;
 
-    apply_config(&mut args, &matches, &config)?;
+    let args = apply_config(args, &matches, config)?.0;
 
     let scenario = match args.scenario {
         Some(scenario) => scenario,
@@ -530,10 +530,10 @@ fn apply_config_sets_distributed_fields() -> AppResult<()> {
 
     let cmd = TesterArgs::command();
     let matches = cmd.get_matches_from(["strest"]);
-    let mut args = TesterArgs::from_arg_matches(&matches)
+    let args = TesterArgs::from_arg_matches(&matches)
         .map_err(|err| AppError::config(format!("parse args failed: {}", err)))?;
 
-    apply_config(&mut args, &matches, &config)?;
+    let args = apply_config(args, &matches, config)?.0;
 
     if args.agent_join.as_deref() != Some("127.0.0.1:9009") {
         return Err(AppError::config("Unexpected agent_join"));

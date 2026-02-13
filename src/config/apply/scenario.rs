@@ -1,9 +1,37 @@
-use crate::args::{Scenario, ScenarioStep, TesterArgs, parse_header};
+use crate::args::{HttpMethod, Scenario, ScenarioStep, parse_header};
 use crate::error::{AppError, AppResult, ConfigError};
 
 use super::super::types::{SCENARIO_SCHEMA_VERSION, ScenarioConfig};
 
-pub(crate) fn parse_scenario(config: &ScenarioConfig, args: &TesterArgs) -> AppResult<Scenario> {
+#[derive(Debug, Clone)]
+pub(crate) struct ScenarioDefaults {
+    pub(crate) base_url: Option<String>,
+    pub(crate) method: HttpMethod,
+    pub(crate) body: String,
+    pub(crate) headers: Vec<(String, String)>,
+}
+
+impl ScenarioDefaults {
+    #[must_use]
+    pub(crate) const fn new(
+        base_url: Option<String>,
+        method: HttpMethod,
+        body: String,
+        headers: Vec<(String, String)>,
+    ) -> Self {
+        Self {
+            base_url,
+            method,
+            body,
+            headers,
+        }
+    }
+}
+
+pub(crate) fn parse_scenario(
+    config: &ScenarioConfig,
+    defaults: &ScenarioDefaults,
+) -> AppResult<Scenario> {
     if let Some(schema_version) = config.schema_version
         && schema_version != SCENARIO_SCHEMA_VERSION
     {
@@ -16,9 +44,12 @@ pub(crate) fn parse_scenario(config: &ScenarioConfig, args: &TesterArgs) -> AppR
         return Err(AppError::config(ConfigError::ScenarioMissingSteps));
     }
 
-    let base_url = config.base_url.clone().or_else(|| args.url.clone());
-    let default_method = config.method.unwrap_or(args.method);
-    let default_body = config.data.clone().unwrap_or_else(|| args.data.clone());
+    let base_url = config
+        .base_url
+        .clone()
+        .or_else(|| defaults.base_url.clone());
+    let default_method = config.method.unwrap_or(defaults.method);
+    let default_body = config.data.clone().unwrap_or_else(|| defaults.body.clone());
 
     let default_headers = if let Some(headers) = config.headers.as_ref() {
         let mut parsed = Vec::with_capacity(headers.len());
@@ -30,7 +61,7 @@ pub(crate) fn parse_scenario(config: &ScenarioConfig, args: &TesterArgs) -> AppR
         }
         parsed
     } else {
-        args.headers.clone()
+        defaults.headers.clone()
     };
 
     let vars = config.vars.clone().unwrap_or_default();

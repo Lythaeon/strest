@@ -70,7 +70,7 @@ pub(crate) fn build_plan(mut args: TesterArgs, matches: &ArgMatches) -> AppResul
         return Ok(RunPlan::Replay(to_replay_run_command(args)));
     }
 
-    let scenario_registry = apply_config(&mut args, matches)?;
+    let (mut args, scenario_registry) = apply_config(args, matches)?;
 
     apply_output_aliases(&mut args)?;
     validate_db_logging(&args)?;
@@ -131,16 +131,15 @@ pub(crate) fn build_plan(mut args: TesterArgs, matches: &ArgMatches) -> AppResul
 }
 
 fn apply_config(
-    args: &mut TesterArgs,
+    args: TesterArgs,
     matches: &ArgMatches,
-) -> AppResult<Option<BTreeMap<String, ScenarioConfig>>> {
-    let mut scenario_registry = None;
-    let mut loaded_config = crate::config::load_config(args.config.as_deref())?;
-    if let Some(config) = loaded_config.as_mut() {
-        scenario_registry = config.scenarios.take();
-        crate::config::apply_config(args, matches, config)?;
+) -> AppResult<(TesterArgs, Option<BTreeMap<String, ScenarioConfig>>)> {
+    let loaded_config = crate::config::load_config(args.config.as_deref())?;
+    if let Some(config) = loaded_config {
+        let overrides = crate::config::apply_config(args, matches, config)?;
+        return Ok(overrides);
     }
-    Ok(scenario_registry)
+    Ok((args, None))
 }
 
 fn apply_output_aliases(args: &mut TesterArgs) -> AppResult<()> {

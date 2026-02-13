@@ -5,13 +5,14 @@ use crate::error::AppResult;
 
 use super::super::types::ConfigFile;
 use super::distributed::apply_distributed_config;
-use super::scenario::parse_scenario;
+use super::scenario::{ScenarioDefaults, parse_scenario};
 use super::util::{ensure_positive_u64, ensure_positive_usize, is_cli};
 
 pub(super) fn apply_tail_config(
     args: &mut TesterArgs,
     matches: &ArgMatches,
     config: &ConfigFile,
+    scenario_defaults: &ScenarioDefaults,
 ) -> AppResult<()> {
     if !is_cli(matches, "metrics_max")
         && let Some(max) = config.metrics_max
@@ -56,7 +57,7 @@ pub(super) fn apply_tail_config(
     }
 
     if let Some(scenario) = config.scenario.as_ref() {
-        args.scenario = Some(parse_scenario(scenario, args)?);
+        args.scenario = Some(parse_scenario(scenario, scenario_defaults)?);
     }
 
     if let Some(sinks) = config.sinks.as_ref() {

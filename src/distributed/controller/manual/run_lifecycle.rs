@@ -7,7 +7,7 @@ use tokio::sync::watch;
 use tokio::time::{Instant, MissedTickBehavior};
 
 use crate::args::{Scenario, TesterArgs};
-use crate::config::apply::scenario::parse_scenario;
+use crate::config::apply::scenario::{ScenarioDefaults, parse_scenario};
 use crate::ui::{model::UiData, render::setup_render_ui};
 
 use super::super::control::{ControlError, ControlStartRequest};
@@ -161,9 +161,15 @@ pub(super) fn resolve_scenario_for_run(
     request: &ControlStartRequest,
     scenario_state: &mut ScenarioState,
 ) -> Result<Option<Scenario>, ControlError> {
+    let scenario_defaults = ScenarioDefaults::new(
+        args.url.clone(),
+        args.method,
+        args.data.clone(),
+        args.headers.clone(),
+    );
     if let Some(config) = request.scenario.as_ref() {
-        let scenario =
-            parse_scenario(config, args).map_err(|err| ControlError::new(400, err.to_string()))?;
+        let scenario = parse_scenario(config, &scenario_defaults)
+            .map_err(|err| ControlError::new(400, err.to_string()))?;
         if let Some(name) = request.scenario_name.as_ref() {
             scenario_state.named.insert(name.clone(), config.clone());
         }
@@ -175,8 +181,8 @@ pub(super) fn resolve_scenario_for_run(
             .named
             .get(name)
             .ok_or_else(|| ControlError::new(404, "Scenario not found."))?;
-        let scenario =
-            parse_scenario(config, args).map_err(|err| ControlError::new(400, err.to_string()))?;
+        let scenario = parse_scenario(config, &scenario_defaults)
+            .map_err(|err| ControlError::new(400, err.to_string()))?;
         return Ok(Some(scenario));
     }
 
