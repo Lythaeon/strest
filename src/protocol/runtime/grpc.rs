@@ -16,7 +16,8 @@ pub(super) fn build_grpc_client(
     let mut builder = reqwest::Client::builder()
         .connect_timeout(connect_timeout)
         .http2_adaptive_window(true)
-        .tcp_nodelay(true);
+        .tcp_nodelay(true)
+        .no_proxy();
     if prior_knowledge {
         builder = builder.http2_prior_knowledge();
     }

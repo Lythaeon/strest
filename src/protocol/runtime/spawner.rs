@@ -9,7 +9,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{Instant, interval, sleep};
 use tracing::{error, warn};
 
-use crate::args::TesterArgs;
+use crate::args::{Protocol, TesterArgs};
 use crate::http::build_rate_limiter;
 use crate::metrics::{LogSink, Metrics};
 use crate::shutdown::{ShutdownReceiver, ShutdownSender};
@@ -32,6 +32,8 @@ pub(super) fn spawn_transport_sender(
     let metrics_tx = metrics_tx.clone();
     let log_sink = log_sink.cloned();
     let request_fn: Arc<TransportRequestFn> = Arc::new(request_fn);
+
+    let skip_preflight = matches!(args.protocol, Protocol::GrpcUnary | Protocol::GrpcStreaming);
 
     let max_tasks = args.max_tasks.get();
     let spawn_rate = args.spawn_rate_per_tick.get();
@@ -61,11 +63,13 @@ pub(super) fn spawn_transport_sender(
     }
 
     tokio::spawn(async move {
-        let preflight = request_fn(request_timeout, connect_timeout).await;
-        if preflight.timed_out || preflight.transport_error {
-            error!("Protocol preflight request failed");
-            drop(shutdown_tx.send(()));
-            return;
+        if !skip_preflight {
+            let preflight = request_fn(request_timeout, connect_timeout).await;
+            if preflight.timed_out || preflight.transport_error {
+                error!("Protocol preflight request failed");
+                drop(shutdown_tx.send(()));
+                return;
+            }
         }
 
         let mut shutdown_rx = shutdown_tx.subscribe();

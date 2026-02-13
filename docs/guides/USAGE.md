@@ -210,23 +210,23 @@ All vs ok latency percentiles let you see tail impact from failures instead of h
 <table>
   <tr>
     <td align="center">
-      <a href="average_response_time.png" target="_blank">
-        <img src="average_response_time.png" alt="Average Response Time" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="../assets/charts/average_response_time.png" target="_blank">
+        <img src="../assets/charts/average_response_time.png" alt="Average Response Time" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
     <td align="center">
-      <a href="latency_percentiles_P50_all.png" target="_blank">
-        <img src="latency_percentiles_P50_all.png" alt="Latency Percentiles P50 (All)" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="../assets/charts/latency_percentiles_P50_all.png" target="_blank">
+        <img src="../assets/charts/latency_percentiles_P50_all.png" alt="Latency Percentiles P50 (All)" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
     <td align="center">
-      <a href="latency_percentiles_P90_all.png" target="_blank">
-        <img src="latency_percentiles_P90_all.png" alt="Latency Percentiles P90 (All)" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="../assets/charts/latency_percentiles_P90_all.png" target="_blank">
+        <img src="../assets/charts/latency_percentiles_P90_all.png" alt="Latency Percentiles P90 (All)" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
     <td align="center">
-      <a href="latency_percentiles_P99_all.png" target="_blank">
-        <img src="latency_percentiles_P99_all.png" alt="Latency Percentiles P99 (All)" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="../assets/charts/latency_percentiles_P99_all.png" target="_blank">
+        <img src="../assets/charts/latency_percentiles_P99_all.png" alt="Latency Percentiles P99 (All)" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
   </tr>
@@ -239,23 +239,23 @@ Throughput and inflight charts reveal saturation points and load ramp behavior.
 <table>
   <tr>
     <td align="center">
-      <a href="requests_per_second.png" target="_blank">
-        <img src="requests_per_second.png" alt="Requests Per Second" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="../assets/charts/requests_per_second.png" target="_blank">
+        <img src="../assets/charts/requests_per_second.png" alt="Requests Per Second" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
     <td align="center">
-      <a href="cumulative_total_requests.png" target="_blank">
-        <img src="cumulative_total_requests.png" alt="Cumulative Total Requests" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="../assets/charts/cumulative_total_requests.png" target="_blank">
+        <img src="../assets/charts/cumulative_total_requests.png" alt="Cumulative Total Requests" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
     <td align="center">
-      <a href="cumulative_successful_requests.png" target="_blank">
-        <img src="cumulative_successful_requests.png" alt="Cumulative Successful Requests" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="../assets/charts/cumulative_successful_requests.png" target="_blank">
+        <img src="../assets/charts/cumulative_successful_requests.png" alt="Cumulative Successful Requests" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
     <td align="center">
-      <a href="inflight_requests.png" target="_blank">
-        <img src="inflight_requests.png" alt="In-Flight Requests" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="../assets/charts/inflight_requests.png" target="_blank">
+        <img src="../assets/charts/inflight_requests.png" alt="In-Flight Requests" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
   </tr>
@@ -268,23 +268,23 @@ Error breakdown separates timeouts, transport errors, and non-expected status co
 <table>
   <tr>
     <td align="center">
-      <a href="cumulative_error_rate.png" target="_blank">
-        <img src="cumulative_error_rate.png" alt="Cumulative Error Rate" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="../assets/charts/cumulative_error_rate.png" target="_blank">
+        <img src="../assets/charts/cumulative_error_rate.png" alt="Cumulative Error Rate" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
     <td align="center">
-      <a href="error_rate_breakdown.png" target="_blank">
-        <img src="error_rate_breakdown.png" alt="Error Rate Breakdown" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="../assets/charts/error_rate_breakdown.png" target="_blank">
+        <img src="../assets/charts/error_rate_breakdown.png" alt="Error Rate Breakdown" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
     <td align="center">
-      <a href="timeouts_per_second.png" target="_blank">
-        <img src="timeouts_per_second.png" alt="Timeouts Per Second" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="../assets/charts/timeouts_per_second.png" target="_blank">
+        <img src="../assets/charts/timeouts_per_second.png" alt="Timeouts Per Second" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
     <td align="center">
-      <a href="status_code_distribution.png" target="_blank">
-        <img src="status_code_distribution.png" alt="Status Code Distribution" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
+      <a href="../assets/charts/status_code_distribution.png" target="_blank">
+        <img src="../assets/charts/status_code_distribution.png" alt="Status Code Distribution" width="220" style="border: 1px solid #ddd; border-radius: 4px;" />
       </a>
     </td>
   </tr>

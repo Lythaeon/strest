@@ -43,7 +43,7 @@ strest --config strest.toml -t 30 --no-tui --summary --no-charts
 ## Screenshots
 
 <div style="text-align: center;">
-  <img src="docs/screenshot.png" alt="CLI Screenshot" width="1000" />
+  <img src="docs/assets/images/screenshot.png" alt="CLI Screenshot" width="1000" />
 </div>
 
 Charts focus on signal:
@@ -52,12 +52,13 @@ Charts focus on signal:
 - Throughput + inflight reveal saturation and ramp behavior.
 - Error breakdown separates timeouts, transport errors, and non-expected status codes.
 
-Full gallery: `docs/USAGE.md#charts`.
+Full gallery: `docs/guides/USAGE.md#charts`.
 
 ## Docs
 
-- `docs/USAGE.md` for CLI, flags, configs, and charts.
-- `docs/ADVANCED.md` for replay, WASM, profiling, distributed mode, and sinks.
+- `docs/README.md` for documentation index and structure.
+- `docs/guides/USAGE.md` for CLI, flags, configs, and charts.
+- `docs/guides/ADVANCED.md` for replay, WASM, profiling, distributed mode, and sinks.
 
 ## Contributions
 

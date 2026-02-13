@@ -16,7 +16,7 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 - Added opinionated preset subcommands: `strest quick`, `strest soak`, `strest spike`, and `strest distributed --agents=<N>`.
 - Preset commands now map to sensible defaults while preserving all existing advanced flag workflows.
 - Grouped high-frequency CLI flags under `Common Options` in `--help` for faster discoverability; kept advanced flags available unchanged.
-- Documented “99% paths” explicitly in `docs/USAGE.md` to reduce onboarding friction while preserving the full advanced surface.
+- Documented “99% paths” explicitly in `docs/guides/USAGE.md` to reduce onboarding friction while preserving the full advanced surface.
 - Fixed replay/export flow metrics ingestion so `response_bytes` and `in_flight_ops` are preserved when reading metrics logs.
 - Updated metrics log writing/parsing to include `response_bytes` and `in_flight_ops` columns, with backward compatibility for older 5-column logs.
 - Extended JSON/JSONL summary exports with flow aggregates: `total_response_bytes`, `avg_response_bytes_per_sec`, `max_in_flight_ops`, and `last_in_flight_ops`.
@@ -45,7 +45,7 @@ Released: 2026-02-11
 
 Released: 2026-02-11
 
-- Split README into `docs/USAGE.md` and `docs/ADVANCED.md` and shortened the top-level README.
+- Split README into `docs/guides/USAGE.md` and `docs/guides/ADVANCED.md` and shortened the top-level README.
 - Refactored internal error handling and reduced redundant allocations in request sources.
 - Split large modules into smaller units across replay, distributed controller, wasm scripting, and app error paths for maintainability.
 - Simplified startup wiring by moving entry/main orchestration into clearer module boundaries.

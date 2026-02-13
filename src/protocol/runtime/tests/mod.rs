@@ -399,7 +399,23 @@ async fn spawn_grpc_mock_server(
                     AppError::validation(format!("gRPC accept stream failed: {}", err))
                 })?;
 
-            let (_request, mut respond) = req;
+            let (request, mut respond) = req;
+            let mut body = request.into_body();
+            loop {
+                let next = timeout(TEST_TIMEOUT, body.data())
+                    .await
+                    .map_err(|_err| AppError::validation("gRPC body read timed out"))?;
+                match next {
+                    Some(Ok(_chunk)) => continue,
+                    Some(Err(err)) => {
+                        return Err(AppError::validation(format!(
+                            "gRPC body read failed: {}",
+                            err
+                        )));
+                    }
+                    None => break,
+                }
+            }
             let response = Response::builder()
                 .status(200)
                 .header("content-type", "application/grpc")

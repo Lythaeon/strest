@@ -106,7 +106,7 @@ fn grpc_protocols_emit_success_metric() -> AppResult<()> {
         ];
 
         for (protocol, load_mode, scheme, label) in cases {
-            let (addr, server_task) = spawn_grpc_mock_server(2).await?;
+            let (addr, server_task) = spawn_grpc_mock_server(1).await?;
             let url = format!("{scheme}://{addr}/test.Service/Method");
             let args = parse_args(protocol, load_mode, &url)?;
             let (shutdown_tx, _) = broadcast::channel::<()>(SHUTDOWN_CHANNEL_CAPACITY);
