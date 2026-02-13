@@ -264,6 +264,12 @@ Phase 0 artifacts (implemented):
 Exit criteria:
 - `entry` calls use-case commands, not raw `TesterArgs` (except adapter boundary).
 
+Phase 1 artifacts (implemented):
+- Domain run model: `src/domain/run.rs`
+- Application commands per mode: `src/application/commands.rs`
+- CLI anti-corruption mapper: `src/adapters/cli/mapper.rs`
+- Entry plan command wiring: `src/entry/plan/types.rs`, `src/entry/plan/build.rs`, `src/entry/plan/execute.rs`
+
 ### Phase 2: Config decoupling (1-2 weeks)
 1. Replace `config::apply_config(&mut TesterArgs, ...)` with `ConfigOverrides` builder.
 2. Merge order defined in one place: `CLI > Config > Preset defaults`.
