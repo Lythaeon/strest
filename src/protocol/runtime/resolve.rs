@@ -78,21 +78,15 @@ pub(super) fn resolve_grpc_url(args: &TesterArgs) -> AppResult<(Url, bool)> {
         "http" => true,
         "https" => false,
         "grpc" => {
-            url.set_scheme("http").map_err(|()| {
-                AppError::validation(ValidationError::UnsupportedProtocolUrlScheme {
-                    protocol: args.protocol.as_str().to_owned(),
-                    scheme: "grpc".to_owned(),
-                })
-            })?;
+            if url.set_scheme("http").is_err() {
+                url = replace_grpc_scheme(raw_url, &url, "http")?;
+            }
             true
         }
         "grpcs" => {
-            url.set_scheme("https").map_err(|()| {
-                AppError::validation(ValidationError::UnsupportedProtocolUrlScheme {
-                    protocol: args.protocol.as_str().to_owned(),
-                    scheme: "grpcs".to_owned(),
-                })
-            })?;
+            if url.set_scheme("https").is_err() {
+                url = replace_grpc_scheme(raw_url, &url, "https")?;
+            }
             false
         }
         other => {
@@ -110,6 +104,18 @@ pub(super) fn resolve_grpc_url(args: &TesterArgs) -> AppResult<(Url, bool)> {
     }
 
     Ok((url, prior_knowledge))
+}
+
+fn replace_grpc_scheme(raw_url: &str, url: &Url, scheme: &str) -> AppResult<Url> {
+    let rest_start = url.scheme().len().saturating_add(1);
+    let rest = &url.as_str()[rest_start..];
+    let normalized = format!("{scheme}:{}", rest);
+    Url::parse(&normalized).map_err(|source| {
+        AppError::validation(ValidationError::InvalidUrl {
+            url: raw_url.to_owned(),
+            source,
+        })
+    })
 }
 
 pub(super) fn resolve_websocket_url(args: &TesterArgs) -> AppResult<Url> {

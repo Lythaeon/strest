@@ -50,5 +50,8 @@ jobs:
       - name: Format Check
         run: cargo make format-check
 
+      - name: Architecture Guardrails
+        run: cargo make architecture-check
+
       - name: Verify Publish Readiness
         run: cargo publish --dry-run --locked

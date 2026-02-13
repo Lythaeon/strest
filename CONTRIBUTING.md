@@ -38,6 +38,7 @@ Examples:
 cargo make format
 cargo make clippy
 cargo make test
+cargo make architecture-check
 ```
 
 If you touched WASM:
@@ -61,6 +62,7 @@ git checkout -b feat/my-change
 cargo make format
 cargo make clippy
 cargo make test
+# cargo make architecture-check
 # cargo make test-wasm   # if WASM touched
 # cargo make audit       # if deps changed
 # cargo make deny        # if deps changed
@@ -84,6 +86,7 @@ Use this structure:
 - cargo make format
 - cargo make clippy
 - cargo make test
+- cargo make architecture-check
 - cargo make test-wasm (if applicable)
 - cargo make audit (if deps changed)
 - cargo make deny (if deps changed)
