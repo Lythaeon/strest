@@ -109,7 +109,12 @@ fn planned_protocols_reject_unsupported_url_schemes() -> AppResult<()> {
 fn grpc_protocols_accept_grpc_scheme_aliases_in_endpoint_resolution() -> AppResult<()> {
     run_async_test(async {
         let cases = [
-            ("grpc-unary", "arrival", "grpc://localhost/test.Service/Method", 80_u16),
+            (
+                "grpc-unary",
+                "arrival",
+                "grpc://localhost/test.Service/Method",
+                80_u16,
+            ),
             (
                 "grpc-streaming",
                 "arrival",
