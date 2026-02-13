@@ -1,8 +1,11 @@
+mod adapters;
 mod app;
+mod application;
 mod args;
 mod charts;
 mod config;
 mod distributed;
+mod domain;
 mod entry;
 mod error;
 mod http;

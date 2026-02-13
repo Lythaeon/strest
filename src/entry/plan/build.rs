@@ -2,6 +2,10 @@ use std::collections::BTreeMap;
 
 use clap::ArgMatches;
 
+use crate::adapters::cli::mapper::{
+    to_agent_run_command, to_controller_run_command, to_local_run_command, to_replay_run_command,
+    to_service_command,
+};
 use crate::args::{Command, LoadMode, OutputFormat, TesterArgs};
 use crate::config::types::ScenarioConfig;
 #[cfg(not(feature = "wasm"))]
@@ -9,7 +13,7 @@ use crate::error::ScriptError;
 use crate::error::{AppError, AppResult, ValidationError};
 use crate::protocol::protocol_registry;
 
-use super::types::{DumpUrlsPlan, LocalArgs, RunPlan};
+use super::types::{DumpUrlsPlan, RunPlan};
 
 /// Only one shard is allowed when DB logging is enabled.
 const SINGLE_LOG_SHARD: usize = 1;
@@ -63,7 +67,7 @@ pub(crate) fn build_plan(mut args: TesterArgs, matches: &ArgMatches) -> AppResul
     }
 
     if args.replay {
-        return Ok(RunPlan::Replay(args));
+        return Ok(RunPlan::Replay(to_replay_run_command(args)));
     }
 
     let scenario_registry = apply_config(&mut args, matches)?;
@@ -84,7 +88,7 @@ pub(crate) fn build_plan(mut args: TesterArgs, matches: &ArgMatches) -> AppResul
     }
 
     if args.install_service || args.uninstall_service {
-        return Ok(RunPlan::Service(args));
+        return Ok(RunPlan::Service(to_service_command(args)));
     }
 
     if args.script.is_some() && args.scenario.is_some() {
@@ -104,10 +108,10 @@ pub(crate) fn build_plan(mut args: TesterArgs, matches: &ArgMatches) -> AppResul
     }
 
     if args.controller_listen.is_some() {
-        return Ok(RunPlan::Controller {
+        return Ok(RunPlan::Controller(to_controller_run_command(
             args,
-            scenarios: scenario_registry,
-        });
+            scenario_registry,
+        )));
     }
 
     if args.no_ua && !args.authorized {
@@ -120,11 +124,10 @@ pub(crate) fn build_plan(mut args: TesterArgs, matches: &ArgMatches) -> AppResul
     }
 
     if args.agent_join.is_some() {
-        return Ok(RunPlan::Agent(args));
+        return Ok(RunPlan::Agent(to_agent_run_command(args)));
     }
 
-    let local_args = LocalArgs::new(args)?;
-    Ok(RunPlan::Local(local_args))
+    Ok(RunPlan::Local(to_local_run_command(args)?))
 }
 
 fn apply_config(
