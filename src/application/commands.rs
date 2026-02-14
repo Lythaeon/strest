@@ -78,15 +78,23 @@ impl ServiceCommand {
 }
 
 #[derive(Debug)]
-pub(crate) struct ControllerRunCommand {
-    run_config: RunConfig,
-    args: TesterArgs,
-    scenarios: Option<BTreeMap<String, ScenarioConfig>>,
+pub(crate) enum DistributedRunMode {
+    Controller {
+        scenarios: Option<BTreeMap<String, ScenarioConfig>>,
+    },
+    Agent,
 }
 
-impl ControllerRunCommand {
+#[derive(Debug)]
+pub(crate) struct DistributedRunCommand {
+    run_config: RunConfig,
+    args: TesterArgs,
+    mode: DistributedRunMode,
+}
+
+impl DistributedRunCommand {
     #[must_use]
-    pub(crate) const fn new(
+    pub(crate) const fn new_controller(
         run_config: RunConfig,
         args: TesterArgs,
         scenarios: Option<BTreeMap<String, ScenarioConfig>>,
@@ -94,7 +102,16 @@ impl ControllerRunCommand {
         Self {
             run_config,
             args,
-            scenarios,
+            mode: DistributedRunMode::Controller { scenarios },
+        }
+    }
+
+    #[must_use]
+    pub(crate) const fn new_agent(run_config: RunConfig, args: TesterArgs) -> Self {
+        Self {
+            run_config,
+            args,
+            mode: DistributedRunMode::Agent,
         }
     }
 
@@ -109,35 +126,15 @@ impl ControllerRunCommand {
     }
 
     #[must_use]
-    pub(crate) fn into_parts(self) -> (TesterArgs, Option<BTreeMap<String, ScenarioConfig>>) {
-        (self.args, self.scenarios)
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct AgentRunCommand {
-    run_config: RunConfig,
-    args: TesterArgs,
-}
-
-impl AgentRunCommand {
-    #[must_use]
-    pub(crate) const fn new(run_config: RunConfig, args: TesterArgs) -> Self {
-        Self { run_config, args }
+    pub(crate) const fn mode_name(&self) -> &'static str {
+        match self.mode {
+            DistributedRunMode::Controller { .. } => "controller",
+            DistributedRunMode::Agent => "agent",
+        }
     }
 
     #[must_use]
-    pub(crate) const fn run_config(&self) -> &RunConfig {
-        &self.run_config
-    }
-
-    #[must_use]
-    pub(crate) const fn no_color(&self) -> bool {
-        self.args.no_color
-    }
-
-    #[must_use]
-    pub(crate) fn into_args(self) -> TesterArgs {
-        self.args
+    pub(crate) fn into_parts(self) -> (TesterArgs, DistributedRunMode) {
+        (self.args, self.mode)
     }
 }

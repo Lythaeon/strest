@@ -1,47 +1,10 @@
 use std::collections::HashMap;
 
-use crate::args::TesterArgs;
-use crate::charts;
 use crate::error::AppResult;
 use crate::metrics::{AggregatedMetricSample, LatencyHistogram};
-use crate::sinks::config::SinkStats;
-use crate::sinks::writers::write_sinks;
 
-use super::super::super::summary::{compute_summary_stats, merge_summaries};
+use super::super::super::summary::merge_summaries;
 use super::events::AgentSnapshot;
-
-pub(in crate::distributed::controller) async fn write_streaming_sinks(
-    args: &TesterArgs,
-    agent_states: &HashMap<String, AgentSnapshot>,
-) -> AppResult<()> {
-    if agent_states.is_empty() {
-        return Ok(());
-    }
-    let (summary, merged_hist, _success_hist) = aggregate_snapshots(agent_states)?;
-    let (p50, p90, p99) = merged_hist.percentiles();
-    let stats = compute_summary_stats(&summary);
-
-    if let Some(sinks) = args.sinks.as_ref() {
-        let sink_stats = SinkStats {
-            duration: summary.duration,
-            total_requests: summary.total_requests,
-            successful_requests: summary.successful_requests,
-            error_requests: summary.error_requests,
-            timeout_requests: summary.timeout_requests,
-            min_latency_ms: summary.min_latency_ms,
-            max_latency_ms: summary.max_latency_ms,
-            avg_latency_ms: summary.avg_latency_ms,
-            p50_latency_ms: p50,
-            p90_latency_ms: p90,
-            p99_latency_ms: p99,
-            success_rate_x100: stats.success_rate_x100,
-            avg_rps_x100: stats.avg_rps_x100,
-            avg_rpm_x100: stats.avg_rpm_x100,
-        };
-        write_sinks(sinks, &sink_stats).await?;
-    }
-    Ok(())
-}
 
 pub(in crate::distributed::controller) fn aggregate_snapshots(
     agent_states: &HashMap<String, AgentSnapshot>,
@@ -99,14 +62,4 @@ pub(in crate::distributed::controller) fn record_aggregated_sample(
     }
 
     samples.push(sample);
-}
-
-pub(in crate::distributed::controller) async fn write_aggregated_charts(
-    samples: &[AggregatedMetricSample],
-    args: &TesterArgs,
-) -> AppResult<Option<String>> {
-    if args.no_charts || samples.len() < 2 {
-        return Ok(None);
-    }
-    charts::plot_aggregated_metrics(samples, args).await
 }

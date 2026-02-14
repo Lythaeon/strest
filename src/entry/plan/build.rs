@@ -108,7 +108,7 @@ pub(crate) fn build_plan(mut args: TesterArgs, matches: &ArgMatches) -> AppResul
     }
 
     if args.controller_listen.is_some() {
-        return Ok(RunPlan::Controller(to_controller_run_command(
+        return Ok(RunPlan::Distributed(to_controller_run_command(
             args,
             scenario_registry,
         )));
@@ -124,7 +124,7 @@ pub(crate) fn build_plan(mut args: TesterArgs, matches: &ArgMatches) -> AppResul
     }
 
     if args.agent_join.is_some() {
-        return Ok(RunPlan::Agent(to_agent_run_command(args)));
+        return Ok(RunPlan::Distributed(to_agent_run_command(args)));
     }
 
     Ok(RunPlan::Local(to_local_run_command(args)?))

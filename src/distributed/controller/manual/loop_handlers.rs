@@ -9,10 +9,8 @@ use crate::args::TesterArgs;
 use crate::error::{AppError, AppResult, DistributedError};
 
 use super::super::control::{ControlCommand, ControlError, ControlResponse};
-use super::super::shared::{
-    AgentEvent, event_agent_id, handle_agent_event, record_aggregated_sample, update_ui,
-    write_streaming_sinks,
-};
+use super::super::output::{OutputEvent, handle_output_event};
+use super::super::shared::{AgentEvent, event_agent_id, handle_agent_event};
 use super::run_finalize::finalize_manual_run;
 use super::run_lifecycle::request_stop;
 use super::state::{ManualAgent, ManualRunState};
@@ -63,20 +61,21 @@ pub(super) async fn handle_active_run(
             let Some(event) = event else {
                 return Err(AppError::distributed(DistributedError::AgentEventChannelClosed));
             };
-            on_event(args, state, event, disconnected_agents, last_seen, agent_pool);
+            on_event(args, state, event, disconnected_agents, last_seen, agent_pool).await;
             if state.pending_agents.is_empty() {
                 finish_run = true;
                 finish_error = finalize_manual_run(args, state).await.err();
             }
         }
         _ = state.sink_interval.tick() => {
-            if state.sink_updates_enabled && state.sink_dirty {
-                if let Err(err) = write_streaming_sinks(args, &state.agent_states).await {
-                    state.runtime_errors.push(err.to_string());
-                } else {
-                    state.sink_dirty = false;
-                }
-            }
+            handle_output_event(
+                args,
+                &mut state.output_state,
+                &state.agent_states,
+                &mut state.runtime_errors,
+                OutputEvent::SinkTick,
+            )
+            .await;
         }
         _ = heartbeat_interval.tick() => {
             process_heartbeat_timeouts(state, heartbeat_timeout, last_seen, disconnected_agents, agent_pool);
@@ -102,7 +101,7 @@ pub(super) async fn handle_active_run(
     Ok(finish_run)
 }
 
-fn on_event(
+async fn on_event(
     args: &TesterArgs,
     state: &mut ManualRunState,
     event: AgentEvent,
@@ -129,7 +128,6 @@ fn on_event(
         &mut state.pending_agents,
         &mut state.agent_states,
         &mut state.runtime_errors,
-        &mut state.sink_dirty,
     );
     if is_disconnected {
         disconnected_agents.insert(agent_id.clone());
@@ -144,18 +142,14 @@ fn on_event(
             next
         });
     }
-    if state.charts_enabled {
-        record_aggregated_sample(&mut state.aggregated_samples, &state.agent_states);
-    }
-    if let Some(ui_tx) = state.ui_tx.as_ref() {
-        update_ui(
-            ui_tx,
-            args,
-            &state.agent_states,
-            &mut state.ui_latency_window,
-            &mut state.ui_rps_window,
-        );
-    }
+    handle_output_event(
+        args,
+        &mut state.output_state,
+        &state.agent_states,
+        &mut state.runtime_errors,
+        OutputEvent::AgentStateUpdated,
+    )
+    .await;
 }
 
 fn process_heartbeat_timeouts(
@@ -192,7 +186,6 @@ fn process_heartbeat_timeouts(
                 &mut state.pending_agents,
                 &mut state.agent_states,
                 &mut state.runtime_errors,
-                &mut state.sink_dirty,
             );
             last_seen.rcu(|current| {
                 let mut next = current.clone();

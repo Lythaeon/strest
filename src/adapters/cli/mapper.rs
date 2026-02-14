@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::application::commands::{
-    AgentRunCommand, ControllerRunCommand, LocalRunCommand, ReplayRunCommand, ServiceCommand,
+    DistributedRunCommand, LocalRunCommand, ReplayRunCommand, ServiceCommand,
 };
 use crate::args::{
     LoadMode as CliLoadMode, Protocol as CliProtocol, Scenario as CliScenario, TesterArgs,
@@ -32,14 +32,14 @@ pub(crate) const fn to_service_command(args: TesterArgs) -> ServiceCommand {
 pub(crate) fn to_controller_run_command(
     args: TesterArgs,
     scenarios: Option<BTreeMap<String, ScenarioConfig>>,
-) -> ControllerRunCommand {
+) -> DistributedRunCommand {
     let run_config = to_run_config(&args);
-    ControllerRunCommand::new(run_config, args, scenarios)
+    DistributedRunCommand::new_controller(run_config, args, scenarios)
 }
 
-pub(crate) fn to_agent_run_command(args: TesterArgs) -> AgentRunCommand {
+pub(crate) fn to_agent_run_command(args: TesterArgs) -> DistributedRunCommand {
     let run_config = to_run_config(&args);
-    AgentRunCommand::new(run_config, args)
+    DistributedRunCommand::new_agent(run_config, args)
 }
 
 fn to_run_config(args: &TesterArgs) -> RunConfig {

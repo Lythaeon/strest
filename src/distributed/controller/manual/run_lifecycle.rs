@@ -1,17 +1,15 @@
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::io::IsTerminal;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use arcshift::ArcShift;
-use tokio::sync::watch;
 use tokio::time::{Instant, MissedTickBehavior};
 
 use crate::args::{Scenario, TesterArgs};
 use crate::config::apply::scenario::{ScenarioDefaults, parse_scenario};
-use crate::ui::{model::UiData, render::setup_render_ui};
 
 use super::super::control::{ControlError, ControlStartRequest};
 use super::super::load::apply_load_share;
+use super::super::output::setup_output_state;
 use super::super::shared::{DEFAULT_START_AFTER_MS, REPORT_GRACE_SECS, resolve_sink_interval};
 use super::state::{ManualAgent, ManualRunState, ScenarioState};
 use crate::distributed::protocol::{ConfigMessage, StartMessage, StopMessage, WireMessage};
@@ -109,25 +107,7 @@ pub(super) async fn start_manual_run(
         ));
     }
 
-    let ui_enabled =
-        args.distributed_stream_summaries && !args.no_ui && std::io::stdout().is_terminal();
-    let (ui_tx, shutdown_tx, _ui_handle) = if ui_enabled {
-        let target_duration = Duration::from_secs(args.target_duration.get());
-        let (shutdown_tx, _) = crate::system::shutdown_handlers::shutdown_channel();
-        let (ui_tx, _) = watch::channel(UiData {
-            target_duration,
-            ui_window_ms: args.ui_window_ms.get(),
-            no_color: args.no_color,
-            ..UiData::default()
-        });
-        let handle = setup_render_ui(&shutdown_tx, &ui_tx);
-        (Some(ui_tx), Some(shutdown_tx), Some(handle))
-    } else {
-        (None, None, None)
-    };
-
-    let sink_updates_enabled = args.distributed_stream_summaries && args.sinks.is_some();
-    let charts_enabled = !args.no_charts && args.distributed_stream_summaries;
+    let output_state = setup_output_state(args);
     let mut sink_interval = tokio::time::interval(resolve_sink_interval(args.sinks.as_ref()));
     sink_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -142,17 +122,10 @@ pub(super) async fn start_manual_run(
         run_id,
         pending_agents,
         agent_states: HashMap::new(),
-        aggregated_samples: Vec::new(),
         runtime_errors: Vec::new(),
-        sink_dirty: false,
-        sink_updates_enabled,
         sink_interval,
-        ui_tx,
-        shutdown_tx,
-        ui_latency_window: VecDeque::new(),
-        ui_rps_window: VecDeque::new(),
+        output_state,
         deadline: report_deadline,
-        charts_enabled,
     })
 }
 

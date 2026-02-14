@@ -40,7 +40,6 @@ pub(in crate::distributed::controller) fn handle_agent_event(
     pending_agents: &mut HashSet<String>,
     agent_states: &mut HashMap<String, AgentSnapshot>,
     runtime_errors: &mut Vec<String>,
-    sink_dirty: &mut bool,
 ) {
     match event {
         AgentEvent::Stream { agent_id, message } => {
@@ -91,7 +90,6 @@ pub(in crate::distributed::controller) fn handle_agent_event(
                             success_histogram,
                         },
                     );
-                    *sink_dirty = true;
                 }
                 Err(err) => runtime_errors.push(format!(
                     "Agent {} histogram decode failed: {}",
@@ -154,7 +152,6 @@ pub(in crate::distributed::controller) fn handle_agent_event(
                             success_histogram,
                         },
                     );
-                    *sink_dirty = true;
                 }
                 Err(err) => runtime_errors.push(format!(
                     "Agent {} histogram decode failed: {}",
