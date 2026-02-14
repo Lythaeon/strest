@@ -49,3 +49,4 @@ Adopt a phased migration architecture with these boundaries:
 - Phase 1 introduces typed commands and mapping from CLI args.
 - Phase 2 moves config precedence to explicit override policies.
 - Later phases extract local/distributed/replay slices behind ports.
+- Detailed technical execution guidance is captured in `ADR-0002-type-safety-dispatch-concurrency.md`.

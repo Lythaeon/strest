@@ -7,3 +7,4 @@ Use this folder for architectural analysis, dependency maps, risk registers, and
 Current docs:
 
 - `ARCHITECTURE_OVERVIEW.md`
+- `ARCHITECTURE_TECHNICAL_GUIDE.md`

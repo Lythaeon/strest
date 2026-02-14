@@ -13,7 +13,9 @@ This directory is split by architecture document type.
 ## Current Canonical Docs
 
 - `docs/architecture/ard/ARCHITECTURE_OVERVIEW.md`
+- `docs/architecture/ard/ARCHITECTURE_TECHNICAL_GUIDE.md`
 - `docs/architecture/adr/ADR-0001-hexagonal-vertical-slices.md`
+- `docs/architecture/adr/ADR-0002-type-safety-dispatch-concurrency.md`
 
 ## Naming Conventions
 

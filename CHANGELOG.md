@@ -9,9 +9,9 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 - Added architecture guardrails that fail checks when `src/application` reintroduces `TesterArgs` or `crate::args` imports.
 - Removed remaining non-test direct `distributed -> app` and `application -> app` imports by introducing explicit runtime ports and shared summary-output utilities, so orchestration flows now route via application/adapters seams.
 - Added migration validation coverage for all run-plan feature routes (local, distributed controller/agent, replay, compare, cleanup, dump-urls, service) and distributed/local application dispatch seams.
-- Updated architecture docs with Phase 7 implementation artifacts, current coupling metrics snapshot, and Mermaid before/after boundary diagrams.
-- Added technical architecture patterns doc covering type-level invariants/newtypes, invalid-state elimination, cache/inlining guidance, dispatch strategy (static-first), and low-lock concurrency patterns using `Arc`, atomics, channels, and `ArcShift`.
-- Simplified architecture references by removing legacy migration-risk and baseline-metrics ARD documents and retaining a current flow-focused architecture overview.
+- Updated architecture docs to a current flow-focused overview with explicit mode-by-mode call chains.
+- Added technical architecture docs across ARD/ADR/patterns covering type-level invariants/newtypes, invalid-state elimination, cache/inlining guidance, dispatch strategy (static-first), and low-lock concurrency patterns using `Arc`, atomics, channels, and `ArcShift`.
+- Removed legacy migration-risk and baseline-metrics ARD documents and updated doc indexes/references accordingly.
 
 ## 0.1.9
 
