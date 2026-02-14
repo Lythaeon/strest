@@ -1,10 +1,4 @@
-#[derive(Clone, Copy)]
-pub(crate) struct ReplayWindow {
-    pub(crate) start_ms: u64,
-    pub(crate) cursor_ms: u64,
-    pub(crate) end_ms: u64,
-    pub(crate) playing: bool,
-}
+pub(crate) type ReplayWindow = crate::application::replay_compare::PlaybackState;
 
 #[derive(Default)]
 pub(crate) struct SnapshotMarkers {

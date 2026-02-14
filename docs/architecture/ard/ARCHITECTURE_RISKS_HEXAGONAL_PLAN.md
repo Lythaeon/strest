@@ -328,6 +328,10 @@ Phase 5 artifacts (implemented):
 Exit criteria:
 - replay/compare core logic testable without terminal runtime.
 
+Phase 6 artifacts (implemented):
+- Terminal-independent replay/compare playback state transitions and range helpers: `src/application/replay_compare.rs`
+- Replay/compare adapter loops narrowed to key handling + rendering while delegating state transitions: `src/app/replay/runner.rs`, `src/app/compare.rs`, `src/app/replay/state.rs`
+
 ### Phase 7: Remove legacy coupling and enforce strict boundaries (1 week)
 1. Deprecate direct `TesterArgs` use outside CLI adapter.
 2. Remove now-obsolete conversion glue.
