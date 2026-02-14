@@ -331,8 +331,6 @@ mod tests {
     };
     use std::time::Duration;
 
-    use clap::Parser;
-
     use super::*;
     use crate::app::logs::LogSetup;
 
@@ -497,11 +495,7 @@ mod tests {
     }
 
     fn parse_args() -> AppResult<TesterArgs> {
-        Ok(TesterArgs::try_parse_from([
-            "strest",
-            "--url",
-            "http://localhost",
-        ])?)
+        crate::args::parse_test_args(["strest", "--url", "http://localhost"])
     }
 
     #[tokio::test(flavor = "current_thread")]
