@@ -16,6 +16,7 @@ use tokio::task::JoinHandle;
 use url::Url;
 
 use crate::args::TesterArgs;
+use crate::domain::run::ProtocolKind;
 use crate::error::{AppError, AppResult, ValidationError};
 use crate::metrics::{LogSink, Metrics};
 use crate::shutdown::ShutdownSender;
@@ -33,37 +34,31 @@ use transports::{tcp_request_once, websocket_request_once};
 ///
 /// Returns an error when protocol settings are invalid or unsupported.
 pub fn setup_request_sender(
+    protocol: ProtocolKind,
     args: &TesterArgs,
     shutdown_tx: &ShutdownSender,
     metrics_tx: &mpsc::Sender<Metrics>,
     log_sink: Option<&Arc<LogSink>>,
 ) -> AppResult<JoinHandle<()>> {
-    match args.protocol {
-        crate::args::Protocol::Http => {
-            crate::http::setup_request_sender(args, shutdown_tx, metrics_tx, log_sink)
-        }
-        crate::args::Protocol::Tcp => setup_tcp_sender(args, shutdown_tx, metrics_tx, log_sink),
-        crate::args::Protocol::Udp => setup_udp_sender(args, shutdown_tx, metrics_tx, log_sink),
-        crate::args::Protocol::Websocket => {
-            setup_websocket_sender(args, shutdown_tx, metrics_tx, log_sink)
-        }
-        crate::args::Protocol::GrpcUnary => {
-            setup_grpc_unary_sender(args, shutdown_tx, metrics_tx, log_sink)
-        }
-        crate::args::Protocol::GrpcStreaming => {
-            setup_grpc_streaming_sender(args, shutdown_tx, metrics_tx, log_sink)
-        }
-        crate::args::Protocol::Quic => setup_quic_sender(args, shutdown_tx, metrics_tx, log_sink),
-        crate::args::Protocol::Mqtt => setup_mqtt_sender(args, shutdown_tx, metrics_tx, log_sink),
-        crate::args::Protocol::Enet => setup_enet_sender(args, shutdown_tx, metrics_tx, log_sink),
-        crate::args::Protocol::Kcp => setup_kcp_sender(args, shutdown_tx, metrics_tx, log_sink),
-        crate::args::Protocol::Raknet => {
-            setup_raknet_sender(args, shutdown_tx, metrics_tx, log_sink)
-        }
+    let registry = super::protocol_registry();
+    let Some(adapter) = registry.adapter(protocol) else {
+        let supported = registry.executable_protocols_csv();
+        return Err(AppError::validation(ValidationError::UnsupportedProtocol {
+            protocol: protocol.as_str().to_owned(),
+            supported,
+        }));
+    };
+    if !adapter.executes_traffic() {
+        let supported = registry.executable_protocols_csv();
+        return Err(AppError::validation(ValidationError::UnsupportedProtocol {
+            protocol: protocol.as_str().to_owned(),
+            supported,
+        }));
     }
+    adapter.setup_request_sender(args, shutdown_tx, metrics_tx, log_sink)
 }
 
-fn setup_tcp_sender(
+pub(super) fn setup_tcp_sender(
     args: &TesterArgs,
     shutdown_tx: &ShutdownSender,
     metrics_tx: &mpsc::Sender<Metrics>,
@@ -86,7 +81,7 @@ fn setup_tcp_sender(
     ))
 }
 
-fn setup_udp_sender(
+pub(super) fn setup_udp_sender(
     args: &TesterArgs,
     shutdown_tx: &ShutdownSender,
     metrics_tx: &mpsc::Sender<Metrics>,
@@ -102,7 +97,7 @@ fn setup_udp_sender(
     )
 }
 
-fn setup_quic_sender(
+pub(super) fn setup_quic_sender(
     args: &TesterArgs,
     shutdown_tx: &ShutdownSender,
     metrics_tx: &mpsc::Sender<Metrics>,
@@ -118,7 +113,7 @@ fn setup_quic_sender(
     )
 }
 
-fn setup_enet_sender(
+pub(super) fn setup_enet_sender(
     args: &TesterArgs,
     shutdown_tx: &ShutdownSender,
     metrics_tx: &mpsc::Sender<Metrics>,
@@ -134,7 +129,7 @@ fn setup_enet_sender(
     )
 }
 
-fn setup_kcp_sender(
+pub(super) fn setup_kcp_sender(
     args: &TesterArgs,
     shutdown_tx: &ShutdownSender,
     metrics_tx: &mpsc::Sender<Metrics>,
@@ -150,7 +145,7 @@ fn setup_kcp_sender(
     )
 }
 
-fn setup_raknet_sender(
+pub(super) fn setup_raknet_sender(
     args: &TesterArgs,
     shutdown_tx: &ShutdownSender,
     metrics_tx: &mpsc::Sender<Metrics>,
@@ -171,7 +166,7 @@ fn setup_raknet_sender(
     )
 }
 
-fn setup_mqtt_sender(
+pub(super) fn setup_mqtt_sender(
     args: &TesterArgs,
     shutdown_tx: &ShutdownSender,
     metrics_tx: &mpsc::Sender<Metrics>,
@@ -205,7 +200,7 @@ fn setup_mqtt_sender(
     ))
 }
 
-fn setup_websocket_sender(
+pub(super) fn setup_websocket_sender(
     args: &TesterArgs,
     shutdown_tx: &ShutdownSender,
     metrics_tx: &mpsc::Sender<Metrics>,
@@ -228,7 +223,7 @@ fn setup_websocket_sender(
     ))
 }
 
-fn setup_grpc_unary_sender(
+pub(super) fn setup_grpc_unary_sender(
     args: &TesterArgs,
     shutdown_tx: &ShutdownSender,
     metrics_tx: &mpsc::Sender<Metrics>,
@@ -237,7 +232,7 @@ fn setup_grpc_unary_sender(
     setup_grpc_sender(args, shutdown_tx, metrics_tx, log_sink, false)
 }
 
-fn setup_grpc_streaming_sender(
+pub(super) fn setup_grpc_streaming_sender(
     args: &TesterArgs,
     shutdown_tx: &ShutdownSender,
     metrics_tx: &mpsc::Sender<Metrics>,

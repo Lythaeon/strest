@@ -1,12 +1,12 @@
 use super::*;
-use crate::args::{LoadMode, Protocol};
+use crate::domain::run::{LoadMode, ProtocolKind};
 
 #[derive(Clone)]
 struct FakeAdapter;
 
 impl ProtocolAdapter for FakeAdapter {
-    fn protocol(&self) -> Protocol {
-        Protocol::Http
+    fn protocol(&self) -> ProtocolKind {
+        ProtocolKind::Http
     }
 
     fn display_name(&self) -> &'static str {
@@ -33,68 +33,70 @@ impl ProtocolAdapter for FakeAdapter {
     }
 }
 
+impl TransportAdapter for FakeAdapter {}
+
 #[test]
 fn builtins_register_http_as_executable() {
     let registry = ProtocolRegistry::with_builtins();
-    assert!(registry.adapter(Protocol::Http).is_some());
-    assert!(registry.supports_execution(Protocol::Http));
-    assert!(registry.supports_load_mode(Protocol::Http, LoadMode::Soak));
+    assert!(registry.adapter(ProtocolKind::Http).is_some());
+    assert!(registry.supports_execution(ProtocolKind::Http));
+    assert!(registry.supports_load_mode(ProtocolKind::Http, LoadMode::Soak));
 }
 
 #[test]
 fn builtins_mark_websocket_as_executable() {
     let registry = ProtocolRegistry::with_builtins();
-    assert!(registry.adapter(Protocol::Websocket).is_some());
-    assert!(registry.supports_execution(Protocol::Websocket));
+    assert!(registry.adapter(ProtocolKind::Websocket).is_some());
+    assert!(registry.supports_execution(ProtocolKind::Websocket));
 }
 
 #[test]
 fn builtins_mark_grpc_unary_as_executable() {
     let registry = ProtocolRegistry::with_builtins();
-    assert!(registry.adapter(Protocol::GrpcUnary).is_some());
-    assert!(registry.supports_execution(Protocol::GrpcUnary));
+    assert!(registry.adapter(ProtocolKind::GrpcUnary).is_some());
+    assert!(registry.supports_execution(ProtocolKind::GrpcUnary));
 }
 
 #[test]
 fn builtins_mark_grpc_streaming_as_executable() {
     let registry = ProtocolRegistry::with_builtins();
-    assert!(registry.adapter(Protocol::GrpcStreaming).is_some());
-    assert!(registry.supports_execution(Protocol::GrpcStreaming));
+    assert!(registry.adapter(ProtocolKind::GrpcStreaming).is_some());
+    assert!(registry.supports_execution(ProtocolKind::GrpcStreaming));
 }
 
 #[test]
 fn builtins_mark_quic_as_executable() {
     let registry = ProtocolRegistry::with_builtins();
-    assert!(registry.adapter(Protocol::Quic).is_some());
-    assert!(registry.supports_execution(Protocol::Quic));
+    assert!(registry.adapter(ProtocolKind::Quic).is_some());
+    assert!(registry.supports_execution(ProtocolKind::Quic));
 }
 
 #[test]
 fn builtins_mark_mqtt_as_executable() {
     let registry = ProtocolRegistry::with_builtins();
-    assert!(registry.adapter(Protocol::Mqtt).is_some());
-    assert!(registry.supports_execution(Protocol::Mqtt));
+    assert!(registry.adapter(ProtocolKind::Mqtt).is_some());
+    assert!(registry.supports_execution(ProtocolKind::Mqtt));
 }
 
 #[test]
 fn builtins_mark_enet_as_executable() {
     let registry = ProtocolRegistry::with_builtins();
-    assert!(registry.adapter(Protocol::Enet).is_some());
-    assert!(registry.supports_execution(Protocol::Enet));
+    assert!(registry.adapter(ProtocolKind::Enet).is_some());
+    assert!(registry.supports_execution(ProtocolKind::Enet));
 }
 
 #[test]
 fn builtins_mark_kcp_as_executable() {
     let registry = ProtocolRegistry::with_builtins();
-    assert!(registry.adapter(Protocol::Kcp).is_some());
-    assert!(registry.supports_execution(Protocol::Kcp));
+    assert!(registry.adapter(ProtocolKind::Kcp).is_some());
+    assert!(registry.supports_execution(ProtocolKind::Kcp));
 }
 
 #[test]
 fn builtins_mark_raknet_as_executable() {
     let registry = ProtocolRegistry::with_builtins();
-    assert!(registry.adapter(Protocol::Raknet).is_some());
-    assert!(registry.supports_execution(Protocol::Raknet));
+    assert!(registry.adapter(ProtocolKind::Raknet).is_some());
+    assert!(registry.supports_execution(ProtocolKind::Raknet));
 }
 
 #[test]

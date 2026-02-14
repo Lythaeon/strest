@@ -1,6 +1,6 @@
-use crate::args::{LoadMode, Protocol};
+use crate::domain::run::{LoadMode, ProtocolKind};
 
-use crate::protocol::ProtocolAdapter;
+use crate::protocol::{ProtocolAdapter, TransportAdapter};
 
 const LOAD_MODES: &[LoadMode] = &[LoadMode::Arrival, LoadMode::Jitter, LoadMode::Burst];
 
@@ -8,8 +8,8 @@ const LOAD_MODES: &[LoadMode] = &[LoadMode::Arrival, LoadMode::Jitter, LoadMode:
 pub struct GameUdpPlugin;
 
 impl ProtocolAdapter for GameUdpPlugin {
-    fn protocol(&self) -> Protocol {
-        Protocol::Udp
+    fn protocol(&self) -> ProtocolKind {
+        ProtocolKind::Udp
     }
 
     fn display_name(&self) -> &'static str {
@@ -28,3 +28,5 @@ impl ProtocolAdapter for GameUdpPlugin {
         LOAD_MODES
     }
 }
+
+impl TransportAdapter for GameUdpPlugin {}

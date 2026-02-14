@@ -52,7 +52,13 @@ fn transport_and_http_protocols_emit_success_metric() -> AppResult<()> {
             let (shutdown_tx, _) = broadcast::channel::<()>(SHUTDOWN_CHANNEL_CAPACITY);
             let (metrics_tx, mut metrics_rx) = mpsc::channel::<Metrics>(8);
 
-            let sender_task = setup_request_sender(&args, &shutdown_tx, &metrics_tx, None)?;
+            let sender_task = setup_request_sender(
+                args.protocol.to_domain(),
+                &args,
+                &shutdown_tx,
+                &metrics_tx,
+                None,
+            )?;
             let metric = wait_metric(&mut metrics_rx, label).await?;
             if metric.timed_out {
                 return Err(AppError::validation(format!(

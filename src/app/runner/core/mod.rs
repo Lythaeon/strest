@@ -10,6 +10,7 @@ use crate::{
         OutputPort, ShutdownPort, TrafficPort,
     },
     args::TesterArgs,
+    domain::run::ProtocolKind,
     error::AppResult,
     metrics::{self, Metrics},
     protocol,
@@ -32,7 +33,8 @@ pub(crate) async fn run_local(
     stream_tx: Option<mpsc::UnboundedSender<metrics::StreamSnapshot>>,
     external_shutdown: Option<watch::Receiver<bool>>,
 ) -> AppResult<RunOutcome> {
-    let command = LocalRunExecutionCommand::new(args, stream_tx, external_shutdown);
+    let protocol = args.protocol.to_domain();
+    let command = LocalRunExecutionCommand::new(protocol, args, stream_tx, external_shutdown);
     let shutdown_adapter = RuntimeShutdownAdapter;
     let traffic_adapter = RuntimeTrafficAdapter;
     let metrics_adapter = RuntimeMetricsAdapter;
@@ -96,12 +98,13 @@ struct RuntimeTrafficAdapter;
 impl TrafficPort for RuntimeTrafficAdapter {
     fn setup_request_sender(
         &self,
+        protocol: ProtocolKind,
         args: &TesterArgs,
         shutdown_tx: &ShutdownSender,
         metrics_tx: &mpsc::Sender<Metrics>,
         log_sink: Option<&std::sync::Arc<metrics::LogSink>>,
     ) -> AppResult<tokio::task::JoinHandle<()>> {
-        protocol::setup_request_sender(args, shutdown_tx, metrics_tx, log_sink)
+        protocol::setup_request_sender(protocol, args, shutdown_tx, metrics_tx, log_sink)
     }
 }
 

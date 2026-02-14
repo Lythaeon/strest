@@ -42,7 +42,13 @@ fn datagram_protocols_emit_success_metric() -> AppResult<()> {
             let (shutdown_tx, _) = broadcast::channel::<()>(SHUTDOWN_CHANNEL_CAPACITY);
             let (metrics_tx, mut metrics_rx) = mpsc::channel::<Metrics>(8);
 
-            let sender_task = setup_request_sender(&args, &shutdown_tx, &metrics_tx, None)?;
+            let sender_task = setup_request_sender(
+                args.protocol.to_domain(),
+                &args,
+                &shutdown_tx,
+                &metrics_tx,
+                None,
+            )?;
             let metric = wait_metric(&mut metrics_rx, protocol).await?;
             if metric.timed_out {
                 return Err(AppError::validation(format!(
@@ -95,7 +101,13 @@ fn mqtt_protocol_emits_success_metric() -> AppResult<()> {
         let (shutdown_tx, _) = broadcast::channel::<()>(SHUTDOWN_CHANNEL_CAPACITY);
         let (metrics_tx, mut metrics_rx) = mpsc::channel::<Metrics>(8);
 
-        let sender_task = setup_request_sender(&args, &shutdown_tx, &metrics_tx, None)?;
+        let sender_task = setup_request_sender(
+            args.protocol.to_domain(),
+            &args,
+            &shutdown_tx,
+            &metrics_tx,
+            None,
+        )?;
         let metric = wait_metric(&mut metrics_rx, "mqtt").await?;
         if metric.timed_out {
             return Err(AppError::validation("Unexpected timeout for mqtt"));

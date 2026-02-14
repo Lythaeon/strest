@@ -52,30 +52,11 @@ fn to_run_config(args: &TesterArgs) -> RunConfig {
 }
 
 const fn map_protocol(protocol: CliProtocol) -> ProtocolKind {
-    match protocol {
-        CliProtocol::Http => ProtocolKind::Http,
-        CliProtocol::GrpcUnary => ProtocolKind::GrpcUnary,
-        CliProtocol::GrpcStreaming => ProtocolKind::GrpcStreaming,
-        CliProtocol::Websocket => ProtocolKind::Websocket,
-        CliProtocol::Tcp => ProtocolKind::Tcp,
-        CliProtocol::Udp => ProtocolKind::Udp,
-        CliProtocol::Quic => ProtocolKind::Quic,
-        CliProtocol::Mqtt => ProtocolKind::Mqtt,
-        CliProtocol::Enet => ProtocolKind::Enet,
-        CliProtocol::Kcp => ProtocolKind::Kcp,
-        CliProtocol::Raknet => ProtocolKind::Raknet,
-    }
+    protocol.to_domain()
 }
 
 const fn map_load_mode(load_mode: CliLoadMode) -> LoadMode {
-    match load_mode {
-        CliLoadMode::Arrival => LoadMode::Arrival,
-        CliLoadMode::Step => LoadMode::Step,
-        CliLoadMode::Ramp => LoadMode::Ramp,
-        CliLoadMode::Jitter => LoadMode::Jitter,
-        CliLoadMode::Burst => LoadMode::Burst,
-        CliLoadMode::Soak => LoadMode::Soak,
-    }
+    load_mode.to_domain()
 }
 
 fn map_scenario(scenario: &CliScenario) -> Scenario {
