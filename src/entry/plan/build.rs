@@ -205,11 +205,13 @@ fn validate_db_logging(args: &TesterArgs) -> AppResult<()> {
 }
 
 fn validate_protocol_support(args: &TesterArgs) -> AppResult<()> {
+    let protocol = args.protocol.to_domain();
+    let load_mode = args.load_mode.to_domain();
     let registry = protocol_registry();
-    let Some(adapter) = registry.adapter(args.protocol) else {
+    let Some(adapter) = registry.adapter(protocol) else {
         let supported = registry.executable_protocols_csv();
         return Err(AppError::validation(ValidationError::UnsupportedProtocol {
-            protocol: args.protocol.as_str().to_owned(),
+            protocol: protocol.as_str().to_owned(),
             supported,
         }));
     };
@@ -218,18 +220,18 @@ fn validate_protocol_support(args: &TesterArgs) -> AppResult<()> {
         adapter.display_name(),
         adapter.supports_stateful_connections()
     );
-    if !registry.supports_execution(args.protocol) {
+    if !registry.supports_execution(protocol) {
         let supported = registry.executable_protocols_csv();
         return Err(AppError::validation(ValidationError::UnsupportedProtocol {
-            protocol: args.protocol.as_str().to_owned(),
+            protocol: protocol.as_str().to_owned(),
             supported,
         }));
     }
-    if !registry.supports_load_mode(args.protocol, args.load_mode) {
+    if !registry.supports_load_mode(protocol, load_mode) {
         return Err(AppError::validation(
             ValidationError::UnsupportedLoadModeForProtocol {
-                protocol: args.protocol.as_str().to_owned(),
-                load_mode: args.load_mode.as_str().to_owned(),
+                protocol: protocol.as_str().to_owned(),
+                load_mode: load_mode.as_str().to_owned(),
             },
         ));
     }

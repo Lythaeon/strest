@@ -303,6 +303,11 @@ Phase 3 artifacts (implemented):
 Exit criteria:
 - Application no longer depends on `protocol/runtime` internals.
 
+Phase 4 artifacts (implemented):
+- Transport adapter boundary contract: `src/protocol/traits.rs`
+- Registry-driven builtin transport adapter wiring: `src/protocol/builtins.rs`, `src/protocol/registry.rs`, `src/protocol/runtime.rs`
+- Domain protocol key flow in planning/local-run adapter seams: `src/entry/plan/build.rs`, `src/application/local_run.rs`, `src/app/runner/core/mod.rs`
+
 ### Phase 5: Distributed slice extraction (2-3 weeks)
 1. Introduce `DistributedRunCommand` and domain state models.
 2. Move controller/agent workflows into application services.

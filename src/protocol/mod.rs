@@ -12,4 +12,4 @@ mod tests;
 pub(crate) use registry::ProtocolRegistry;
 pub use registry::protocol_registry;
 pub use runtime::setup_request_sender;
-pub use traits::{ProtocolAdapter, ProtocolAdapterError};
+pub use traits::{ProtocolAdapter, ProtocolAdapterError, TransportAdapter};

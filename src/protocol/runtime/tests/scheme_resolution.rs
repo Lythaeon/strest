@@ -68,7 +68,13 @@ fn planned_protocols_reject_unsupported_url_schemes() -> AppResult<()> {
             let args = parse_args(protocol, load_mode, url)?;
             let (shutdown_tx, _) = broadcast::channel::<()>(SHUTDOWN_CHANNEL_CAPACITY);
             let (metrics_tx, _metrics_rx) = mpsc::channel::<Metrics>(2);
-            let err = match setup_request_sender(&args, &shutdown_tx, &metrics_tx, None) {
+            let err = match setup_request_sender(
+                args.protocol.to_domain(),
+                &args,
+                &shutdown_tx,
+                &metrics_tx,
+                None,
+            ) {
                 Ok(_) => {
                     return Err(AppError::validation(
                         "Expected unsupported scheme error but sender setup succeeded",

@@ -1,6 +1,6 @@
-use crate::args::{LoadMode, Protocol};
+use crate::domain::run::{LoadMode, ProtocolKind};
 
-use crate::protocol::ProtocolAdapter;
+use crate::protocol::{ProtocolAdapter, TransportAdapter};
 
 const LOAD_MODES: &[LoadMode] = &[
     LoadMode::Arrival,
@@ -14,8 +14,8 @@ const LOAD_MODES: &[LoadMode] = &[
 pub struct ChatWebSocketPlugin;
 
 impl ProtocolAdapter for ChatWebSocketPlugin {
-    fn protocol(&self) -> Protocol {
-        Protocol::Websocket
+    fn protocol(&self) -> ProtocolKind {
+        ProtocolKind::Websocket
     }
 
     fn display_name(&self) -> &'static str {
@@ -34,3 +34,5 @@ impl ProtocolAdapter for ChatWebSocketPlugin {
         LOAD_MODES
     }
 }
+
+impl TransportAdapter for ChatWebSocketPlugin {}

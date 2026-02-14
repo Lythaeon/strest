@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ProtocolKind {
+pub enum ProtocolKind {
     Http,
     GrpcUnary,
     GrpcStreaming,
@@ -15,7 +15,7 @@ pub(crate) enum ProtocolKind {
 
 impl ProtocolKind {
     #[must_use]
-    pub(crate) const fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             ProtocolKind::Http => "http",
             ProtocolKind::GrpcUnary => "grpc-unary",
@@ -33,7 +33,7 @@ impl ProtocolKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LoadMode {
+pub enum LoadMode {
     Arrival,
     Step,
     Ramp,
@@ -44,7 +44,7 @@ pub(crate) enum LoadMode {
 
 impl LoadMode {
     #[must_use]
-    pub(crate) const fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             LoadMode::Arrival => "arrival",
             LoadMode::Step => "step",
@@ -57,23 +57,23 @@ impl LoadMode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Scenario {
-    pub(crate) base_url: Option<String>,
-    pub(crate) vars_count: usize,
-    pub(crate) step_count: usize,
+pub struct Scenario {
+    pub base_url: Option<String>,
+    pub vars_count: usize,
+    pub step_count: usize,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct RunConfig {
-    pub(crate) protocol: ProtocolKind,
-    pub(crate) load_mode: LoadMode,
-    pub(crate) target_url: Option<String>,
-    pub(crate) scenario: Option<Scenario>,
+pub struct RunConfig {
+    pub protocol: ProtocolKind,
+    pub load_mode: LoadMode,
+    pub target_url: Option<String>,
+    pub scenario: Option<Scenario>,
 }
 
 impl RunConfig {
     #[must_use]
-    pub(crate) fn scenario_step_count(&self) -> usize {
+    pub fn scenario_step_count(&self) -> usize {
         self.scenario
             .as_ref()
             .map(|scenario| scenario.step_count)
@@ -81,7 +81,7 @@ impl RunConfig {
     }
 
     #[must_use]
-    pub(crate) fn scenario_vars_count(&self) -> usize {
+    pub fn scenario_vars_count(&self) -> usize {
         self.scenario
             .as_ref()
             .map(|scenario| scenario.vars_count)
@@ -89,7 +89,7 @@ impl RunConfig {
     }
 
     #[must_use]
-    pub(crate) fn scenario_base_url(&self) -> Option<&str> {
+    pub fn scenario_base_url(&self) -> Option<&str> {
         self.scenario
             .as_ref()
             .and_then(|scenario| scenario.base_url.as_deref())

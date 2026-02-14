@@ -8,6 +8,7 @@ use tracing::{info, warn};
 
 use crate::app::logs;
 use crate::args::TesterArgs;
+use crate::domain::run::ProtocolKind;
 use crate::error::{AppError, AppResult, ValidationError};
 use crate::metrics::{self, Metrics};
 use crate::shutdown::{ShutdownReceiver, ShutdownSender};
@@ -29,6 +30,7 @@ pub(crate) struct RunOutcome {
 }
 
 pub(crate) struct LocalRunExecutionCommand {
+    protocol: ProtocolKind,
     args: TesterArgs,
     stream_tx: Option<mpsc::UnboundedSender<metrics::StreamSnapshot>>,
     external_shutdown: Option<watch::Receiver<bool>>,
@@ -37,11 +39,13 @@ pub(crate) struct LocalRunExecutionCommand {
 impl LocalRunExecutionCommand {
     #[must_use]
     pub(crate) const fn new(
+        protocol: ProtocolKind,
         args: TesterArgs,
         stream_tx: Option<mpsc::UnboundedSender<metrics::StreamSnapshot>>,
         external_shutdown: Option<watch::Receiver<bool>>,
     ) -> Self {
         Self {
+            protocol,
             args,
             stream_tx,
             external_shutdown,
@@ -52,11 +56,17 @@ impl LocalRunExecutionCommand {
     pub(crate) fn into_parts(
         self,
     ) -> (
+        ProtocolKind,
         TesterArgs,
         Option<mpsc::UnboundedSender<metrics::StreamSnapshot>>,
         Option<watch::Receiver<bool>>,
     ) {
-        (self.args, self.stream_tx, self.external_shutdown)
+        (
+            self.protocol,
+            self.args,
+            self.stream_tx,
+            self.external_shutdown,
+        )
     }
 }
 
@@ -80,6 +90,7 @@ pub(crate) trait ShutdownPort {
 pub(crate) trait TrafficPort {
     fn setup_request_sender(
         &self,
+        protocol: ProtocolKind,
         args: &TesterArgs,
         shutdown_tx: &ShutdownSender,
         metrics_tx: &mpsc::Sender<Metrics>,
@@ -178,7 +189,7 @@ where
     TMetrics: MetricsPort,
     TOutput: OutputPort + Sync,
 {
-    let (args, stream_tx, external_shutdown) = command.into_parts();
+    let (protocol, args, stream_tx, external_shutdown) = command.into_parts();
 
     #[cfg(feature = "wasm")]
     let mut plugin_host = WasmPluginHost::from_paths(&args.plugin)?;
@@ -240,6 +251,7 @@ where
         .await?;
 
     let request_sender_handle = match traffic_port.setup_request_sender(
+        protocol,
         &args,
         &shutdown_tx,
         &metrics_tx,
@@ -369,6 +381,7 @@ mod tests {
     impl TrafficPort for FakeTrafficPort {
         fn setup_request_sender(
             &self,
+            _protocol: ProtocolKind,
             _args: &TesterArgs,
             _shutdown_tx: &ShutdownSender,
             _metrics_tx: &mpsc::Sender<Metrics>,
@@ -506,7 +519,8 @@ mod tests {
             splash_cancelled: false,
             finalize_called: finalize_called.clone(),
         };
-        let command = LocalRunExecutionCommand::new(parse_args()?, None, None);
+        let args = parse_args()?;
+        let command = LocalRunExecutionCommand::new(args.protocol.to_domain(), args, None, None);
 
         let outcome = execute(
             command,
@@ -534,7 +548,8 @@ mod tests {
             splash_cancelled: true,
             finalize_called: finalize_called.clone(),
         };
-        let command = LocalRunExecutionCommand::new(parse_args()?, None, None);
+        let args = parse_args()?;
+        let command = LocalRunExecutionCommand::new(args.protocol.to_domain(), args, None, None);
 
         let result = execute(
             command,

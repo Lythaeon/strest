@@ -131,6 +131,23 @@ impl Protocol {
             Protocol::Raknet => "raknet",
         }
     }
+
+    #[must_use]
+    pub const fn to_domain(self) -> crate::domain::run::ProtocolKind {
+        match self {
+            Protocol::Http => crate::domain::run::ProtocolKind::Http,
+            Protocol::GrpcUnary => crate::domain::run::ProtocolKind::GrpcUnary,
+            Protocol::GrpcStreaming => crate::domain::run::ProtocolKind::GrpcStreaming,
+            Protocol::Websocket => crate::domain::run::ProtocolKind::Websocket,
+            Protocol::Tcp => crate::domain::run::ProtocolKind::Tcp,
+            Protocol::Udp => crate::domain::run::ProtocolKind::Udp,
+            Protocol::Quic => crate::domain::run::ProtocolKind::Quic,
+            Protocol::Mqtt => crate::domain::run::ProtocolKind::Mqtt,
+            Protocol::Enet => crate::domain::run::ProtocolKind::Enet,
+            Protocol::Kcp => crate::domain::run::ProtocolKind::Kcp,
+            Protocol::Raknet => crate::domain::run::ProtocolKind::Raknet,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
@@ -154,6 +171,18 @@ impl LoadMode {
             LoadMode::Jitter => "jitter",
             LoadMode::Burst => "burst",
             LoadMode::Soak => "soak",
+        }
+    }
+
+    #[must_use]
+    pub const fn to_domain(self) -> crate::domain::run::LoadMode {
+        match self {
+            LoadMode::Arrival => crate::domain::run::LoadMode::Arrival,
+            LoadMode::Step => crate::domain::run::LoadMode::Step,
+            LoadMode::Ramp => crate::domain::run::LoadMode::Ramp,
+            LoadMode::Jitter => crate::domain::run::LoadMode::Jitter,
+            LoadMode::Burst => crate::domain::run::LoadMode::Burst,
+            LoadMode::Soak => crate::domain::run::LoadMode::Soak,
         }
     }
 }
