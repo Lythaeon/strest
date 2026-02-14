@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::application::commands::{
-    DistributedRunCommand, LocalRunCommand, ReplayRunCommand, ServiceCommand,
-};
+use crate::application::commands::{DistributedRunCommand, LocalRunCommand, ReplayRunCommand};
 use crate::args::{
     LoadMode as CliLoadMode, Protocol as CliProtocol, Scenario as CliScenario, TesterArgs,
 };
@@ -10,36 +8,31 @@ use crate::config::types::ScenarioConfig;
 use crate::domain::run::{LoadMode, ProtocolKind, RunConfig, Scenario};
 use crate::error::{AppError, AppResult, ValidationError};
 
-pub(crate) fn to_local_run_command(mut args: TesterArgs) -> AppResult<LocalRunCommand> {
+pub(crate) fn to_local_run_command(args: &TesterArgs) -> AppResult<LocalRunCommand> {
     if args.url.is_none() && args.scenario.is_none() {
         tracing::error!("Missing URL (set --url or provide in config).");
         return Err(AppError::validation(ValidationError::MissingUrl));
     }
-    args.distributed_stream_summaries = false;
-    let run_config = to_run_config(&args);
-    Ok(LocalRunCommand::new(run_config, args))
+    let run_config = to_run_config(args);
+    Ok(LocalRunCommand::new(run_config, args.no_color))
 }
 
-pub(crate) fn to_replay_run_command(args: TesterArgs) -> ReplayRunCommand {
-    let run_config = to_run_config(&args);
-    ReplayRunCommand::new(run_config, args)
-}
-
-pub(crate) const fn to_service_command(args: TesterArgs) -> ServiceCommand {
-    ServiceCommand::new(args)
+pub(crate) fn to_replay_run_command(args: &TesterArgs) -> ReplayRunCommand {
+    let run_config = to_run_config(args);
+    ReplayRunCommand::new(run_config, args.no_color)
 }
 
 pub(crate) fn to_controller_run_command(
-    args: TesterArgs,
+    args: &TesterArgs,
     scenarios: Option<BTreeMap<String, ScenarioConfig>>,
 ) -> DistributedRunCommand {
-    let run_config = to_run_config(&args);
-    DistributedRunCommand::new_controller(run_config, args, scenarios)
+    let run_config = to_run_config(args);
+    DistributedRunCommand::new_controller(run_config, args.no_color, scenarios)
 }
 
-pub(crate) fn to_agent_run_command(args: TesterArgs) -> DistributedRunCommand {
-    let run_config = to_run_config(&args);
-    DistributedRunCommand::new_agent(run_config, args)
+pub(crate) fn to_agent_run_command(args: &TesterArgs) -> DistributedRunCommand {
+    let run_config = to_run_config(args);
+    DistributedRunCommand::new_agent(run_config, args.no_color)
 }
 
 fn to_run_config(args: &TesterArgs) -> RunConfig {
@@ -90,7 +83,7 @@ mod tests {
             return;
         };
 
-        let mapped = to_local_run_command(args);
+        let mapped = to_local_run_command(&args);
         assert!(
             mapped.is_err(),
             "Expected local command mapper to reject missing URL and scenario"
@@ -127,7 +120,7 @@ mod tests {
             return;
         };
 
-        let mapped = to_local_run_command(args);
+        let mapped = to_local_run_command(&args);
         assert!(
             mapped.is_ok(),
             "Expected local command mapping to succeed for valid arguments"

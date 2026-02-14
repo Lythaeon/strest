@@ -18,29 +18,29 @@ pub(crate) async fn execute_plan(plan: RunPlan) -> AppResult<()> {
     match plan {
         RunPlan::Cleanup(cleanup_args) => run_cleanup(&cleanup_args).await,
         RunPlan::Compare(compare_args) => run_compare(&compare_args).await,
-        RunPlan::Replay(command) => {
+        RunPlan::Replay { command, args } => {
             log_run_command("replay", command.run_config());
             banner::print_cli_banner(command.no_color());
             println!();
-            run_replay(command.as_args()).await
+            run_replay(&args).await
         }
         RunPlan::DumpUrls(plan) => dump_urls(plan),
-        RunPlan::Service(command) => {
-            crate::service::handle_service_action(command.as_args())?;
+        RunPlan::Service(args) => {
+            crate::service::handle_service_action(&args)?;
             Ok(())
         }
-        RunPlan::Distributed(command) => {
+        RunPlan::Distributed { command, args } => {
             log_run_command(command.mode_name(), command.run_config());
             banner::print_cli_banner(command.no_color());
             println!();
             let distributed_port = RuntimeDistributedPort;
-            distributed_run::execute(command, &distributed_port).await
+            distributed_run::execute(command, args, &distributed_port).await
         }
-        RunPlan::Local(command) => {
+        RunPlan::Local { command, args } => {
             log_run_command("local", command.run_config());
             banner::print_cli_banner(command.no_color());
             println!();
-            let outcome = match run_local(command.into_args(), None, None).await {
+            let outcome = match run_local(args, None, None).await {
                 Ok(outcome) => outcome,
                 Err(AppError::Validation(ValidationError::RunCancelled)) => return Ok(()),
                 Err(err) => return Err(err),
@@ -57,17 +57,17 @@ pub(crate) async fn execute_plan(plan: RunPlan) -> AppResult<()> {
 struct RuntimeDistributedPort;
 
 #[async_trait]
-impl DistributedRunPort for RuntimeDistributedPort {
+impl DistributedRunPort<TesterArgs> for RuntimeDistributedPort {
     async fn run_controller(
         &self,
-        args: &TesterArgs,
+        adapter_args: &TesterArgs,
         scenarios: Option<BTreeMap<String, ScenarioConfig>>,
     ) -> AppResult<()> {
-        crate::distributed::run_controller(args, scenarios).await
+        crate::distributed::run_controller(adapter_args, scenarios).await
     }
 
-    async fn run_agent(&self, args: TesterArgs) -> AppResult<()> {
-        crate::distributed::run_agent(args).await
+    async fn run_agent(&self, adapter_args: &TesterArgs) -> AppResult<()> {
+        crate::distributed::run_agent(adapter_args.clone()).await
     }
 }
 

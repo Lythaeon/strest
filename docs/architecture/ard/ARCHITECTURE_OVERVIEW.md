@@ -2,6 +2,8 @@
 
 _Generated from `src/**/*.rs` on 2026-02-13 13:05:45 UTC_
 
+_Phase 7 migration annotations updated on 2026-02-14._
+
 ## Scope
 - Module inventory includes all source modules under `src/` (including test modules inside `src`).
 - Dependency graph edges are derived from `crate::...` references in non-test source files only.
@@ -38,6 +40,43 @@ flowchart TD
 
   agent --> agentSession["distributed::agent::session"]
   agentSession --> wire
+```
+
+## Hexagonal Migration Snapshot (Phase 7)
+
+### Before (Legacy Coupling Path)
+```mermaid
+flowchart LR
+  cli["CLI parse (`TesterArgs`)"]
+  plan["entry::plan::build_plan"]
+  commands["application::commands\n(owned `TesterArgs`)"]
+  local["application::local_run\n(direct `TesterArgs`)"]
+  dist["application::distributed_run\n(direct `TesterArgs`)"]
+  runtime["Runtime adapters + infra"]
+
+  cli --> plan --> commands
+  commands --> local --> runtime
+  commands --> dist --> runtime
+```
+
+### After (Phase 7 Boundary)
+```mermaid
+flowchart LR
+  cli["CLI/config adapters (`TesterArgs`)"]
+  mapper["adapters::cli::mapper"]
+  plan["entry::plan\n(command + adapter payload)"]
+  appcmd["application::commands\n(run metadata only)"]
+  applocal["application::local_run\n(generic ports + `LocalRunSettings`)"]
+  appdist["application::distributed_run\n(generic dispatch)"]
+  runtime["Runtime adapters + infra (`TesterArgs`)"]
+
+  cli --> mapper --> plan
+  plan --> appcmd
+  appcmd --> applocal
+  appcmd --> appdist
+  plan --> runtime
+  applocal --> runtime
+  appdist --> runtime
 ```
 
 ## Top-Level Dependency Graph

@@ -4,7 +4,6 @@ use clap::ArgMatches;
 
 use crate::adapters::cli::mapper::{
     to_agent_run_command, to_controller_run_command, to_local_run_command, to_replay_run_command,
-    to_service_command,
 };
 use crate::args::{Command, LoadMode, OutputFormat, TesterArgs};
 use crate::config::types::ScenarioConfig;
@@ -67,7 +66,8 @@ pub(crate) fn build_plan(mut args: TesterArgs, matches: &ArgMatches) -> AppResul
     }
 
     if args.replay {
-        return Ok(RunPlan::Replay(to_replay_run_command(args)));
+        let command = to_replay_run_command(&args);
+        return Ok(RunPlan::Replay { command, args });
     }
 
     let (mut args, scenario_registry) = apply_config(args, matches)?;
@@ -88,7 +88,7 @@ pub(crate) fn build_plan(mut args: TesterArgs, matches: &ArgMatches) -> AppResul
     }
 
     if args.install_service || args.uninstall_service {
-        return Ok(RunPlan::Service(to_service_command(args)));
+        return Ok(RunPlan::Service(args));
     }
 
     if args.script.is_some() && args.scenario.is_some() {
@@ -108,10 +108,8 @@ pub(crate) fn build_plan(mut args: TesterArgs, matches: &ArgMatches) -> AppResul
     }
 
     if args.controller_listen.is_some() {
-        return Ok(RunPlan::Distributed(to_controller_run_command(
-            args,
-            scenario_registry,
-        )));
+        let command = to_controller_run_command(&args, scenario_registry);
+        return Ok(RunPlan::Distributed { command, args });
     }
 
     if args.no_ua && !args.authorized {
@@ -124,10 +122,13 @@ pub(crate) fn build_plan(mut args: TesterArgs, matches: &ArgMatches) -> AppResul
     }
 
     if args.agent_join.is_some() {
-        return Ok(RunPlan::Distributed(to_agent_run_command(args)));
+        let command = to_agent_run_command(&args);
+        return Ok(RunPlan::Distributed { command, args });
     }
 
-    Ok(RunPlan::Local(to_local_run_command(args)?))
+    args.distributed_stream_summaries = false;
+    let command = to_local_run_command(&args)?;
+    Ok(RunPlan::Local { command, args })
 }
 
 fn apply_config(
@@ -263,4 +264,167 @@ fn build_dump_urls_plan(args: &TesterArgs) -> AppResult<DumpUrlsPlan> {
         count,
         max_repeat,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::{ArgMatches, CommandFactory, FromArgMatches};
+
+    use super::build_plan;
+    use crate::args::TesterArgs;
+    use crate::entry::plan::types::RunPlan;
+    use crate::error::AppResult;
+
+    fn parse_args_and_matches(argv: &[&str]) -> AppResult<(TesterArgs, ArgMatches)> {
+        let cmd = TesterArgs::command();
+        let matches = cmd.try_get_matches_from(argv)?;
+        let args = TesterArgs::from_arg_matches(&matches)?;
+        Ok((args, matches))
+    }
+
+    fn build_from(argv: &[&str]) -> AppResult<RunPlan> {
+        let (args, matches) = parse_args_and_matches(argv)?;
+        build_plan(args, &matches)
+    }
+
+    #[test]
+    fn routes_cleanup_subcommand() -> AppResult<()> {
+        let plan = build_from(&["strest", "cleanup", "--dry-run"])?;
+        if !matches!(plan, RunPlan::Cleanup(_)) {
+            return Err(crate::error::AppError::validation(
+                "expected cleanup plan for cleanup subcommand",
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn routes_compare_subcommand() -> AppResult<()> {
+        let plan = build_from(&["strest", "compare", "left.json", "right.json"])?;
+        if !matches!(plan, RunPlan::Compare(_)) {
+            return Err(crate::error::AppError::validation(
+                "expected compare plan for compare subcommand",
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn routes_replay_mode() -> AppResult<()> {
+        let plan = build_from(&["strest", "--url", "http://localhost", "--replay"])?;
+        if !matches!(plan, RunPlan::Replay { .. }) {
+            return Err(crate::error::AppError::validation(
+                "expected replay plan when --replay is set",
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn routes_dump_urls_mode() -> AppResult<()> {
+        let plan = build_from(&[
+            "strest",
+            "--url",
+            "https://example.com/item/[a-z]{2}",
+            "--rand-regex-url",
+            "--dump-urls",
+            "2",
+        ])?;
+        if !matches!(plan, RunPlan::DumpUrls(_)) {
+            return Err(crate::error::AppError::validation(
+                "expected dump-urls plan when dump flags are set",
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn routes_service_mode() -> AppResult<()> {
+        let plan = build_from(&["strest", "--install-service"])?;
+        if let RunPlan::Service(args) = plan {
+            if !args.install_service {
+                return Err(crate::error::AppError::validation(
+                    "expected install-service flag in service plan",
+                ));
+            }
+        } else {
+            return Err(crate::error::AppError::validation(
+                "expected service plan when service flags are set",
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn routes_distributed_controller_mode() -> AppResult<()> {
+        let plan = build_from(&[
+            "strest",
+            "--url",
+            "http://localhost",
+            "--controller-listen",
+            "127.0.0.1:9009",
+        ])?;
+        if let RunPlan::Distributed { command, args } = plan {
+            if command.mode_name() != "controller" {
+                return Err(crate::error::AppError::validation(
+                    "expected controller distributed command mode",
+                ));
+            }
+            if args.controller_listen.is_none() {
+                return Err(crate::error::AppError::validation(
+                    "expected controller listen address to be preserved",
+                ));
+            }
+        } else {
+            return Err(crate::error::AppError::validation(
+                "expected distributed plan in controller mode",
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn routes_distributed_agent_mode() -> AppResult<()> {
+        let plan = build_from(&[
+            "strest",
+            "--url",
+            "http://localhost",
+            "--agent-join",
+            "127.0.0.1:9009",
+        ])?;
+        if let RunPlan::Distributed { command, args } = plan {
+            if command.mode_name() != "agent" {
+                return Err(crate::error::AppError::validation(
+                    "expected agent distributed command mode",
+                ));
+            }
+            if args.agent_join.is_none() {
+                return Err(crate::error::AppError::validation(
+                    "expected agent join address to be preserved",
+                ));
+            }
+        } else {
+            return Err(crate::error::AppError::validation(
+                "expected distributed plan in agent mode",
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn routes_local_mode_and_disables_distributed_streaming() -> AppResult<()> {
+        let plan = build_from(&["strest", "--url", "http://localhost"])?;
+        if let RunPlan::Local { args, .. } = plan {
+            if args.distributed_stream_summaries {
+                return Err(crate::error::AppError::validation(
+                    "local mode should disable distributed stream summaries",
+                ));
+            }
+        } else {
+            return Err(crate::error::AppError::validation(
+                "expected local plan for default run path",
+            ));
+        }
+        Ok(())
+    }
 }

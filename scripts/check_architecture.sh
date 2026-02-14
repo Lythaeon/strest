@@ -77,6 +77,31 @@ check_forbidden_crates_in_layer() {
   done
 }
 
+check_forbidden_pattern_in_layer() {
+  local layer_dir="$1"
+  local description="$2"
+  local regex="$3"
+
+  if [[ ! -d "$layer_dir" ]]; then
+    echo "skip: ${layer_dir} not present"
+    return 0
+  fi
+
+  local matches
+  if [[ "$HAS_RG" -eq 1 ]]; then
+    matches="$(rg -n --glob '*.rs' "$regex" "$layer_dir" || true)"
+  else
+    matches="$(grep -R -n -E --include='*.rs' "$regex" "$layer_dir" || true)"
+  fi
+  if [[ -n "$matches" ]]; then
+    echo "error: forbidden ${description} detected in ${layer_dir}"
+    printf '%s\n' "$matches"
+    FAILED=1
+  else
+    echo "ok: ${layer_dir} has no ${description}"
+  fi
+}
+
 print_top_module_edges() {
   local edge_tmp
   edge_tmp="$(mktemp)"
@@ -126,6 +151,8 @@ find_use_refs() {
 echo "Architecture boundary checks"
 check_forbidden_crates_in_layer "src/domain" "clap" "reqwest" "tokio" "ratatui" "crossterm"
 check_forbidden_crates_in_layer "src/application" "clap"
+check_forbidden_pattern_in_layer "src/application" "'TesterArgs' references" "\\bTesterArgs\\b"
+check_forbidden_pattern_in_layer "src/application" "'crate::args' imports" "crate::args::"
 
 echo
 echo "Coupling baseline metrics"

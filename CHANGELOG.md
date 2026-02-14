@@ -5,6 +5,11 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+- Completed Phase 7 of the hexagonal migration by removing direct `TesterArgs` coupling from the application layer (`application::commands`, `application::local_run`, `application::distributed_run`) and tightening adapter-boundary mapping in entry planning.
+- Added architecture guardrails that fail checks when `src/application` reintroduces `TesterArgs` or `crate::args` imports.
+- Added migration validation coverage for all run-plan feature routes (local, distributed controller/agent, replay, compare, cleanup, dump-urls, service) and distributed/local application dispatch seams.
+- Updated architecture docs with Phase 7 implementation artifacts, current coupling metrics snapshot, and Mermaid before/after boundary diagrams.
+
 ## 0.1.9
 
 Released: 2026-02-13

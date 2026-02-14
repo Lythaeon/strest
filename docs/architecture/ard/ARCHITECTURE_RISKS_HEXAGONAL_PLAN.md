@@ -340,6 +340,22 @@ Phase 6 artifacts (implemented):
 Exit criteria:
 - `TesterArgs` references constrained to CLI/config adapter composition layer.
 
+Phase 7 artifacts (implemented):
+- Application command model no longer stores CLI structs: `src/application/commands.rs`
+- Local/distributed application seams now accept adapter payloads generically while keeping typed run settings in application: `src/application/local_run.rs`, `src/application/distributed_run.rs`
+- Entry planning now carries typed commands plus adapter payloads, instead of embedding CLI structs in application commands: `src/entry/plan/types.rs`, `src/entry/plan/build.rs`, `src/entry/plan/execute.rs`
+- Runtime adapter composition maps `TesterArgs -> LocalRunSettings` at adapter boundary and owns WASM plugin lifecycle there: `src/app/runner/core/mod.rs`
+- Architecture guardrails now fail on application-layer `TesterArgs` / `crate::args` coupling: `scripts/check_architecture.sh`
+- Added migration validation tests for all entry routing modes and distributed/local application dispatch seams: `src/entry/plan/build.rs`, `src/application/distributed_run.rs`, `src/application/local_run.rs`
+
+Phase 7 validation snapshot (2026-02-14):
+- `cargo make architecture-check` passes.
+- `src/application` contains no `TesterArgs` references and no `crate::args` imports.
+- Coupling counters at snapshot time:
+  - `non_test_rust_files`: `220`
+  - `files_referencing_crate_args`: `70`
+  - `files_referencing_tester_args`: `65`
+
 ## Recommended First Backlog (Concrete)
 
 1. Create `src/domain/run.rs` and move `Protocol`, `LoadMode`, `Scenario`, `ScenarioStep` there.
@@ -355,6 +371,10 @@ Track these per PR/sprint:
 - Count of non-test files referencing `crate::args` (baseline: `71`, target first milestone: `<40`, final target: adapter-only).
 - Number of use cases executable with mocked ports and no terminal/network dependencies.
 - Time-to-add-new-protocol/new-output-sink (should fall as adapters isolate infra concerns).
+
+Current trend note (2026-02-14):
+- `files_referencing_crate_args` dropped from baseline (`71` -> `70`).
+- `files_referencing_tester_args` is above the historical baseline because migration test coverage now lives in non-test module files; next cleanup should move CLI-heavy fixtures into excluded test directories and continue adapter-only narrowing in infra modules.
 
 ## Risks During Migration
 

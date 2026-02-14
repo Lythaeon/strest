@@ -21,6 +21,7 @@ pub enum ScriptError {
         #[from]
         source: ConfigError,
     },
+    #[cfg(not(feature = "wasm"))]
     #[error("WASM scripting requires the 'wasm' feature.")]
     WasmFeatureDisabled,
     #[cfg(feature = "wasm")]
@@ -52,8 +53,6 @@ pub enum WasmSection {
     Table,
     #[error("data")]
     Data,
-    #[error("function body")]
-    FunctionBody,
 }
 
 #[cfg(feature = "wasm")]

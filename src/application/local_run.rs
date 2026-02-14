@@ -7,17 +7,29 @@ use tokio::time::Instant;
 use tracing::{info, warn};
 
 use crate::app::logs;
-use crate::args::TesterArgs;
 use crate::domain::run::ProtocolKind;
 use crate::error::{AppError, AppResult, ValidationError};
 use crate::metrics::{self, Metrics};
 use crate::shutdown::{ShutdownReceiver, ShutdownSender};
 use crate::ui::model::UiData;
 
-#[cfg(not(feature = "wasm"))]
-use crate::error::ScriptError;
-#[cfg(feature = "wasm")]
-use crate::wasm_plugins::WasmPluginHost;
+#[derive(Debug, Clone)]
+pub(crate) struct LocalRunSettings {
+    pub no_color: bool,
+    pub no_ui: bool,
+    pub no_splash: bool,
+    pub no_charts: bool,
+    pub summary: bool,
+    pub show_selections: bool,
+    pub verbose: bool,
+    pub target_duration_secs: u64,
+    pub ui_window_ms: u64,
+    pub rss_log_ms: Option<u64>,
+    pub alloc_profiler_ms: Option<u64>,
+    pub alloc_profiler_dump_ms: Option<u64>,
+    pub alloc_profiler_dump_path: String,
+    pub metrics_max: usize,
+}
 
 #[derive(Debug)]
 pub(crate) struct RunOutcome {
@@ -29,24 +41,27 @@ pub(crate) struct RunOutcome {
     pub runtime_errors: Vec<String>,
 }
 
-pub(crate) struct LocalRunExecutionCommand {
+pub(crate) struct LocalRunExecutionCommand<TAdapterArgs> {
     protocol: ProtocolKind,
-    args: TesterArgs,
+    settings: LocalRunSettings,
+    adapter_args: TAdapterArgs,
     stream_tx: Option<mpsc::UnboundedSender<metrics::StreamSnapshot>>,
     external_shutdown: Option<watch::Receiver<bool>>,
 }
 
-impl LocalRunExecutionCommand {
+impl<TAdapterArgs> LocalRunExecutionCommand<TAdapterArgs> {
     #[must_use]
     pub(crate) const fn new(
         protocol: ProtocolKind,
-        args: TesterArgs,
+        settings: LocalRunSettings,
+        adapter_args: TAdapterArgs,
         stream_tx: Option<mpsc::UnboundedSender<metrics::StreamSnapshot>>,
         external_shutdown: Option<watch::Receiver<bool>>,
     ) -> Self {
         Self {
             protocol,
-            args,
+            settings,
+            adapter_args,
             stream_tx,
             external_shutdown,
         }
@@ -57,13 +72,15 @@ impl LocalRunExecutionCommand {
         self,
     ) -> (
         ProtocolKind,
-        TesterArgs,
+        LocalRunSettings,
+        TAdapterArgs,
         Option<mpsc::UnboundedSender<metrics::StreamSnapshot>>,
         Option<watch::Receiver<bool>>,
     ) {
         (
             self.protocol,
-            self.args,
+            self.settings,
+            self.adapter_args,
             self.stream_tx,
             self.external_shutdown,
         )
@@ -87,26 +104,26 @@ pub(crate) trait ShutdownPort {
     ) -> tokio::task::JoinHandle<()>;
 }
 
-pub(crate) trait TrafficPort {
+pub(crate) trait TrafficPort<TAdapterArgs> {
     fn setup_request_sender(
         &self,
         protocol: ProtocolKind,
-        args: &TesterArgs,
+        adapter_args: &TAdapterArgs,
         shutdown_tx: &ShutdownSender,
         metrics_tx: &mpsc::Sender<Metrics>,
         log_sink: Option<&Arc<metrics::LogSink>>,
     ) -> AppResult<tokio::task::JoinHandle<()>>;
 }
 
-pub(crate) trait MetricsPort {
+pub(crate) trait MetricsPort<TAdapterArgs> {
     fn setup_metrics_collector(
         &self,
-        input: MetricsCollectorInput<'_>,
+        input: MetricsCollectorInput<'_, TAdapterArgs>,
     ) -> tokio::task::JoinHandle<metrics::MetricsReport>;
 }
 
-pub(crate) struct FinalizeRunInput<'args> {
-    pub args: &'args TesterArgs,
+pub(crate) struct FinalizeRunInput<'args, TAdapterArgs> {
+    pub adapter_args: &'args TAdapterArgs,
     pub charts_enabled: bool,
     pub summary_enabled: bool,
     pub metrics_max: usize,
@@ -114,12 +131,10 @@ pub(crate) struct FinalizeRunInput<'args> {
     pub report: metrics::MetricsReport,
     pub log_handles: Vec<tokio::task::JoinHandle<AppResult<metrics::LogResult>>>,
     pub log_paths: Vec<PathBuf>,
-    #[cfg(feature = "wasm")]
-    pub plugin_host: Option<&'args mut WasmPluginHost>,
 }
 
-pub(crate) struct MetricsCollectorInput<'args> {
-    pub args: &'args TesterArgs,
+pub(crate) struct MetricsCollectorInput<'args, TAdapterArgs> {
+    pub adapter_args: &'args TAdapterArgs,
     pub run_start: Instant,
     pub shutdown_tx: &'args ShutdownSender,
     pub metrics_rx: mpsc::Receiver<Metrics>,
@@ -128,30 +143,31 @@ pub(crate) struct MetricsCollectorInput<'args> {
 }
 
 #[async_trait]
-pub(crate) trait OutputPort {
+pub(crate) trait OutputPort<TAdapterArgs> {
+    fn prepare_run(&self, adapter_args: &TAdapterArgs) -> AppResult<()>;
     fn stdout_is_terminal(&self) -> bool;
-    fn setup_ui_channel(&self, args: &TesterArgs) -> watch::Sender<UiData>;
+    fn setup_ui_channel(&self, settings: &LocalRunSettings) -> watch::Sender<UiData>;
     async fn run_splash_screen(&self, no_color: bool) -> AppResult<bool>;
     fn setup_rss_log_task(
         &self,
         shutdown_tx: &ShutdownSender,
         no_ui: bool,
-        interval_ms: Option<&crate::args::PositiveU64>,
+        interval_ms: Option<u64>,
     ) -> tokio::task::JoinHandle<()>;
     fn setup_alloc_profiler_task(
         &self,
         shutdown_tx: &ShutdownSender,
-        interval_ms: Option<&crate::args::PositiveU64>,
+        interval_ms: Option<u64>,
     ) -> tokio::task::JoinHandle<()>;
     fn setup_alloc_profiler_dump_task(
         &self,
         shutdown_tx: &ShutdownSender,
-        interval_ms: Option<&crate::args::PositiveU64>,
+        interval_ms: Option<u64>,
         dump_path: &str,
     ) -> tokio::task::JoinHandle<()>;
     async fn setup_log_sinks(
         &self,
-        args: &TesterArgs,
+        adapter_args: &TAdapterArgs,
         run_start: Instant,
         charts_enabled: bool,
         summary_enabled: bool,
@@ -163,21 +179,24 @@ pub(crate) trait OutputPort {
     ) -> tokio::task::JoinHandle<()>;
     fn setup_progress_indicator(
         &self,
-        args: &TesterArgs,
+        adapter_args: &TAdapterArgs,
         run_start: Instant,
         shutdown_tx: &ShutdownSender,
     ) -> tokio::task::JoinHandle<()>;
-    async fn finalize_run(&self, input: FinalizeRunInput<'_>) -> AppResult<RunOutcome>;
+    async fn finalize_run(
+        &self,
+        input: FinalizeRunInput<'_, TAdapterArgs>,
+    ) -> AppResult<RunOutcome>;
 }
 
 /// Executes the local run use-case against injected ports.
 ///
 /// # Errors
 ///
-/// Returns an error when plugin hooks fail, transport setup fails, or
+/// Returns an error when adapter setup fails, transport setup fails, or
 /// downstream output finalization fails.
-pub(crate) async fn execute<TShutdown, TTraffic, TMetrics, TOutput>(
-    command: LocalRunExecutionCommand,
+pub(crate) async fn execute<TShutdown, TTraffic, TMetrics, TOutput, TAdapterArgs>(
+    command: LocalRunExecutionCommand<TAdapterArgs>,
     shutdown_port: &TShutdown,
     traffic_port: &TTraffic,
     metrics_port: &TMetrics,
@@ -185,23 +204,13 @@ pub(crate) async fn execute<TShutdown, TTraffic, TMetrics, TOutput>(
 ) -> AppResult<RunOutcome>
 where
     TShutdown: ShutdownPort,
-    TTraffic: TrafficPort,
-    TMetrics: MetricsPort,
-    TOutput: OutputPort + Sync,
+    TTraffic: TrafficPort<TAdapterArgs>,
+    TMetrics: MetricsPort<TAdapterArgs>,
+    TOutput: OutputPort<TAdapterArgs> + Sync,
 {
-    let (protocol, args, stream_tx, external_shutdown) = command.into_parts();
+    let (protocol, settings, adapter_args, stream_tx, external_shutdown) = command.into_parts();
 
-    #[cfg(feature = "wasm")]
-    let mut plugin_host = WasmPluginHost::from_paths(&args.plugin)?;
-    #[cfg(not(feature = "wasm"))]
-    if !args.plugin.is_empty() {
-        return Err(AppError::script(ScriptError::WasmFeatureDisabled));
-    }
-
-    #[cfg(feature = "wasm")]
-    if let Some(host) = plugin_host.as_mut() {
-        host.on_run_start(&args)?;
-    }
+    output_port.prepare_run(&adapter_args)?;
 
     let (shutdown_tx, _) = shutdown_port.shutdown_channel();
     if let Some(external_shutdown) = external_shutdown {
@@ -209,28 +218,28 @@ where
             shutdown_port.bridge_external_shutdown(&shutdown_tx, external_shutdown);
     }
 
-    let ui_tx = output_port.setup_ui_channel(&args);
+    let ui_tx = output_port.setup_ui_channel(&settings);
     let (metrics_tx, metrics_rx) = mpsc::channel::<Metrics>(10_000);
 
-    let ui_enabled = !args.no_ui && output_port.stdout_is_terminal();
-    if !ui_enabled && !args.no_ui {
+    let ui_enabled = !settings.no_ui && output_port.stdout_is_terminal();
+    if !ui_enabled && !settings.no_ui {
         info!("UI disabled because stdout is not a TTY.");
     }
-    let charts_enabled = !args.no_charts;
-    let summary_enabled = args.summary || args.show_selections;
+    let charts_enabled = !settings.no_charts;
+    let summary_enabled = settings.summary || settings.show_selections;
 
     let rss_handle =
-        output_port.setup_rss_log_task(&shutdown_tx, args.no_ui, args.rss_log_ms.as_ref());
+        output_port.setup_rss_log_task(&shutdown_tx, settings.no_ui, settings.rss_log_ms);
     let alloc_handle =
-        output_port.setup_alloc_profiler_task(&shutdown_tx, args.alloc_profiler_ms.as_ref());
+        output_port.setup_alloc_profiler_task(&shutdown_tx, settings.alloc_profiler_ms);
     let alloc_dump_handle = output_port.setup_alloc_profiler_dump_task(
         &shutdown_tx,
-        args.alloc_profiler_dump_ms.as_ref(),
-        &args.alloc_profiler_dump_path,
+        settings.alloc_profiler_dump_ms,
+        &settings.alloc_profiler_dump_path,
     );
 
-    if ui_enabled && !args.no_splash {
-        match output_port.run_splash_screen(args.no_color).await {
+    if ui_enabled && !settings.no_splash {
+        match output_port.run_splash_screen(settings.no_color).await {
             Ok(true) => {}
             Ok(false) => {
                 return Err(AppError::validation(ValidationError::RunCancelled));
@@ -247,12 +256,12 @@ where
         handles: log_handles,
         paths: log_paths,
     } = output_port
-        .setup_log_sinks(&args, run_start, charts_enabled, summary_enabled)
+        .setup_log_sinks(&adapter_args, run_start, charts_enabled, summary_enabled)
         .await?;
 
     let request_sender_handle = match traffic_port.setup_request_sender(
         protocol,
-        &args,
+        &adapter_args,
         &shutdown_tx,
         &metrics_tx,
         log_sink.as_ref(),
@@ -276,20 +285,20 @@ where
     } else {
         tokio::spawn(async {})
     };
-    let progress_handle = if args.no_ui && !args.verbose {
-        output_port.setup_progress_indicator(&args, run_start, &shutdown_tx)
+    let progress_handle = if settings.no_ui && !settings.verbose {
+        output_port.setup_progress_indicator(&adapter_args, run_start, &shutdown_tx)
     } else {
         tokio::spawn(async {})
     };
     let metrics_handle = metrics_port.setup_metrics_collector(MetricsCollectorInput {
-        args: &args,
+        adapter_args: &adapter_args,
         run_start,
         shutdown_tx: &shutdown_tx,
         metrics_rx,
         ui_tx: &ui_tx,
         stream_tx,
     });
-    let metrics_max = args.metrics_max.get();
+    let metrics_max = settings.metrics_max;
     let (_, _, _, _, _, _, _, metrics_result, request_result) = tokio::join!(
         keyboard_shutdown_handle,
         signal_shutdown_handle,
@@ -321,7 +330,7 @@ where
 
     output_port
         .finalize_run(FinalizeRunInput {
-            args: &args,
+            adapter_args: &adapter_args,
             charts_enabled,
             summary_enabled,
             metrics_max,
@@ -329,8 +338,6 @@ where
             report,
             log_handles,
             log_paths,
-            #[cfg(feature = "wasm")]
-            plugin_host: plugin_host.as_mut(),
         })
         .await
 }
@@ -345,6 +352,9 @@ mod tests {
 
     use super::*;
     use crate::app::logs::LogSetup;
+
+    #[derive(Debug, Clone, Copy)]
+    struct FakeAdapterArgs;
 
     struct FakeShutdownPort;
 
@@ -378,11 +388,11 @@ mod tests {
 
     struct FakeTrafficPort;
 
-    impl TrafficPort for FakeTrafficPort {
+    impl TrafficPort<FakeAdapterArgs> for FakeTrafficPort {
         fn setup_request_sender(
             &self,
             _protocol: ProtocolKind,
-            _args: &TesterArgs,
+            _adapter_args: &FakeAdapterArgs,
             _shutdown_tx: &ShutdownSender,
             _metrics_tx: &mpsc::Sender<Metrics>,
             _log_sink: Option<&Arc<metrics::LogSink>>,
@@ -393,10 +403,10 @@ mod tests {
 
     struct FakeMetricsPort;
 
-    impl MetricsPort for FakeMetricsPort {
+    impl MetricsPort<FakeAdapterArgs> for FakeMetricsPort {
         fn setup_metrics_collector(
             &self,
-            _input: MetricsCollectorInput<'_>,
+            _input: MetricsCollectorInput<'_, FakeAdapterArgs>,
         ) -> tokio::task::JoinHandle<metrics::MetricsReport> {
             tokio::spawn(async {
                 metrics::MetricsReport {
@@ -413,16 +423,20 @@ mod tests {
     }
 
     #[async_trait]
-    impl OutputPort for FakeOutputPort {
+    impl OutputPort<FakeAdapterArgs> for FakeOutputPort {
+        fn prepare_run(&self, _adapter_args: &FakeAdapterArgs) -> AppResult<()> {
+            Ok(())
+        }
+
         fn stdout_is_terminal(&self) -> bool {
             self.stdout_terminal
         }
 
-        fn setup_ui_channel(&self, args: &TesterArgs) -> watch::Sender<UiData> {
+        fn setup_ui_channel(&self, settings: &LocalRunSettings) -> watch::Sender<UiData> {
             let initial_ui = UiData {
-                target_duration: Duration::from_secs(args.target_duration.get()),
-                ui_window_ms: args.ui_window_ms.get(),
-                no_color: args.no_color,
+                target_duration: Duration::from_secs(settings.target_duration_secs),
+                ui_window_ms: settings.ui_window_ms,
+                no_color: settings.no_color,
                 ..UiData::default()
             };
             let (ui_tx, _) = watch::channel(initial_ui);
@@ -441,7 +455,7 @@ mod tests {
             &self,
             _shutdown_tx: &ShutdownSender,
             _no_ui: bool,
-            _interval_ms: Option<&crate::args::PositiveU64>,
+            _interval_ms: Option<u64>,
         ) -> tokio::task::JoinHandle<()> {
             tokio::spawn(async {})
         }
@@ -449,7 +463,7 @@ mod tests {
         fn setup_alloc_profiler_task(
             &self,
             _shutdown_tx: &ShutdownSender,
-            _interval_ms: Option<&crate::args::PositiveU64>,
+            _interval_ms: Option<u64>,
         ) -> tokio::task::JoinHandle<()> {
             tokio::spawn(async {})
         }
@@ -457,7 +471,7 @@ mod tests {
         fn setup_alloc_profiler_dump_task(
             &self,
             _shutdown_tx: &ShutdownSender,
-            _interval_ms: Option<&crate::args::PositiveU64>,
+            _interval_ms: Option<u64>,
             _dump_path: &str,
         ) -> tokio::task::JoinHandle<()> {
             tokio::spawn(async {})
@@ -465,7 +479,7 @@ mod tests {
 
         async fn setup_log_sinks(
             &self,
-            _args: &TesterArgs,
+            _adapter_args: &FakeAdapterArgs,
             _run_start: Instant,
             _charts_enabled: bool,
             _summary_enabled: bool,
@@ -487,14 +501,17 @@ mod tests {
 
         fn setup_progress_indicator(
             &self,
-            _args: &TesterArgs,
+            _adapter_args: &FakeAdapterArgs,
             _run_start: Instant,
             _shutdown_tx: &ShutdownSender,
         ) -> tokio::task::JoinHandle<()> {
             tokio::spawn(async {})
         }
 
-        async fn finalize_run(&self, _input: FinalizeRunInput<'_>) -> AppResult<RunOutcome> {
+        async fn finalize_run(
+            &self,
+            _input: FinalizeRunInput<'_, FakeAdapterArgs>,
+        ) -> AppResult<RunOutcome> {
             self.finalize_called.store(true, Ordering::SeqCst);
             Ok(RunOutcome {
                 summary: logs::empty_summary(),
@@ -507,8 +524,23 @@ mod tests {
         }
     }
 
-    fn parse_args() -> AppResult<TesterArgs> {
-        crate::args::parse_test_args(["strest", "--url", "http://localhost"])
+    fn default_settings() -> LocalRunSettings {
+        LocalRunSettings {
+            no_color: false,
+            no_ui: false,
+            no_splash: false,
+            no_charts: false,
+            summary: false,
+            show_selections: false,
+            verbose: false,
+            target_duration_secs: 30,
+            ui_window_ms: 10_000,
+            rss_log_ms: None,
+            alloc_profiler_ms: None,
+            alloc_profiler_dump_ms: None,
+            alloc_profiler_dump_path: "mem.prof".to_owned(),
+            metrics_max: 10_000,
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -519,8 +551,13 @@ mod tests {
             splash_cancelled: false,
             finalize_called: finalize_called.clone(),
         };
-        let args = parse_args()?;
-        let command = LocalRunExecutionCommand::new(args.protocol.to_domain(), args, None, None);
+        let command = LocalRunExecutionCommand::new(
+            ProtocolKind::Http,
+            default_settings(),
+            FakeAdapterArgs,
+            None,
+            None,
+        );
 
         let outcome = execute(
             command,
@@ -548,8 +585,13 @@ mod tests {
             splash_cancelled: true,
             finalize_called: finalize_called.clone(),
         };
-        let args = parse_args()?;
-        let command = LocalRunExecutionCommand::new(args.protocol.to_domain(), args, None, None);
+        let command = LocalRunExecutionCommand::new(
+            ProtocolKind::Http,
+            default_settings(),
+            FakeAdapterArgs,
+            None,
+            None,
+        );
 
         let result = execute(
             command,
