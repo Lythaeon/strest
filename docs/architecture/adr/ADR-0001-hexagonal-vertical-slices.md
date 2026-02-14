@@ -8,8 +8,6 @@
 
 `strest` currently works as a modular monolith, but core behavior is coupled to adapter concerns, especially CLI (`TesterArgs`) and runtime IO wiring. The migration target is vertical slices with explicit ports/adapters boundaries, without a big-bang rewrite.
 
-The primary risks are documented in `docs/architecture/ard/ARCHITECTURE_RISKS_HEXAGONAL_PLAN.md`.
-
 ## Decision
 
 Adopt a phased migration architecture with these boundaries:

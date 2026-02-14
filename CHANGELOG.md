@@ -7,8 +7,11 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 - Completed Phase 7 of the hexagonal migration by removing direct `TesterArgs` coupling from the application layer (`application::commands`, `application::local_run`, `application::distributed_run`) and tightening adapter-boundary mapping in entry planning.
 - Added architecture guardrails that fail checks when `src/application` reintroduces `TesterArgs` or `crate::args` imports.
+- Removed remaining non-test direct `distributed -> app` and `application -> app` imports by introducing explicit runtime ports and shared summary-output utilities, so orchestration flows now route via application/adapters seams.
 - Added migration validation coverage for all run-plan feature routes (local, distributed controller/agent, replay, compare, cleanup, dump-urls, service) and distributed/local application dispatch seams.
 - Updated architecture docs with Phase 7 implementation artifacts, current coupling metrics snapshot, and Mermaid before/after boundary diagrams.
+- Added technical architecture patterns doc covering type-level invariants/newtypes, invalid-state elimination, cache/inlining guidance, dispatch strategy (static-first), and low-lock concurrency patterns using `Arc`, atomics, channels, and `ArcShift`.
+- Simplified architecture references by removing legacy migration-risk and baseline-metrics ARD documents and retaining a current flow-focused architecture overview.
 
 ## 0.1.9
 

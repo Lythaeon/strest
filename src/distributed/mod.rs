@@ -5,8 +5,8 @@ mod summary;
 mod utils;
 mod wire;
 
-pub use agent::run_agent;
-pub use controller::run_controller;
+pub(crate) use agent::{AgentLocalRunPort, AgentRunOutcome, run_agent};
+pub(crate) use controller::run_controller;
 
 #[cfg(test)]
 mod tests;

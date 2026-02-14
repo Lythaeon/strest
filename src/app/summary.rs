@@ -4,7 +4,7 @@ mod percentiles;
 use crate::args::TesterArgs;
 use crate::metrics;
 
-pub(crate) use lines::{chart_status_line, selection_lines, summary_lines};
+pub(crate) use lines::summary_lines;
 pub(crate) use percentiles::compute_percentiles;
 
 /// Minimum non-zero duration used to avoid divide-by-zero.

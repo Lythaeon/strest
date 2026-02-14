@@ -6,7 +6,6 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 use tracing::{info, warn};
 
-use crate::app::logs;
 use crate::domain::run::ProtocolKind;
 use crate::error::{AppError, AppResult, ValidationError};
 use crate::metrics::{self, Metrics};
@@ -39,6 +38,12 @@ pub(crate) struct RunOutcome {
     pub latency_sum_ms: u128,
     pub success_latency_sum_ms: u128,
     pub runtime_errors: Vec<String>,
+}
+
+pub(crate) struct LocalRunLogSetup {
+    pub log_sink: Option<Arc<metrics::LogSink>>,
+    pub handles: Vec<tokio::task::JoinHandle<AppResult<metrics::LogResult>>>,
+    pub paths: Vec<PathBuf>,
 }
 
 pub(crate) struct LocalRunExecutionCommand<TAdapterArgs> {
@@ -171,7 +176,7 @@ pub(crate) trait OutputPort<TAdapterArgs> {
         run_start: Instant,
         charts_enabled: bool,
         summary_enabled: bool,
-    ) -> AppResult<logs::LogSetup>;
+    ) -> AppResult<LocalRunLogSetup>;
     fn setup_render_ui(
         &self,
         shutdown_tx: &ShutdownSender,
@@ -251,7 +256,7 @@ where
     }
 
     let run_start = Instant::now();
-    let logs::LogSetup {
+    let LocalRunLogSetup {
         log_sink,
         handles: log_handles,
         paths: log_paths,
@@ -323,7 +328,7 @@ where
         Err(err) => {
             runtime_errors.push(format!("Metrics collector task failed: {}", err));
             metrics::MetricsReport {
-                summary: logs::empty_summary(),
+                summary: empty_summary(),
             }
         }
     };
@@ -342,6 +347,24 @@ where
         .await
 }
 
+const fn empty_summary() -> metrics::MetricsSummary {
+    metrics::MetricsSummary {
+        duration: std::time::Duration::ZERO,
+        total_requests: 0,
+        successful_requests: 0,
+        error_requests: 0,
+        timeout_requests: 0,
+        transport_errors: 0,
+        non_expected_status: 0,
+        min_latency_ms: 0,
+        max_latency_ms: 0,
+        avg_latency_ms: 0,
+        success_min_latency_ms: 0,
+        success_max_latency_ms: 0,
+        success_avg_latency_ms: 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{
@@ -351,8 +374,6 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::app::logs::LogSetup;
-
     #[derive(Debug, Clone, Copy)]
     struct FakeAdapterArgs;
 
@@ -410,7 +431,7 @@ mod tests {
         ) -> tokio::task::JoinHandle<metrics::MetricsReport> {
             tokio::spawn(async {
                 metrics::MetricsReport {
-                    summary: logs::empty_summary(),
+                    summary: empty_summary(),
                 }
             })
         }
@@ -483,8 +504,8 @@ mod tests {
             _run_start: Instant,
             _charts_enabled: bool,
             _summary_enabled: bool,
-        ) -> AppResult<LogSetup> {
-            Ok(LogSetup {
+        ) -> AppResult<LocalRunLogSetup> {
+            Ok(LocalRunLogSetup {
                 log_sink: None,
                 handles: Vec::new(),
                 paths: Vec::new(),
@@ -514,7 +535,7 @@ mod tests {
         ) -> AppResult<RunOutcome> {
             self.finalize_called.store(true, Ordering::SeqCst);
             Ok(RunOutcome {
-                summary: logs::empty_summary(),
+                summary: empty_summary(),
                 histogram: metrics::LatencyHistogram::new()?,
                 success_histogram: metrics::LatencyHistogram::new()?,
                 latency_sum_ms: 0,

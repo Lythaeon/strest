@@ -118,21 +118,3 @@ pub(super) fn merge_log_results(
         success_histogram,
     ))
 }
-
-pub(super) const fn empty_summary() -> metrics::MetricsSummary {
-    metrics::MetricsSummary {
-        duration: Duration::ZERO,
-        total_requests: 0,
-        successful_requests: 0,
-        error_requests: 0,
-        timeout_requests: 0,
-        transport_errors: 0,
-        non_expected_status: 0,
-        min_latency_ms: 0,
-        max_latency_ms: 0,
-        avg_latency_ms: 0,
-        success_min_latency_ms: 0,
-        success_max_latency_ms: 0,
-        success_avg_latency_ms: 0,
-    }
-}

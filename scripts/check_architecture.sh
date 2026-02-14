@@ -63,7 +63,7 @@ check_forbidden_crates_in_layer() {
     local regex="\\b${crate_name}::"
     local matches
     if [[ "$HAS_RG" -eq 1 ]]; then
-      matches="$(rg -n --glob '*.rs' "$regex" "$layer_dir" || true)"
+      matches="$(rg -n "${NON_TEST_GLOBS[@]}" "$regex" "$layer_dir" || true)"
     else
       matches="$(grep -R -n -E --include='*.rs' "$regex" "$layer_dir" || true)"
     fi
@@ -89,7 +89,7 @@ check_forbidden_pattern_in_layer() {
 
   local matches
   if [[ "$HAS_RG" -eq 1 ]]; then
-    matches="$(rg -n --glob '*.rs' "$regex" "$layer_dir" || true)"
+    matches="$(rg -n "${NON_TEST_GLOBS[@]}" "$regex" "$layer_dir" || true)"
   else
     matches="$(grep -R -n -E --include='*.rs' "$regex" "$layer_dir" || true)"
   fi
@@ -153,6 +153,13 @@ check_forbidden_crates_in_layer "src/domain" "clap" "reqwest" "tokio" "ratatui" 
 check_forbidden_crates_in_layer "src/application" "clap"
 check_forbidden_pattern_in_layer "src/application" "'TesterArgs' references" "\\bTesterArgs\\b"
 check_forbidden_pattern_in_layer "src/application" "'crate::args' imports" "crate::args::"
+check_forbidden_pattern_in_layer "src/application" "'crate::app' imports" "crate::app::"
+check_forbidden_pattern_in_layer "src/application" "'crate::distributed' imports" "crate::distributed::"
+check_forbidden_pattern_in_layer "src/distributed" "'crate::app' imports" "crate::app::"
+check_forbidden_pattern_in_layer "src/distributed" "'crate::application' imports" "crate::application::"
+check_forbidden_pattern_in_layer "src/entry" "'crate::app' imports" "crate::app::"
+check_forbidden_pattern_in_layer "src/entry" "'crate::distributed' imports" "crate::distributed::"
+check_forbidden_pattern_in_layer "src/entry" "'crate::service' imports" "crate::service::"
 
 echo
 echo "Coupling baseline metrics"

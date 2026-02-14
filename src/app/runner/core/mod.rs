@@ -260,8 +260,14 @@ impl OutputPort<TesterArgs> for RuntimeOutputAdapter {
         run_start: Instant,
         charts_enabled: bool,
         summary_enabled: bool,
-    ) -> AppResult<logs::LogSetup> {
-        logs::setup_log_sinks(adapter_args, run_start, charts_enabled, summary_enabled).await
+    ) -> AppResult<local_run::LocalRunLogSetup> {
+        let setup =
+            logs::setup_log_sinks(adapter_args, run_start, charts_enabled, summary_enabled).await?;
+        Ok(local_run::LocalRunLogSetup {
+            log_sink: setup.log_sink,
+            handles: setup.handles,
+            paths: setup.paths,
+        })
     }
 
     fn setup_render_ui(

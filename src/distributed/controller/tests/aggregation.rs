@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use crate::error::{AppError, AppResult};
 
-use super::{AgentSnapshot, WireSummary, aggregate_snapshots, build_hist};
+use super::{
+    AgentSnapshot, WireSummary, aggregate_snapshots, build_hist, record_aggregated_sample,
+};
 
 #[test]
 fn aggregate_snapshots_merges_summary() -> AppResult<()> {
@@ -115,5 +117,124 @@ fn aggregate_snapshots_merges_summary() -> AppResult<()> {
             merged_hist.count()
         )));
     }
+    Ok(())
+}
+
+#[test]
+fn record_aggregated_sample_deduplicates_identical_snapshots() -> AppResult<()> {
+    let summary = WireSummary {
+        duration_ms: 1000,
+        total_requests: 10,
+        successful_requests: 9,
+        error_requests: 1,
+        timeout_requests: 0,
+        transport_errors: 0,
+        non_expected_status: 0,
+        success_min_latency_ms: 10,
+        success_max_latency_ms: 20,
+        success_latency_sum_ms: 150,
+        min_latency_ms: 10,
+        max_latency_ms: 20,
+        latency_sum_ms: 180,
+    };
+    let hist = build_hist(&[10, 20])?;
+    let success_hist = build_hist(&[10, 20])?;
+    let mut agent_states = HashMap::new();
+    agent_states.insert(
+        "a".to_owned(),
+        AgentSnapshot {
+            summary,
+            histogram: hist,
+            success_histogram: success_hist,
+        },
+    );
+
+    let mut samples = Vec::new();
+    record_aggregated_sample(&mut samples, &agent_states);
+    record_aggregated_sample(&mut samples, &agent_states);
+    if samples.len() != 1 {
+        return Err(AppError::distributed(format!(
+            "Expected one deduplicated sample, got {}",
+            samples.len()
+        )));
+    }
+
+    let next_summary = WireSummary {
+        duration_ms: 2000,
+        total_requests: 15,
+        successful_requests: 14,
+        error_requests: 1,
+        timeout_requests: 0,
+        transport_errors: 0,
+        non_expected_status: 0,
+        success_min_latency_ms: 10,
+        success_max_latency_ms: 25,
+        success_latency_sum_ms: 220,
+        min_latency_ms: 10,
+        max_latency_ms: 25,
+        latency_sum_ms: 250,
+    };
+    agent_states.insert(
+        "a".to_owned(),
+        AgentSnapshot {
+            summary: next_summary,
+            histogram: build_hist(&[10, 25])?,
+            success_histogram: build_hist(&[10, 25])?,
+        },
+    );
+    record_aggregated_sample(&mut samples, &agent_states);
+    if samples.len() != 2 {
+        return Err(AppError::distributed(format!(
+            "Expected second sample after state change, got {}",
+            samples.len()
+        )));
+    }
+    Ok(())
+}
+
+#[test]
+fn aggregate_snapshots_handles_many_agents() -> AppResult<()> {
+    let mut agent_states = HashMap::new();
+    for idx in 0..128u64 {
+        let summary = WireSummary {
+            duration_ms: 1000,
+            total_requests: 1,
+            successful_requests: 1,
+            error_requests: 0,
+            timeout_requests: 0,
+            transport_errors: 0,
+            non_expected_status: 0,
+            success_min_latency_ms: 10 + idx,
+            success_max_latency_ms: 10 + idx,
+            success_latency_sum_ms: u128::from(10 + idx),
+            min_latency_ms: 10 + idx,
+            max_latency_ms: 10 + idx,
+            latency_sum_ms: u128::from(10 + idx),
+        };
+        agent_states.insert(
+            format!("agent-{}", idx),
+            AgentSnapshot {
+                summary,
+                histogram: build_hist(&[10 + idx])?,
+                success_histogram: build_hist(&[10 + idx])?,
+            },
+        );
+    }
+
+    let (summary, merged_hist, success_hist) = aggregate_snapshots(&agent_states)?;
+    if summary.total_requests != 128 {
+        return Err(AppError::distributed(format!(
+            "Unexpected total request count for large aggregation: {}",
+            summary.total_requests
+        )));
+    }
+    if merged_hist.count() != 128 || success_hist.count() != 128 {
+        return Err(AppError::distributed(format!(
+            "Unexpected histogram counts for large aggregation: total={}, success={}",
+            merged_hist.count(),
+            success_hist.count()
+        )));
+    }
+
     Ok(())
 }

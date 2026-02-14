@@ -21,7 +21,6 @@ When making changes, follow this order:
   - `docs/guides/ADVANCED.md`
   - `docs/architecture/README.md`
   - `docs/architecture/ard/ARCHITECTURE_OVERVIEW.md`
-  - `docs/architecture/ard/ARCHITECTURE_RISKS_HEXAGONAL_PLAN.md`
 
 ## Required Contribution Workflow
 1. Create a scoped branch.

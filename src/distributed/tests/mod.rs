@@ -6,11 +6,13 @@ use tokio::sync::watch;
 
 use super::protocol::WireArgs;
 use super::wire::{apply_wire_args, build_wire_args};
-use super::{run_agent, run_controller};
+use super::{AgentLocalRunPort, AgentRunOutcome, run_agent, run_controller};
 use crate::args::{HttpMethod, LoadMode, PositiveU64, PositiveUsize, Protocol, TesterArgs};
 use crate::error::{AppError, AppResult};
+use crate::metrics::StreamSnapshot;
 
 mod sink_runs;
+mod stability;
 mod wire_args;
 
 fn positive_u64(value: u64) -> AppResult<PositiveU64> {
@@ -235,11 +237,34 @@ async fn run_distributed(controller_args: TesterArgs, agent_args: TesterArgs) ->
     let controller_handle =
         tokio::spawn(async move { run_controller(&controller_args, None).await });
     tokio::time::sleep(Duration::from_millis(200)).await;
-    let agent_result = run_agent(agent_args).await;
+    let local_port = TestAgentLocalRunPort;
+    let agent_result = run_agent(agent_args, &local_port).await;
     let controller_result = controller_handle
         .await
         .map_err(|err| AppError::distributed(format!("Controller task join failed: {}", err)))?;
     agent_result?;
     controller_result?;
     Ok(())
+}
+
+struct TestAgentLocalRunPort;
+
+#[async_trait::async_trait]
+impl AgentLocalRunPort for TestAgentLocalRunPort {
+    async fn run_local(
+        &self,
+        args: TesterArgs,
+        stream_tx: Option<tokio::sync::mpsc::UnboundedSender<StreamSnapshot>>,
+        external_shutdown: Option<watch::Receiver<bool>>,
+    ) -> AppResult<AgentRunOutcome> {
+        let outcome = crate::app::run_local(args, stream_tx, external_shutdown).await?;
+        Ok(AgentRunOutcome {
+            summary: outcome.summary,
+            histogram: outcome.histogram,
+            success_histogram: outcome.success_histogram,
+            latency_sum_ms: outcome.latency_sum_ms,
+            success_latency_sum_ms: outcome.success_latency_sum_ms,
+            runtime_errors: outcome.runtime_errors,
+        })
+    }
 }

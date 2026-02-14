@@ -6,12 +6,12 @@ use std::time::Duration;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use tokio::sync::watch;
 
-use crate::application::replay_compare::{
-    PlaybackAction, PlaybackState, advance_playback, apply_playback_action, resolve_step_ms,
-};
 use crate::args::TesterArgs;
 use crate::error::{AppError, AppResult, MetricsError, ValidationError};
 use crate::metrics::MetricRecord;
+use crate::system::replay_compare::{
+    PlaybackAction, PlaybackState, advance_playback, apply_playback_action, resolve_step_ms,
+};
 use crate::ui::model::UiData;
 use crate::ui::render::setup_render_ui;
 

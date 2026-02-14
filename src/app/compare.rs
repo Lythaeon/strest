@@ -9,12 +9,12 @@ use std::time::Duration;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use tokio::sync::watch;
 
-use crate::application::replay_compare::{
+use crate::args::CompareArgs;
+use crate::error::{AppError, AppResult, MetricsError};
+use crate::system::replay_compare::{
     PlaybackAction, PlaybackState, advance_playback, apply_playback_action,
     clamp_window_to_records, records_range, resolve_step_ms,
 };
-use crate::args::CompareArgs;
-use crate::error::{AppError, AppResult, MetricsError};
 use crate::ui::model::{CompareOverlay, UiData};
 use crate::ui::render::setup_render_ui;
 

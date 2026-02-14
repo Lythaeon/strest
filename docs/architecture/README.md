@@ -13,8 +13,6 @@ This directory is split by architecture document type.
 ## Current Canonical Docs
 
 - `docs/architecture/ard/ARCHITECTURE_OVERVIEW.md`
-- `docs/architecture/ard/ARCHITECTURE_RISKS_HEXAGONAL_PLAN.md`
-- `docs/architecture/ard/ARCHITECTURE_BASELINE_METRICS.md`
 - `docs/architecture/adr/ADR-0001-hexagonal-vertical-slices.md`
 
 ## Naming Conventions

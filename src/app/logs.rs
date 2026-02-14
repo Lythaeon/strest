@@ -45,10 +45,6 @@ pub(crate) fn merge_log_results(
     merge::merge_log_results(results, metrics_max)
 }
 
-pub(crate) const fn empty_summary() -> metrics::MetricsSummary {
-    merge::empty_summary()
-}
-
 pub(crate) async fn load_chart_data_streaming(
     paths: &[PathBuf],
     expected_status_code: u16,

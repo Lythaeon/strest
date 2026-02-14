@@ -10,12 +10,18 @@ use crate::args::TesterArgs;
 use crate::error::{AppError, AppResult, DistributedError};
 
 use super::command::AgentCommand;
-use super::run_exec::run_agent_run;
+use super::run_exec::{AgentLocalRunPort, run_agent_run};
 use super::wire::{build_agent_id, build_hello, send_wire};
 use crate::distributed::protocol::{HeartbeatMessage, WireMessage, read_message, send_message};
 use crate::distributed::utils::current_time_ms;
 
-pub(super) async fn run_agent_session(base_args: &TesterArgs) -> AppResult<()> {
+pub(super) async fn run_agent_session<TLocalRunPort>(
+    base_args: &TesterArgs,
+    local_run_port: &TLocalRunPort,
+) -> AppResult<()>
+where
+    TLocalRunPort: AgentLocalRunPort + Sync,
+{
     let join = base_args.agent_join.as_deref().ok_or_else(|| {
         AppError::distributed(DistributedError::MissingOption {
             option: "--agent-join",
@@ -123,8 +129,15 @@ pub(super) async fn run_agent_session(base_args: &TesterArgs) -> AppResult<()> {
             tokio::time::sleep(Duration::from_millis(start.start_after_ms)).await;
         }
 
-        let run_result =
-            run_agent_run(base_args, config, agent_id.clone(), &out_tx, &mut cmd_rx).await;
+        let run_result = run_agent_run(
+            base_args,
+            config,
+            agent_id.clone(),
+            &out_tx,
+            &mut cmd_rx,
+            local_run_port,
+        )
+        .await;
 
         if let Err(err) = run_result {
             if !base_args.agent_standby {

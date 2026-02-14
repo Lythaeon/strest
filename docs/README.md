@@ -10,10 +10,9 @@ This folder is organized by concern:
 ## Architecture
 
 - `docs/architecture/README.md`: architecture document taxonomy and conventions.
-- `docs/architecture/ard/ARCHITECTURE_OVERVIEW.md`: generated module/dependency overview.
-- `docs/architecture/ard/ARCHITECTURE_RISKS_HEXAGONAL_PLAN.md`: architecture risks and phased migration plan.
-- `docs/architecture/ard/ARCHITECTURE_BASELINE_METRICS.md`: migration baseline coupling metrics.
+- `docs/architecture/ard/ARCHITECTURE_OVERVIEW.md`: current mode-by-mode call-flow overview.
 - `docs/architecture/adr/ADR-0001-hexagonal-vertical-slices.md`: accepted architecture decision.
+- `docs/architecture/patterns/type-safety-performance-concurrency.md`: technical patterns for type invariants, dispatch, cache behavior, and lock-free concurrency.
 
 ## Assets
 
