@@ -1,4 +1,5 @@
 use ratatui::prelude::text;
+use ratatui::style::Style;
 use ratatui::text::Span;
 
 use super::theme::{ACCENT_PROGRESS_RGB, PANEL_TEXT_RGB, rgb, style_color};
@@ -53,10 +54,12 @@ pub(super) fn progress_bar_line(
     let mut spans = Vec::with_capacity(bar_width.saturating_add(2));
     spans.push(Span::raw("["));
     for idx in 0..bar_width {
+        let is_partial_cell = partial_count == 1 && idx == full_count;
+        let is_filled_cell = idx < full_count || is_partial_cell;
         if let Some(ch) = label_cells.get(idx).copied().flatten() {
             spans.push(Span::styled(
                 ch.to_string(),
-                style_color(no_color, rgb(PANEL_TEXT_RGB)),
+                label_cell_style(no_color, is_filled_cell),
             ));
             continue;
         }
@@ -78,4 +81,43 @@ pub(super) fn progress_bar_line(
     }
     spans.push(Span::raw("]"));
     text::Line::from(spans)
+}
+
+fn label_cell_style(no_color: bool, on_filled_cell: bool) -> Style {
+    if no_color {
+        return Style::default();
+    }
+    let style = Style::default().fg(rgb(PANEL_TEXT_RGB));
+    if on_filled_cell {
+        style.bg(rgb(ACCENT_PROGRESS_RGB))
+    } else {
+        style
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ACCENT_PROGRESS_RGB, progress_bar_line, rgb};
+
+    #[test]
+    fn label_on_filled_cell_keeps_progress_background() {
+        let line = progress_bar_line(9, 10, 20, false, "x");
+        let bg = line
+            .spans
+            .iter()
+            .find(|span| span.content.as_ref() == "x")
+            .and_then(|span| span.style.bg);
+        assert_eq!(bg, Some(rgb(ACCENT_PROGRESS_RGB)));
+    }
+
+    #[test]
+    fn label_on_empty_cell_has_no_background_fill() {
+        let line = progress_bar_line(1, 10, 20, false, "x");
+        let bg = line
+            .spans
+            .iter()
+            .find(|span| span.content.as_ref() == "x")
+            .and_then(|span| span.style.bg);
+        assert_eq!(bg, None);
+    }
 }
