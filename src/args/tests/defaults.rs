@@ -2,8 +2,7 @@ use super::*;
 
 #[test]
 fn parse_args_defaults() -> AppResult<()> {
-    let args = TesterArgs::try_parse_from(["strest", "-u", "http://localhost"])
-        .map_err(|err| AppError::validation(format!("Expected Ok, got Err: {}", err)))?;
+    let args = parse_test_args(["strest", "-u", "http://localhost"])?;
 
     let expected_no_color = std::env::var("NO_COLOR")
         .ok()

@@ -278,6 +278,11 @@ Phase 1 artifacts (implemented):
 Exit criteria:
 - Config module no longer depends on `TesterArgs` mutability.
 
+Phase 2 artifacts (implemented):
+- Config override merge path: `src/config/apply.rs`
+- Scenario defaults parsing seam: `src/config/apply/scenario.rs`
+- Entry wiring for effective args + scenario registry: `src/entry/plan/build.rs`
+
 ### Phase 3: Local run use case extraction (2 weeks)
 1. Extract `run_local` to `application::local_run::execute(command, ports)`.
 2. Introduce ports for traffic, metrics, outputs, shutdown.
@@ -285,6 +290,10 @@ Exit criteria:
 
 Exit criteria:
 - `src/app/runner/core/mod.rs` reduced to adapter composition.
+
+Phase 3 artifacts (implemented):
+- Local run use-case orchestration with ports: `src/application/local_run.rs`
+- Local run adapter composition layer: `src/app/runner/core/mod.rs`
 
 ### Phase 4: Protocol adapter boundary (1-2 weeks)
 1. Refactor protocol switch to registry-based `TransportAdapter` implementations.
