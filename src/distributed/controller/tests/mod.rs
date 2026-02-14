@@ -5,9 +5,12 @@ use crate::error::AppResult;
 use crate::metrics::LatencyHistogram;
 
 use super::super::protocol::WireSummary;
-use super::shared::{AgentSnapshot, aggregate_snapshots, update_ui};
+use super::shared::{
+    AgentSnapshot, aggregate_snapshots, handle_agent_event, record_aggregated_sample, update_ui,
+};
 
 mod aggregation;
+mod events;
 mod ui;
 
 fn build_hist(values: &[u64]) -> AppResult<LatencyHistogram> {

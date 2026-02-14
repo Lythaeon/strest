@@ -1,7 +1,5 @@
-use crate::application::commands::{
-    DistributedRunCommand, LocalRunCommand, ReplayRunCommand, ServiceCommand,
-};
-use crate::args::{CleanupArgs, CompareArgs};
+use crate::application::commands::{DistributedRunCommand, LocalRunCommand, ReplayRunCommand};
+use crate::args::{CleanupArgs, CompareArgs, TesterArgs};
 
 pub(in crate::entry) struct DumpUrlsPlan {
     pub(super) pattern: String,
@@ -12,9 +10,18 @@ pub(in crate::entry) struct DumpUrlsPlan {
 pub(in crate::entry) enum RunPlan {
     Cleanup(CleanupArgs),
     Compare(CompareArgs),
-    Replay(ReplayRunCommand),
+    Replay {
+        command: ReplayRunCommand,
+        args: TesterArgs,
+    },
     DumpUrls(DumpUrlsPlan),
-    Service(ServiceCommand),
-    Distributed(DistributedRunCommand),
-    Local(LocalRunCommand),
+    Service(TesterArgs),
+    Distributed {
+        command: DistributedRunCommand,
+        args: TesterArgs,
+    },
+    Local {
+        command: LocalRunCommand,
+        args: TesterArgs,
+    },
 }

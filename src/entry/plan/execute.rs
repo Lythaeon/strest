@@ -1,13 +1,11 @@
-use std::collections::BTreeMap;
-
-use async_trait::async_trait;
 use rand::distributions::Distribution;
 use rand::thread_rng;
 
-use crate::app::{self, run_cleanup, run_compare, run_local, run_replay};
-use crate::application::distributed_run::{self, DistributedRunPort};
-use crate::args::TesterArgs;
-use crate::config::types::ScenarioConfig;
+use crate::adapters::runtime::{
+    RuntimeCleanupPort, RuntimeComparePort, RuntimeDistributedPort, RuntimeLocalPort,
+    RuntimeReplayPort, RuntimeServicePort, print_runtime_errors,
+};
+use crate::application::{distributed_run, slice_execution};
 use crate::domain::run::RunConfig;
 use crate::error::{AppError, AppResult, ValidationError};
 use crate::system::banner;
@@ -16,58 +14,49 @@ use super::types::{DumpUrlsPlan, RunPlan};
 
 pub(crate) async fn execute_plan(plan: RunPlan) -> AppResult<()> {
     match plan {
-        RunPlan::Cleanup(cleanup_args) => run_cleanup(&cleanup_args).await,
-        RunPlan::Compare(compare_args) => run_compare(&compare_args).await,
-        RunPlan::Replay(command) => {
+        RunPlan::Cleanup(cleanup_args) => {
+            let cleanup_port = RuntimeCleanupPort;
+            slice_execution::execute_cleanup(cleanup_args, &cleanup_port).await
+        }
+        RunPlan::Compare(compare_args) => {
+            let compare_port = RuntimeComparePort;
+            slice_execution::execute_compare(compare_args, &compare_port).await
+        }
+        RunPlan::Replay { command, args } => {
             log_run_command("replay", command.run_config());
             banner::print_cli_banner(command.no_color());
             println!();
-            run_replay(command.as_args()).await
+            let replay_port = RuntimeReplayPort;
+            slice_execution::execute_replay(args, &replay_port).await
         }
         RunPlan::DumpUrls(plan) => dump_urls(plan),
-        RunPlan::Service(command) => {
-            crate::service::handle_service_action(command.as_args())?;
-            Ok(())
+        RunPlan::Service(args) => {
+            let service_port = RuntimeServicePort;
+            slice_execution::execute_service(args, &service_port)
         }
-        RunPlan::Distributed(command) => {
+        RunPlan::Distributed { command, args } => {
             log_run_command(command.mode_name(), command.run_config());
             banner::print_cli_banner(command.no_color());
             println!();
             let distributed_port = RuntimeDistributedPort;
-            distributed_run::execute(command, &distributed_port).await
+            distributed_run::execute(command, args, &distributed_port).await
         }
-        RunPlan::Local(command) => {
+        RunPlan::Local { command, args } => {
             log_run_command("local", command.run_config());
             banner::print_cli_banner(command.no_color());
             println!();
-            let outcome = match run_local(command.into_args(), None, None).await {
+            let local_port = RuntimeLocalPort;
+            let outcome = match slice_execution::execute_local(args, &local_port).await {
                 Ok(outcome) => outcome,
                 Err(AppError::Validation(ValidationError::RunCancelled)) => return Ok(()),
                 Err(err) => return Err(err),
             };
             if !outcome.runtime_errors.is_empty() {
-                app::print_runtime_errors(&outcome.runtime_errors);
+                print_runtime_errors(&outcome.runtime_errors);
                 return Err(AppError::validation(ValidationError::RuntimeErrors));
             }
             Ok(())
         }
-    }
-}
-
-struct RuntimeDistributedPort;
-
-#[async_trait]
-impl DistributedRunPort for RuntimeDistributedPort {
-    async fn run_controller(
-        &self,
-        args: &TesterArgs,
-        scenarios: Option<BTreeMap<String, ScenarioConfig>>,
-    ) -> AppResult<()> {
-        crate::distributed::run_controller(args, scenarios).await
-    }
-
-    async fn run_agent(&self, args: TesterArgs) -> AppResult<()> {
-        crate::distributed::run_agent(args).await
     }
 }
 

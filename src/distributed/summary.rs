@@ -1,8 +1,8 @@
 use std::time::Duration;
 
-use crate::app::summary as app_summary;
 use crate::args::TesterArgs;
 use crate::metrics::MetricsSummary;
+use crate::system::{chart_status_line, selection_lines};
 
 use super::protocol::WireSummary;
 
@@ -204,12 +204,9 @@ pub(super) fn print_summary(
         stats.avg_rpm_x100 % PERCENT_DIVISOR
     );
 
-    println!(
-        "{}",
-        app_summary::chart_status_line(args, charts_output_path, false)
-    );
+    println!("{}", chart_status_line(args, charts_output_path, false));
     if args.show_selections {
-        for line in app_summary::selection_lines(args, charts_output_path) {
+        for line in selection_lines(args, charts_output_path) {
             println!("{}", line);
         }
     }

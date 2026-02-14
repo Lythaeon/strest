@@ -48,6 +48,24 @@ count_matching_files() {
   echo "$count"
 }
 
+find_non_test_layer_matches() {
+  local layer_dir="$1"
+  local regex="$2"
+  local file_path
+  local match_tmp
+
+  match_tmp="$(mktemp)"
+  while IFS= read -r file_path; do
+    [[ "$file_path" == "${layer_dir}/"* ]] || continue
+    grep -n -E -- "$regex" "$file_path" >> "$match_tmp" || true
+  done < <(list_non_test_rust_files)
+
+  if [[ -s "$match_tmp" ]]; then
+    cat "$match_tmp"
+  fi
+  rm -f "$match_tmp"
+}
+
 check_forbidden_crates_in_layer() {
   local layer_dir="$1"
   shift
@@ -63,9 +81,9 @@ check_forbidden_crates_in_layer() {
     local regex="\\b${crate_name}::"
     local matches
     if [[ "$HAS_RG" -eq 1 ]]; then
-      matches="$(rg -n --glob '*.rs' "$regex" "$layer_dir" || true)"
+      matches="$(rg -n "${NON_TEST_GLOBS[@]}" "$regex" "$layer_dir" || true)"
     else
-      matches="$(grep -R -n -E --include='*.rs' "$regex" "$layer_dir" || true)"
+      matches="$(find_non_test_layer_matches "$layer_dir" "$regex")"
     fi
     if [[ -n "$matches" ]]; then
       echo "error: forbidden '${crate_name}' usage detected in ${layer_dir}"
@@ -75,6 +93,31 @@ check_forbidden_crates_in_layer() {
       echo "ok: ${layer_dir} has no '${crate_name}' usage"
     fi
   done
+}
+
+check_forbidden_pattern_in_layer() {
+  local layer_dir="$1"
+  local description="$2"
+  local regex="$3"
+
+  if [[ ! -d "$layer_dir" ]]; then
+    echo "skip: ${layer_dir} not present"
+    return 0
+  fi
+
+  local matches
+  if [[ "$HAS_RG" -eq 1 ]]; then
+    matches="$(rg -n "${NON_TEST_GLOBS[@]}" "$regex" "$layer_dir" || true)"
+  else
+    matches="$(find_non_test_layer_matches "$layer_dir" "$regex")"
+  fi
+  if [[ -n "$matches" ]]; then
+    echo "error: forbidden ${description} detected in ${layer_dir}"
+    printf '%s\n' "$matches"
+    FAILED=1
+  else
+    echo "ok: ${layer_dir} has no ${description}"
+  fi
 }
 
 print_top_module_edges() {
@@ -126,6 +169,15 @@ find_use_refs() {
 echo "Architecture boundary checks"
 check_forbidden_crates_in_layer "src/domain" "clap" "reqwest" "tokio" "ratatui" "crossterm"
 check_forbidden_crates_in_layer "src/application" "clap"
+check_forbidden_pattern_in_layer "src/application" "'TesterArgs' references" "\\bTesterArgs\\b"
+check_forbidden_pattern_in_layer "src/application" "'crate::args' imports" "crate::args::"
+check_forbidden_pattern_in_layer "src/application" "'crate::app' imports" "crate::app::"
+check_forbidden_pattern_in_layer "src/application" "'crate::distributed' imports" "crate::distributed::"
+check_forbidden_pattern_in_layer "src/distributed" "'crate::app' imports" "crate::app::"
+check_forbidden_pattern_in_layer "src/distributed" "'crate::application' imports" "crate::application::"
+check_forbidden_pattern_in_layer "src/entry" "'crate::app' imports" "crate::app::"
+check_forbidden_pattern_in_layer "src/entry" "'crate::distributed' imports" "crate::distributed::"
+check_forbidden_pattern_in_layer "src/entry" "'crate::service' imports" "crate::service::"
 
 echo
 echo "Coupling baseline metrics"

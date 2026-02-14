@@ -1,19 +1,21 @@
 use std::collections::BTreeMap;
 
-use crate::args::TesterArgs;
 use crate::config::types::ScenarioConfig;
 use crate::domain::run::RunConfig;
 
 #[derive(Debug)]
 pub(crate) struct LocalRunCommand {
     run_config: RunConfig,
-    args: TesterArgs,
+    no_color: bool,
 }
 
 impl LocalRunCommand {
     #[must_use]
-    pub(crate) const fn new(run_config: RunConfig, args: TesterArgs) -> Self {
-        Self { run_config, args }
+    pub(crate) const fn new(run_config: RunConfig, no_color: bool) -> Self {
+        Self {
+            run_config,
+            no_color,
+        }
     }
 
     #[must_use]
@@ -23,25 +25,23 @@ impl LocalRunCommand {
 
     #[must_use]
     pub(crate) const fn no_color(&self) -> bool {
-        self.args.no_color
-    }
-
-    #[must_use]
-    pub(crate) fn into_args(self) -> TesterArgs {
-        self.args
+        self.no_color
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct ReplayRunCommand {
     run_config: RunConfig,
-    args: TesterArgs,
+    no_color: bool,
 }
 
 impl ReplayRunCommand {
     #[must_use]
-    pub(crate) const fn new(run_config: RunConfig, args: TesterArgs) -> Self {
-        Self { run_config, args }
+    pub(crate) const fn new(run_config: RunConfig, no_color: bool) -> Self {
+        Self {
+            run_config,
+            no_color,
+        }
     }
 
     #[must_use]
@@ -51,29 +51,7 @@ impl ReplayRunCommand {
 
     #[must_use]
     pub(crate) const fn no_color(&self) -> bool {
-        self.args.no_color
-    }
-
-    #[must_use]
-    pub(crate) const fn as_args(&self) -> &TesterArgs {
-        &self.args
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct ServiceCommand {
-    args: TesterArgs,
-}
-
-impl ServiceCommand {
-    #[must_use]
-    pub(crate) const fn new(args: TesterArgs) -> Self {
-        Self { args }
-    }
-
-    #[must_use]
-    pub(crate) const fn as_args(&self) -> &TesterArgs {
-        &self.args
+        self.no_color
     }
 }
 
@@ -88,7 +66,7 @@ pub(crate) enum DistributedRunMode {
 #[derive(Debug)]
 pub(crate) struct DistributedRunCommand {
     run_config: RunConfig,
-    args: TesterArgs,
+    no_color: bool,
     mode: DistributedRunMode,
 }
 
@@ -96,21 +74,21 @@ impl DistributedRunCommand {
     #[must_use]
     pub(crate) const fn new_controller(
         run_config: RunConfig,
-        args: TesterArgs,
+        no_color: bool,
         scenarios: Option<BTreeMap<String, ScenarioConfig>>,
     ) -> Self {
         Self {
             run_config,
-            args,
+            no_color,
             mode: DistributedRunMode::Controller { scenarios },
         }
     }
 
     #[must_use]
-    pub(crate) const fn new_agent(run_config: RunConfig, args: TesterArgs) -> Self {
+    pub(crate) const fn new_agent(run_config: RunConfig, no_color: bool) -> Self {
         Self {
             run_config,
-            args,
+            no_color,
             mode: DistributedRunMode::Agent,
         }
     }
@@ -122,7 +100,7 @@ impl DistributedRunCommand {
 
     #[must_use]
     pub(crate) const fn no_color(&self) -> bool {
-        self.args.no_color
+        self.no_color
     }
 
     #[must_use]
@@ -134,7 +112,7 @@ impl DistributedRunCommand {
     }
 
     #[must_use]
-    pub(crate) fn into_parts(self) -> (TesterArgs, DistributedRunMode) {
-        (self.args, self.mode)
+    pub(crate) fn into_mode(self) -> DistributedRunMode {
+        self.mode
     }
 }

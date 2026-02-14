@@ -5,6 +5,14 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+- Completed Phase 7 of the hexagonal migration by removing direct `TesterArgs` coupling from the application layer (`application::commands`, `application::local_run`, `application::distributed_run`) and tightening adapter-boundary mapping in entry planning.
+- Added architecture guardrails that fail checks when `src/application` reintroduces `TesterArgs` or `crate::args` imports.
+- Removed remaining non-test direct `distributed -> app` and `application -> app` imports by introducing explicit runtime ports and shared summary-output utilities, so orchestration flows now route via application/adapters seams.
+- Added migration validation coverage for all run-plan feature routes (local, distributed controller/agent, replay, compare, cleanup, dump-urls, service) and distributed/local application dispatch seams.
+- Updated architecture docs to a current flow-focused overview with explicit mode-by-mode call chains.
+- Added technical architecture docs across ARD/ADR/patterns covering type-level invariants/newtypes, invalid-state elimination, cache/inlining guidance, dispatch strategy (static-first), and low-lock concurrency patterns using `Arc`, atomics, channels, and `ArcShift`.
+- Removed legacy migration-risk and baseline-metrics ARD documents and updated doc indexes/references accordingly.
+
 ## 0.1.9
 
 Released: 2026-02-13

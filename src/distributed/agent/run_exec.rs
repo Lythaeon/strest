@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, info};
 
@@ -13,13 +14,37 @@ use crate::distributed::protocol::{
 use crate::distributed::utils::duration_to_ms;
 use crate::distributed::wire::apply_wire_args;
 
-pub(super) async fn run_agent_run(
+#[derive(Debug)]
+pub(crate) struct AgentRunOutcome {
+    pub(crate) summary: crate::metrics::MetricsSummary,
+    pub(crate) histogram: crate::metrics::LatencyHistogram,
+    pub(crate) success_histogram: crate::metrics::LatencyHistogram,
+    pub(crate) latency_sum_ms: u128,
+    pub(crate) success_latency_sum_ms: u128,
+    pub(crate) runtime_errors: Vec<String>,
+}
+
+#[async_trait]
+pub(crate) trait AgentLocalRunPort {
+    async fn run_local(
+        &self,
+        args: TesterArgs,
+        stream_tx: Option<mpsc::UnboundedSender<StreamSnapshot>>,
+        external_shutdown: Option<watch::Receiver<bool>>,
+    ) -> AppResult<AgentRunOutcome>;
+}
+
+pub(super) async fn run_agent_run<TLocalRunPort>(
     base_args: &TesterArgs,
     config: ConfigMessage,
     agent_id: String,
     out_tx: &mpsc::UnboundedSender<WireMessage>,
     cmd_rx: &mut mpsc::UnboundedReceiver<AgentCommand>,
-) -> AppResult<()> {
+    local_run_port: &TLocalRunPort,
+) -> AppResult<()>
+where
+    TLocalRunPort: AgentLocalRunPort + Sync,
+{
     let ConfigMessage { run_id, args } = config;
     let mut run_args = base_args.clone();
     if let Err(err) = apply_wire_args(&mut run_args, args) {
@@ -42,7 +67,7 @@ pub(super) async fn run_agent_run(
         (None, None)
     };
 
-    let mut run_future = Box::pin(crate::app::run_local(run_args, stream_tx, Some(stop_rx)));
+    let mut run_future = Box::pin(local_run_port.run_local(run_args, stream_tx, Some(stop_rx)));
     let mut abort_reason: Option<AppError> = None;
 
     let run_outcome = loop {

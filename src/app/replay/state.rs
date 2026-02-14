@@ -1,4 +1,4 @@
-pub(crate) type ReplayWindow = crate::application::replay_compare::PlaybackState;
+pub(crate) type ReplayWindow = crate::system::replay_compare::PlaybackState;
 
 #[derive(Default)]
 pub(crate) struct SnapshotMarkers {
