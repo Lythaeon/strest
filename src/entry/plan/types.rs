@@ -1,5 +1,5 @@
 use crate::application::commands::{
-    AgentRunCommand, ControllerRunCommand, LocalRunCommand, ReplayRunCommand, ServiceCommand,
+    DistributedRunCommand, LocalRunCommand, ReplayRunCommand, ServiceCommand,
 };
 use crate::args::{CleanupArgs, CompareArgs};
 
@@ -15,7 +15,6 @@ pub(in crate::entry) enum RunPlan {
     Replay(ReplayRunCommand),
     DumpUrls(DumpUrlsPlan),
     Service(ServiceCommand),
-    Controller(ControllerRunCommand),
-    Agent(AgentRunCommand),
+    Distributed(DistributedRunCommand),
     Local(LocalRunCommand),
 }

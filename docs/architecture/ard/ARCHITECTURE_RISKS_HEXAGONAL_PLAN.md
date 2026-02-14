@@ -316,6 +316,11 @@ Phase 4 artifacts (implemented):
 Exit criteria:
 - distributed application flow has no direct UI/charts/sinks imports.
 
+Phase 5 artifacts (implemented):
+- Distributed run command + application execution port: `src/application/commands.rs`, `src/application/distributed_run.rs`, `src/entry/plan/types.rs`, `src/entry/plan/build.rs`, `src/entry/plan/execute.rs`
+- Controller output adapter/event boundary for auto/manual flows: `src/distributed/controller/output.rs`, `src/distributed/controller/auto/setup.rs`, `src/distributed/controller/auto/events.rs`, `src/distributed/controller/auto/finalize.rs`, `src/distributed/controller/manual/run_lifecycle.rs`, `src/distributed/controller/manual/loop_handlers.rs`, `src/distributed/controller/manual/run_finalize.rs`, `src/distributed/controller/manual/state.rs`
+- Shared aggregation narrowed to state aggregation primitives: `src/distributed/controller/shared/aggregation.rs`, `src/distributed/controller/shared/events.rs`
+
 ### Phase 6: Replay/compare slice extraction (1-2 weeks)
 1. Split replay/compare use cases from terminal event loop logic.
 2. Keep key event handling and rendering in adapters.

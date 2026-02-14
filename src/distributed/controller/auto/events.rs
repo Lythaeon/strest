@@ -1,23 +1,22 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 
 use tokio::sync::mpsc;
 use tokio::time::MissedTickBehavior;
 
 use crate::args::TesterArgs;
-use crate::metrics::AggregatedMetricSample;
 
+use super::super::output::{DistributedOutputState, OutputEvent, handle_output_event};
 use super::super::shared::{
-    AgentEvent, AgentSnapshot, event_agent_id, handle_agent_event, record_aggregated_sample,
-    resolve_heartbeat_check_interval, resolve_sink_interval, update_ui, write_streaming_sinks,
+    AgentEvent, AgentSnapshot, event_agent_id, handle_agent_event,
+    resolve_heartbeat_check_interval, resolve_sink_interval,
 };
 use super::setup::AutoRunSetup;
 use crate::distributed::protocol::{WireMessage, read_message};
 
 pub(super) struct AutoRunOutcome {
     pub(super) run_id: String,
-    pub(super) shutdown_tx: Option<crate::shutdown::ShutdownSender>,
+    pub(super) output_state: DistributedOutputState,
     pub(super) agent_states: HashMap<String, AgentSnapshot>,
-    pub(super) aggregated_samples: Vec<AggregatedMetricSample>,
     pub(super) runtime_errors: Vec<String>,
     pub(super) channel_closed: bool,
     pub(super) pending_agents: HashSet<String>,
@@ -30,10 +29,7 @@ pub(super) async fn collect_auto_run_events(
     let AutoRunSetup {
         run_id,
         agents,
-        ui_tx,
-        shutdown_tx,
-        charts_enabled,
-        sink_updates_enabled,
+        mut output_state,
         heartbeat_timeout,
         report_deadline,
     } = setup;
@@ -42,12 +38,8 @@ pub(super) async fn collect_auto_run_events(
     let mut agent_states: HashMap<String, AgentSnapshot> = HashMap::new();
     let mut pending_agents: HashSet<String> =
         agents.iter().map(|agent| agent.agent_id.clone()).collect();
-    let mut ui_latency_window: VecDeque<(u64, u64)> = VecDeque::new();
-    let mut ui_rps_window: VecDeque<(u64, u64)> = VecDeque::new();
-    let mut aggregated_samples: Vec<AggregatedMetricSample> = Vec::new();
     let mut sink_interval = tokio::time::interval(resolve_sink_interval(args.sinks.as_ref()));
     sink_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    let mut sink_dirty = false;
     let mut channel_closed = false;
     let mut heartbeat_interval =
         tokio::time::interval(resolve_heartbeat_check_interval(heartbeat_timeout));
@@ -186,36 +178,32 @@ pub(super) async fn collect_auto_run_events(
                     &mut pending_agents,
                     &mut agent_states,
                     &mut runtime_errors,
-                    &mut sink_dirty,
                 );
                 if is_disconnected {
                     disconnected_agents.insert(agent_id.clone());
                     last_seen.remove(agent_id.as_str());
                 }
-                if charts_enabled {
-                    record_aggregated_sample(&mut aggregated_samples, &agent_states);
-                }
-                if let Some(ui_tx) = ui_tx.as_ref() {
-                    update_ui(
-                        ui_tx,
-                        args,
-                        &agent_states,
-                        &mut ui_latency_window,
-                        &mut ui_rps_window,
-                    );
-                }
+                handle_output_event(
+                    args,
+                    &mut output_state,
+                    &agent_states,
+                    &mut runtime_errors,
+                    OutputEvent::AgentStateUpdated,
+                )
+                .await;
                 if pending_agents.is_empty() {
                     break;
                 }
             }
             _ = sink_interval.tick() => {
-                if sink_updates_enabled && sink_dirty {
-                    if let Err(err) = write_streaming_sinks(args, &agent_states).await {
-                        runtime_errors.push(err.to_string());
-                    } else {
-                        sink_dirty = false;
-                    }
-                }
+                handle_output_event(
+                    args,
+                    &mut output_state,
+                    &agent_states,
+                    &mut runtime_errors,
+                    OutputEvent::SinkTick,
+                )
+                .await;
             }
             _ = heartbeat_interval.tick() => {
                 let now = tokio::time::Instant::now();
@@ -237,7 +225,6 @@ pub(super) async fn collect_auto_run_events(
                             &mut pending_agents,
                             &mut agent_states,
                             &mut runtime_errors,
-                            &mut sink_dirty,
                         );
                         last_seen.remove(&agent_id);
                     }
@@ -251,9 +238,8 @@ pub(super) async fn collect_auto_run_events(
 
     AutoRunOutcome {
         run_id,
-        shutdown_tx,
+        output_state,
         agent_states,
-        aggregated_samples,
         runtime_errors,
         channel_closed,
         pending_agents,

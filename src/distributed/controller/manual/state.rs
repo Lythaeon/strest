@@ -1,17 +1,15 @@
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::Duration;
 
 use arcshift::ArcShift;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use crate::args::{Scenario, TesterArgs};
 use crate::config::types::ScenarioConfig;
-use crate::metrics::AggregatedMetricSample;
-use crate::shutdown::ShutdownSender;
-use crate::ui::model::UiData;
 
 use super::super::control::{ControlError, ControlStartRequest};
+use super::super::output::DistributedOutputState;
 use super::super::shared::AgentEvent;
 use crate::distributed::protocol::WireMessage;
 
@@ -26,17 +24,10 @@ pub(super) struct ManualRunState {
     pub(super) run_id: String,
     pub(super) pending_agents: HashSet<String>,
     pub(super) agent_states: HashMap<String, super::super::shared::AgentSnapshot>,
-    pub(super) aggregated_samples: Vec<AggregatedMetricSample>,
     pub(super) runtime_errors: Vec<String>,
-    pub(super) sink_dirty: bool,
-    pub(super) sink_updates_enabled: bool,
     pub(super) sink_interval: tokio::time::Interval,
-    pub(super) ui_tx: Option<watch::Sender<UiData>>,
-    pub(super) shutdown_tx: Option<ShutdownSender>,
-    pub(super) ui_latency_window: VecDeque<(u64, u64)>,
-    pub(super) ui_rps_window: VecDeque<(u64, u64)>,
+    pub(super) output_state: DistributedOutputState,
     pub(super) deadline: Instant,
-    pub(super) charts_enabled: bool,
 }
 
 pub(super) struct ScenarioState {

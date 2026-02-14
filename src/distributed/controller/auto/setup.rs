@@ -1,16 +1,14 @@
-use std::io::IsTerminal;
 use std::time::Duration;
 
-use tokio::sync::watch;
 use tokio::time::Instant;
 use tracing::{debug, info};
 
 use crate::args::TesterArgs;
 use crate::error::{AppError, AppResult, DistributedError};
-use crate::ui::{model::UiData, render::setup_render_ui};
 
 use super::super::agent::{AgentConn, accept_agent};
 use super::super::load::apply_load_share;
+use super::super::output::{DistributedOutputState, setup_output_state};
 use super::super::shared::{DEFAULT_START_AFTER_MS, REPORT_GRACE_SECS, resolve_agent_wait_timeout};
 use crate::distributed::protocol::{ConfigMessage, StartMessage, WireMessage, send_message};
 use crate::distributed::utils::build_run_id;
@@ -19,10 +17,7 @@ use crate::distributed::wire::build_wire_args;
 pub(super) struct AutoRunSetup {
     pub(super) run_id: String,
     pub(super) agents: Vec<AgentConn>,
-    pub(super) ui_tx: Option<watch::Sender<UiData>>,
-    pub(super) shutdown_tx: Option<crate::shutdown::ShutdownSender>,
-    pub(super) charts_enabled: bool,
-    pub(super) sink_updates_enabled: bool,
+    pub(super) output_state: DistributedOutputState,
     pub(super) heartbeat_timeout: Duration,
     pub(super) report_deadline: Instant,
 }
@@ -72,9 +67,7 @@ pub(super) async fn prepare_auto_run(args: &TesterArgs) -> AppResult<AutoRunSetu
         .await?;
     }
 
-    let (ui_tx, shutdown_tx) = setup_ui(args);
-    let charts_enabled = !args.no_charts && args.distributed_stream_summaries;
-    let sink_updates_enabled = args.distributed_stream_summaries && args.sinks.is_some();
+    let output_state = setup_output_state(args);
     let heartbeat_timeout = Duration::from_millis(args.agent_heartbeat_timeout_ms.get());
     let report_deadline = Instant::now()
         .checked_add(
@@ -86,10 +79,7 @@ pub(super) async fn prepare_auto_run(args: &TesterArgs) -> AppResult<AutoRunSetu
     Ok(AutoRunSetup {
         run_id,
         agents,
-        ui_tx,
-        shutdown_tx,
-        charts_enabled,
-        sink_updates_enabled,
+        output_state,
         heartbeat_timeout,
         report_deadline,
     })
@@ -184,30 +174,6 @@ async fn accept_agents(
         }
     }
     Ok(agents)
-}
-
-fn setup_ui(
-    args: &TesterArgs,
-) -> (
-    Option<watch::Sender<UiData>>,
-    Option<crate::shutdown::ShutdownSender>,
-) {
-    let ui_enabled =
-        args.distributed_stream_summaries && !args.no_ui && std::io::stdout().is_terminal();
-    if !ui_enabled {
-        return (None, None);
-    }
-
-    let target_duration = Duration::from_secs(args.target_duration.get());
-    let (shutdown_tx, _) = crate::system::shutdown_handlers::shutdown_channel();
-    let (ui_tx, _) = watch::channel(UiData {
-        target_duration,
-        ui_window_ms: args.ui_window_ms.get(),
-        no_color: args.no_color,
-        ..UiData::default()
-    });
-    let _ui_handle = setup_render_ui(&shutdown_tx, &ui_tx);
-    (Some(ui_tx), Some(shutdown_tx))
 }
 
 fn compute_weights(agents: &[AgentConn]) -> Vec<u64> {

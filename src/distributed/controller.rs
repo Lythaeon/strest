@@ -4,6 +4,7 @@ mod control;
 mod http;
 mod load;
 mod manual;
+mod output;
 mod runner;
 mod shared;
 

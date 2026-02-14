@@ -1,7 +1,13 @@
+use std::collections::BTreeMap;
+
+use async_trait::async_trait;
 use rand::distributions::Distribution;
 use rand::thread_rng;
 
 use crate::app::{self, run_cleanup, run_compare, run_local, run_replay};
+use crate::application::distributed_run::{self, DistributedRunPort};
+use crate::args::TesterArgs;
+use crate::config::types::ScenarioConfig;
 use crate::domain::run::RunConfig;
 use crate::error::{AppError, AppResult, ValidationError};
 use crate::system::banner;
@@ -23,18 +29,12 @@ pub(crate) async fn execute_plan(plan: RunPlan) -> AppResult<()> {
             crate::service::handle_service_action(command.as_args())?;
             Ok(())
         }
-        RunPlan::Controller(command) => {
-            log_run_command("controller", command.run_config());
+        RunPlan::Distributed(command) => {
+            log_run_command(command.mode_name(), command.run_config());
             banner::print_cli_banner(command.no_color());
             println!();
-            let (args, scenarios) = command.into_parts();
-            crate::distributed::run_controller(&args, scenarios).await
-        }
-        RunPlan::Agent(command) => {
-            log_run_command("agent", command.run_config());
-            banner::print_cli_banner(command.no_color());
-            println!();
-            crate::distributed::run_agent(command.into_args()).await
+            let distributed_port = RuntimeDistributedPort;
+            distributed_run::execute(command, &distributed_port).await
         }
         RunPlan::Local(command) => {
             log_run_command("local", command.run_config());
@@ -51,6 +51,23 @@ pub(crate) async fn execute_plan(plan: RunPlan) -> AppResult<()> {
             }
             Ok(())
         }
+    }
+}
+
+struct RuntimeDistributedPort;
+
+#[async_trait]
+impl DistributedRunPort for RuntimeDistributedPort {
+    async fn run_controller(
+        &self,
+        args: &TesterArgs,
+        scenarios: Option<BTreeMap<String, ScenarioConfig>>,
+    ) -> AppResult<()> {
+        crate::distributed::run_controller(args, scenarios).await
+    }
+
+    async fn run_agent(&self, args: TesterArgs) -> AppResult<()> {
+        crate::distributed::run_agent(args).await
     }
 }
 
