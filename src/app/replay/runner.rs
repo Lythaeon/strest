@@ -6,6 +6,9 @@ use std::time::Duration;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use tokio::sync::watch;
 
+use crate::application::replay_compare::{
+    PlaybackAction, PlaybackState, advance_playback, apply_playback_action, resolve_step_ms,
+};
 use crate::args::TesterArgs;
 use crate::error::{AppError, AppResult, MetricsError, ValidationError};
 use crate::metrics::MetricRecord;
@@ -17,7 +20,7 @@ use super::records::load_replay_records;
 use super::snapshots::{
     SnapshotIntervalState, parse_snapshot_format, resolve_snapshot_range, resolve_snapshot_window,
 };
-use super::state::{ReplayWindow, SnapshotMarkers};
+use super::state::SnapshotMarkers;
 use super::ui::render_once;
 use super::{snapshots, ui};
 
@@ -70,12 +73,7 @@ pub(crate) async fn run_replay(args: &TesterArgs) -> AppResult<()> {
         || args.replay_snapshot_end.is_some()
         || args.replay_snapshot_out.is_some();
 
-    let step_ms = args
-        .replay_step
-        .unwrap_or(DEFAULT_REPLAY_STEP)
-        .as_millis()
-        .try_into()
-        .unwrap_or(1);
+    let step_ms = resolve_step_ms(args.replay_step, DEFAULT_REPLAY_STEP);
 
     if !io::stdout().is_terminal() || args.no_ui {
         if snapshot_requested {
@@ -126,12 +124,7 @@ pub(crate) async fn run_replay(args: &TesterArgs) -> AppResult<()> {
     let (ui_tx, _) = watch::channel(initial_ui);
     let render_ui_handle = setup_render_ui(&shutdown_tx, &ui_tx);
 
-    let mut state = ReplayWindow {
-        start_ms,
-        cursor_ms: start_ms,
-        end_ms,
-        playing: true,
-    };
+    let mut state = PlaybackState::new(start_ms, end_ms);
     let mut last_tick = tokio::time::Instant::now();
     let poll_interval = UI_POLL_INTERVAL;
     let mut dirty = true;
@@ -157,29 +150,10 @@ pub(crate) async fn run_replay(args: &TesterArgs) -> AppResult<()> {
                 {
                     break;
                 }
-                if matches!(key.code, KeyCode::Char(' ')) {
-                    state.playing = !state.playing;
-                    dirty = true;
-                } else if matches!(key.code, KeyCode::Left | KeyCode::Char('h')) {
-                    state.playing = false;
-                    state.cursor_ms = state.cursor_ms.saturating_sub(step_ms).max(state.start_ms);
-                    dirty = true;
-                } else if matches!(key.code, KeyCode::Right | KeyCode::Char('l')) {
-                    state.playing = false;
-                    state.cursor_ms = state.cursor_ms.saturating_add(step_ms).min(state.end_ms);
-                    dirty = true;
-                } else if matches!(key.code, KeyCode::Home) {
-                    state.playing = false;
-                    state.cursor_ms = state.start_ms;
-                    dirty = true;
-                } else if matches!(key.code, KeyCode::End) {
-                    state.playing = false;
-                    state.cursor_ms = state.end_ms;
-                    dirty = true;
-                } else if matches!(key.code, KeyCode::Char('r')) {
-                    state.playing = false;
-                    state.cursor_ms = state.start_ms;
-                    dirty = true;
+                if let Some(action) = resolve_playback_action(key.code) {
+                    if apply_playback_action(&mut state, action, step_ms) {
+                        dirty = true;
+                    }
                 } else if matches!(key.code, KeyCode::Char('s')) {
                     snapshot_markers.start = Some(state.cursor_ms);
                     dirty = true;
@@ -204,18 +178,8 @@ pub(crate) async fn run_replay(args: &TesterArgs) -> AppResult<()> {
             }
 
             if state.playing {
-                let elapsed = last_tick.elapsed();
-                if elapsed >= Duration::from_millis(REPLAY_TICK_MS) {
-                    let tick_ms = u128::from(REPLAY_TICK_MS);
-                    let steps = elapsed.as_millis().checked_div(tick_ms).unwrap_or(0);
-                    let advance_ms =
-                        u64::try_from(steps.saturating_mul(tick_ms)).unwrap_or(REPLAY_TICK_MS);
-                    state.cursor_ms = state.cursor_ms.saturating_add(advance_ms).min(state.end_ms);
+                if advance_playback(&mut state, last_tick.elapsed(), REPLAY_TICK_MS) {
                     last_tick = tokio::time::Instant::now();
-                    if state.cursor_ms >= state.end_ms {
-                        state.cursor_ms = state.end_ms;
-                        state.playing = false;
-                    }
                     dirty = true;
                 }
             } else {
@@ -270,6 +234,28 @@ pub(crate) async fn run_replay(args: &TesterArgs) -> AppResult<()> {
         eprintln!("Replay UI task failed: {}", err);
     }
     result
+}
+
+const fn resolve_playback_action(key_code: KeyCode) -> Option<PlaybackAction> {
+    if matches!(key_code, KeyCode::Char(' ')) {
+        return Some(PlaybackAction::TogglePlayPause);
+    }
+    if matches!(key_code, KeyCode::Left | KeyCode::Char('h')) {
+        return Some(PlaybackAction::SeekBackward);
+    }
+    if matches!(key_code, KeyCode::Right | KeyCode::Char('l')) {
+        return Some(PlaybackAction::SeekForward);
+    }
+    if matches!(key_code, KeyCode::Home) {
+        return Some(PlaybackAction::SeekStart);
+    }
+    if matches!(key_code, KeyCode::End) {
+        return Some(PlaybackAction::SeekEnd);
+    }
+    if matches!(key_code, KeyCode::Char('r')) {
+        return Some(PlaybackAction::Restart);
+    }
+    None
 }
 
 pub(super) fn window_slice(

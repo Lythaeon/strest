@@ -9,15 +9,16 @@ use std::time::Duration;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use tokio::sync::watch;
 
+use crate::application::replay_compare::{
+    PlaybackAction, PlaybackState, advance_playback, apply_playback_action,
+    clamp_window_to_records, records_range, resolve_step_ms,
+};
 use crate::args::CompareArgs;
 use crate::error::{AppError, AppResult, MetricsError};
-use crate::metrics::MetricRecord;
 use crate::ui::model::{CompareOverlay, UiData};
 use crate::ui::render::setup_render_ui;
 
-use super::replay::{
-    ReplayWindow, SnapshotMarkers, build_ui_data_with_config, read_records_from_path,
-};
+use super::replay::{SnapshotMarkers, build_ui_data_with_config, read_records_from_path};
 use compare_output::print_compare_summary;
 
 /// Playback tick used when compare is in "playing" mode.
@@ -41,8 +42,10 @@ pub(crate) async fn run_compare(args: &CompareArgs) -> AppResult<()> {
     left_records.sort_by_key(|record| record.elapsed_ms);
     right_records.sort_by_key(|record| record.elapsed_ms);
 
-    let (left_min, left_max) = records_range(&left_records);
-    let (right_min, right_max) = records_range(&right_records);
+    let (left_min, left_max) = records_range(&left_records)
+        .ok_or_else(|| AppError::metrics(MetricsError::ReplayRecordsEmpty))?;
+    let (right_min, right_max) = records_range(&right_records)
+        .ok_or_else(|| AppError::metrics(MetricsError::ReplayRecordsEmpty))?;
     let start_ms = left_min.min(right_min);
     let end_ms = left_max.max(right_max);
 
@@ -84,18 +87,8 @@ pub(crate) async fn run_compare(args: &CompareArgs) -> AppResult<()> {
     let (ui_tx, _) = watch::channel(initial_ui);
     let render_ui_handle = setup_render_ui(&shutdown_tx, &ui_tx);
 
-    let mut state = ReplayWindow {
-        start_ms,
-        cursor_ms: start_ms,
-        end_ms,
-        playing: true,
-    };
-    let step_ms = args
-        .replay_step
-        .unwrap_or(DEFAULT_COMPARE_STEP)
-        .as_millis()
-        .try_into()
-        .unwrap_or(1);
+    let mut state = PlaybackState::new(start_ms, end_ms);
+    let step_ms = resolve_step_ms(args.replay_step, DEFAULT_COMPARE_STEP);
     let mut last_tick = tokio::time::Instant::now();
     let poll_interval = UI_POLL_INTERVAL;
     let mut dirty = true;
@@ -117,45 +110,16 @@ pub(crate) async fn run_compare(args: &CompareArgs) -> AppResult<()> {
                 {
                     break;
                 }
-                if matches!(key.code, KeyCode::Char(' ')) {
-                    state.playing = !state.playing;
-                    dirty = true;
-                } else if matches!(key.code, KeyCode::Left | KeyCode::Char('h')) {
-                    state.playing = false;
-                    state.cursor_ms = state.cursor_ms.saturating_sub(step_ms).max(state.start_ms);
-                    dirty = true;
-                } else if matches!(key.code, KeyCode::Right | KeyCode::Char('l')) {
-                    state.playing = false;
-                    state.cursor_ms = state.cursor_ms.saturating_add(step_ms).min(state.end_ms);
-                    dirty = true;
-                } else if matches!(key.code, KeyCode::Home) {
-                    state.playing = false;
-                    state.cursor_ms = state.start_ms;
-                    dirty = true;
-                } else if matches!(key.code, KeyCode::End) {
-                    state.playing = false;
-                    state.cursor_ms = state.end_ms;
-                    dirty = true;
-                } else if matches!(key.code, KeyCode::Char('r')) {
-                    state.playing = false;
-                    state.cursor_ms = state.start_ms;
+                if let Some(action) = resolve_playback_action(key.code)
+                    && apply_playback_action(&mut state, action, step_ms)
+                {
                     dirty = true;
                 }
             }
 
             if state.playing {
-                let elapsed = last_tick.elapsed();
-                if elapsed >= Duration::from_millis(COMPARE_TICK_MS) {
-                    let tick_ms = u128::from(COMPARE_TICK_MS);
-                    let steps = elapsed.as_millis().checked_div(tick_ms).unwrap_or(0);
-                    let advance_ms =
-                        u64::try_from(steps.saturating_mul(tick_ms)).unwrap_or(COMPARE_TICK_MS);
-                    state.cursor_ms = state.cursor_ms.saturating_add(advance_ms).min(state.end_ms);
+                if advance_playback(&mut state, last_tick.elapsed(), COMPARE_TICK_MS) {
                     last_tick = tokio::time::Instant::now();
-                    if state.cursor_ms >= state.end_ms {
-                        state.cursor_ms = state.end_ms;
-                        state.playing = false;
-                    }
                     dirty = true;
                 }
             } else {
@@ -163,8 +127,8 @@ pub(crate) async fn run_compare(args: &CompareArgs) -> AppResult<()> {
             }
 
             if dirty {
-                let left_state = clamped_window_state(&state, left_min, left_max);
-                let right_state = clamped_window_state(&state, right_min, right_max);
+                let left_state = clamp_window_to_records(&state, left_min, left_max);
+                let right_state = clamp_window_to_records(&state, right_min, right_max);
                 let mut primary = build_ui_data_with_config(
                     &left_records,
                     args.expected_status_code,
@@ -208,23 +172,6 @@ pub(crate) async fn run_compare(args: &CompareArgs) -> AppResult<()> {
     result
 }
 
-fn records_range(records: &[MetricRecord]) -> (u64, u64) {
-    let min = records.first().map(|record| record.elapsed_ms).unwrap_or(0);
-    let max = records.last().map(|record| record.elapsed_ms).unwrap_or(0);
-    (min, max)
-}
-
-fn clamped_window_state(base: &ReplayWindow, records_min: u64, records_max: u64) -> ReplayWindow {
-    let start_ms = base.start_ms.max(records_min).min(records_max);
-    let cursor_ms = base.cursor_ms.clamp(records_min, records_max);
-    ReplayWindow {
-        start_ms,
-        cursor_ms,
-        end_ms: records_max,
-        playing: base.playing,
-    }
-}
-
 fn resolve_label(path: &str, override_label: Option<&str>) -> String {
     if let Some(label) = override_label
         && !label.trim().is_empty()
@@ -238,23 +185,24 @@ fn resolve_label(path: &str, override_label: Option<&str>) -> String {
         .unwrap_or_else(|| "compare".to_owned())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::clamped_window_state;
-    use crate::app::replay::ReplayWindow;
-
-    #[test]
-    fn clamped_window_state_limits_cursor_to_dataset_range() {
-        let base = ReplayWindow {
-            start_ms: 0,
-            cursor_ms: 15_000,
-            end_ms: 20_000,
-            playing: true,
-        };
-        let clamped = clamped_window_state(&base, 1_000, 10_000);
-        assert_eq!(clamped.start_ms, 1_000);
-        assert_eq!(clamped.cursor_ms, 10_000);
-        assert_eq!(clamped.end_ms, 10_000);
-        assert!(clamped.playing);
+const fn resolve_playback_action(key_code: KeyCode) -> Option<PlaybackAction> {
+    if matches!(key_code, KeyCode::Char(' ')) {
+        return Some(PlaybackAction::TogglePlayPause);
     }
+    if matches!(key_code, KeyCode::Left | KeyCode::Char('h')) {
+        return Some(PlaybackAction::SeekBackward);
+    }
+    if matches!(key_code, KeyCode::Right | KeyCode::Char('l')) {
+        return Some(PlaybackAction::SeekForward);
+    }
+    if matches!(key_code, KeyCode::Home) {
+        return Some(PlaybackAction::SeekStart);
+    }
+    if matches!(key_code, KeyCode::End) {
+        return Some(PlaybackAction::SeekEnd);
+    }
+    if matches!(key_code, KeyCode::Char('r')) {
+        return Some(PlaybackAction::Restart);
+    }
+    None
 }
