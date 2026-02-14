@@ -5,6 +5,8 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## Unreleased
 
+- Fixed TUI run-panel progress bar rendering so the centered time label no longer visually splits filled progress segments.
+
 ## 0.1.9
 
 Released: 2026-02-13
