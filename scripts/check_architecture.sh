@@ -48,6 +48,24 @@ count_matching_files() {
   echo "$count"
 }
 
+find_non_test_layer_matches() {
+  local layer_dir="$1"
+  local regex="$2"
+  local file_path
+  local match_tmp
+
+  match_tmp="$(mktemp)"
+  while IFS= read -r file_path; do
+    [[ "$file_path" == "${layer_dir}/"* ]] || continue
+    grep -n -E -- "$regex" "$file_path" >> "$match_tmp" || true
+  done < <(list_non_test_rust_files)
+
+  if [[ -s "$match_tmp" ]]; then
+    cat "$match_tmp"
+  fi
+  rm -f "$match_tmp"
+}
+
 check_forbidden_crates_in_layer() {
   local layer_dir="$1"
   shift
@@ -65,7 +83,7 @@ check_forbidden_crates_in_layer() {
     if [[ "$HAS_RG" -eq 1 ]]; then
       matches="$(rg -n "${NON_TEST_GLOBS[@]}" "$regex" "$layer_dir" || true)"
     else
-      matches="$(grep -R -n -E --include='*.rs' "$regex" "$layer_dir" || true)"
+      matches="$(find_non_test_layer_matches "$layer_dir" "$regex")"
     fi
     if [[ -n "$matches" ]]; then
       echo "error: forbidden '${crate_name}' usage detected in ${layer_dir}"
@@ -91,7 +109,7 @@ check_forbidden_pattern_in_layer() {
   if [[ "$HAS_RG" -eq 1 ]]; then
     matches="$(rg -n "${NON_TEST_GLOBS[@]}" "$regex" "$layer_dir" || true)"
   else
-    matches="$(grep -R -n -E --include='*.rs' "$regex" "$layer_dir" || true)"
+    matches="$(find_non_test_layer_matches "$layer_dir" "$regex")"
   fi
   if [[ -n "$matches" ]]; then
     echo "error: forbidden ${description} detected in ${layer_dir}"
